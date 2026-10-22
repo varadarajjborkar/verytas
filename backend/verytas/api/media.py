@@ -19,7 +19,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
 
-from verytas.api.deps import CurrentUser, Session, require
+from verytas.api.deps import Session, require
 from verytas.media import profile as prof
 from verytas.media.files import UNSUPPORTED_IMAGES, MediaError, decode_b64, limit_for, pdf_active_content, sniff
 from verytas.media.storage import blob_ids, over_quota, reclaim_orphans, usage
@@ -165,7 +165,7 @@ def _profile(channel: str, body: str, attachments: dict[str, Any], blobs: dict[s
 
 
 @router.post("/contents/precheck")
-async def precheck(body: PrecheckIn, session: Session, user: CurrentUser) -> dict[str, Any]:
+async def precheck(body: PrecheckIn, session: Session, user: Writer) -> dict[str, Any]:
     attachments = body.attachments.model_dump(exclude_none=True)
     p = await build_profile(session, user, body.channel, body.body, attachments)
     out = p.as_dict()

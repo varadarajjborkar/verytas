@@ -26,6 +26,12 @@ def test_auditors_read_comments_but_cannot_write_them(client, world):  # noqa: F
     assert client.post(f"/contents/{cid}/comments", headers=creator, json={"body": "noted"}).status_code == 201
 
 
+def test_auditors_cannot_run_the_upload_precheck(client, world):  # noqa: F811
+    draft = {"channel": "instagram", "body": "Hello.", "attachments": {}}
+    assert client.post("/contents/precheck", headers=_auditor(client, world), json=draft).status_code == 403
+    assert client.post("/contents/precheck", headers=_auth(world["creator"]), json=draft).status_code == 200
+
+
 async def test_a_version_without_its_own_review_cannot_be_approved(client, world):  # noqa: F811
     creator = _auth(world["creator"])
     res = client.post("/contents?wait=true", headers=creator, json={"title": "T", "body": "We help teams."}).json()
