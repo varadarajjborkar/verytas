@@ -88,6 +88,9 @@ export function SideNav() {
           <p className="truncate text-[11px] text-subtle">
             {side === "creator" ? "Creator" : `Brand team · ${ROLE_LABEL[me.role] ?? me.role}`}
           </p>
+          <Link href="/ai" className="mt-2 inline-block text-[11px] text-subtle underline-offset-2 hover:text-ink hover:underline">
+            AI-assisted · how AI is used
+          </Link>
         </div>
       )}
       <div className={`hidden md:block ${me && !collapsed ? "" : "md:mt-auto"} ${collapsed ? "px-2.5 py-3 [&>button]:mx-auto" : "p-3"}`}>

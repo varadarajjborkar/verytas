@@ -2,6 +2,7 @@
 
 import { type ActionEvent, type ParseResult, Renderer } from "@openuidev/react-lang";
 import { openuiLibrary } from "@openuidev/react-ui";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ChatStore, imageToDataUrl, openChatStore, type StoredMessage, type ThreadSummary } from "@/lib/chat-store";
 import { usePersistedFlag } from "@/lib/persisted-flag";
@@ -419,6 +420,8 @@ export function AskVerytas() {
               </div>
             </div>
             <p className="mx-auto mt-2 max-w-3xl px-1 text-[11px] text-subtle">
+              Answers are written by an AI model from your workspace&apos;s data and can be wrong.{" "}
+              <Link href="/ai" className="underline underline-offset-2 hover:text-ink">How AI is used</Link>.
               Images are kept with the chat; the current model can&apos;t read them yet.
             </p>
           </form>
