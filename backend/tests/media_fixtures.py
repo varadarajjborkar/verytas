@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import io
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 _FONT_PATHS = ["/System/Library/Fonts/Supplemental/Arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -75,10 +76,13 @@ def mascot_scene(face: Image.Image, *, body=False, caption: str | None = None) -
 
 
 def pdf(pages: list[dict]) -> bytes:
-    """A small real PDF. Each page: {"text": [lines], "image": PIL or None}.
+    """A small real PDF. Each page: {"text": [lines], "image": PIL or None, "outlined": [lines],
+    "one_shape": bool}.
 
     Text goes in as a proper text layer (Helvetica); an image becomes an
     XObject drawn on the page, like a screenshot pasted into a document.
+    Outlined lines are drawn as filled vector shapes with no text layer, the
+    way a design tool exports text converted to outlines.
     """
     objects: list[bytes] = []
 
@@ -94,6 +98,20 @@ def pdf(pages: list[dict]) -> bytes:
         for i, line in enumerate(page.get("text") or []):
             esc = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)").encode("latin-1")
             stream += b"BT /F1 18 Tf 50 %d Td (" % (740 - i * 28) + esc + b") Tj ET\n"
+        if page.get("outlined"):
+            # Each dark run of pixels in a rendering of the lines becomes one filled rectangle.
+            bitmap = np.asarray(text_image(page["outlined"], size=(1000, 70 * len(page["outlined"]) + 40))
+                                .convert("L")) < 128
+            scale = 0.5
+            for y, row in enumerate(bitmap):
+                xs = np.flatnonzero(np.diff(np.concatenate([[0], row.astype(np.int8), [0]])))
+                for x0, x1 in zip(xs[::2], xs[1::2], strict=True):
+                    # One fill per run, or (as most design tools export a line) a single shape for all of it.
+                    stream += b"%.1f %.1f %.1f %.1f re%s\n" % (40 + x0 * scale, 380 - y * scale,
+                                                                (x1 - x0) * scale, scale,
+                                                                b"" if page.get("one_shape") else b" f")
+            if page.get("one_shape"):
+                stream += b"f\n"
         resources = b"/Font << /F1 %d 0 R >>" % font_id
         img = page.get("image")
         if img is not None:
@@ -138,7 +156,6 @@ def scanned_pdf(img: Image.Image) -> bytes:
 def caption_video(captions: list[tuple[float, float, str]], seconds: int = 6, fps: int = 5) -> bytes:
     """A small vertical video with burned-in captions and a silent audio track."""
     import av
-    import numpy as np
 
     buf = io.BytesIO()
     out = av.open(buf, "w", format="mp4")

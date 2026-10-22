@@ -27,6 +27,8 @@ the review, so the UI can show exactly how a piece of content was checked.
 from __future__ import annotations
 
 import asyncio
+import difflib
+import io
 import itertools
 import logging
 import re
@@ -558,6 +560,19 @@ async def scene_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_i
     return report
 
 
+_WORDS = re.compile(r"[^\W_]+")
+DRAWN_MIN_CONFIDENCE = 0.7
+
+
+def _drawn_only(line: str, known: set[str]) -> bool:
+    """Whether a line read from the page render says something its text layer doesn't: any word of four or
+    more letters the layer lacks. A word one OCR slip from a layer word ("leamer") is the layer's."""
+    for word in _WORDS.findall(line.lower()):
+        if len(word) >= 4 and word not in known and not difflib.get_close_matches(word, known, n=1, cutoff=0.75):
+            return True
+    return False
+
+
 def _novel(seen: str, known: str) -> bool:
     a = {w for w in seen.lower().split() if len(w) > 2}
     b = {w for w in known.lower().split() if len(w) > 2}
@@ -699,7 +714,29 @@ async def page_agent(run: ReviewRun, node: AgentNode, doc_id: str, page, kind: s
     for img in page.images:
         work.append(run.tree.spawn(node, "image", f"Embedded image {img.index}",
                                    lambda n, img=img: embedded(n, img)))
+    if page.graphics_jpeg is not None:
+        work.append(run.tree.spawn(node, "ocr", "Text drawn as shapes",
+                                   lambda n: _drawn_text(run, n, page, base, locator, doc_id)))
     await asyncio.gather(*work)
+
+
+async def _drawn_text(run: ReviewRun, node: AgentNode, page, base: str, locator: dict[str, Any], doc_id: str) -> None:
+    """Read the rendered page and check what it shows that the text layer doesn't: text converted to
+    outlines, or lettering drawn as artwork. Lines the layer already has were checked as text."""
+    render = await run.blocking(lambda: Image.open(io.BytesIO(page.graphics_jpeg)).convert("RGB"))
+    result = await run.blocking(local_ocr.read, render)
+    known = set(_WORDS.findall(page.text.lower()))
+    # A chart's tick labels or a map's squiggles read as low-confidence noise, not text someone drew.
+    drawn = [ln for ln in result.lines if ln.confidence >= DRAWN_MIN_CONFIDENCE and _drawn_only(ln.text, known)]
+    node.detail = {"lines_read": len(result.lines), "only_drawn": len(drawn)}
+    if not drawn:
+        return
+    text = "\n".join(ln.text for ln in drawn)
+    confidence = sum(ln.confidence for ln in drawn) / len(drawn)
+    src = Source(f"{base}:drawn", "ocr", text, "ocr:page-render", confidence, {**locator, "image": f"{base}:drawn"},
+                 parent=doc_id)
+    run.glance.append(f"page {page.number} of {doc_id} has text drawn as shapes, not in its text layer")
+    await run.tree.spawn(node, "text", "Text found only in the drawing", lambda n: text_agent(run, n, src))
 
 
 def _overlaps(a: tuple[int, int, int, int], b: tuple[int, int, int, int] | None, pad: float = 0.0) -> bool:

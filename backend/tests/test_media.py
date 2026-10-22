@@ -6,6 +6,8 @@ video, irregular uploads, creator notes, disputes and resubmission.
 
 from __future__ import annotations
 
+import io
+
 import pytest
 
 from tests.media_fixtures import (
@@ -86,6 +88,71 @@ def test_pdf_pages_screenshots_and_scans_each_get_their_own_agents(client, world
     assert roles.count("page") == 2 and "document" in roles
     # Depth: prism > document > page > image > ocr > text > worker
     assert max(a["depth"] for a in review["coverage"]["agents"]) >= 6
+
+
+def test_text_converted_to_outlines_is_read_from_the_drawing(client, world):
+    # A design tool's "convert text to outlines" leaves a page whose real text layer is clean and whose
+    # codename exists only as shapes. The drawn line is checked; the layer's own lines aren't checked twice.
+    doc = pdf([{"text": ["Spring catalogue", "Courses for every learner, at every level"],
+                "outlined": ["Project Lumen sneak peek"]}])
+    _, review = _submit(client, world, body="See the catalogue", channel="linkedin",
+                        attachments={"documents": [{"id": "cat", "data_base64": b64(doc)}]})
+    leak = next(f for f in review["findings"] if f["category"] == "confidentiality")
+    assert leak["source"] == "doc:cat:p1:drawn" and leak["locator"]["page"] == 1
+    drawn = next(s for s in review["coverage"]["sources"] if s["id"] == "doc:cat:p1:drawn")
+    assert "Lumen" in drawn["text"] and "catalogue" not in drawn["text"].lower()
+
+
+def test_a_headline_outlined_as_one_shape_is_still_read(client, world):
+    from verytas.media.documents import extract_pdf
+
+    doc = pdf([{"text": ["Spring catalogue", "Courses for every learner"], "outlined": ["Project Lumen"],
+                "one_shape": True}])
+    assert extract_pdf(doc).pages[0].graphics_jpeg is not None
+    _, review = _submit(client, world, body="See the catalogue", channel="linkedin",
+                        attachments={"documents": [{"id": "cat", "data_base64": b64(doc)}]})
+    assert any(f["source"] == "doc:cat:p1:drawn" for f in review["findings"])
+
+
+def test_a_screenshot_on_a_drawn_page_is_reported_once(client, world):
+    doc = pdf([{"text": ["Spring catalogue", "Courses for every learner"], "outlined": ["Spring sale"],
+                "image": text_image(["Project Lumen sneak peek"])}])
+    _, review = _submit(client, world, body="See the catalogue", channel="linkedin",
+                        attachments={"documents": [{"id": "cat", "data_base64": b64(doc)}]})
+    leaks = [f["source"] for f in review["findings"] if f["category"] == "confidentiality"]
+    assert leaks == ["doc:cat:p1:img1:ocr"]
+
+
+def test_a_drawn_word_among_layer_words_is_caught_and_ocr_slips_are_not():
+    from verytas.prism.agents import _drawn_only
+
+    known = {"spring", "catalogue", "courses", "for", "every", "learner", "launches"}
+    assert _drawn_only("Lumen launches for every learner", known)
+    assert not _drawn_only("Courses for every leamer.", known)
+    assert not _drawn_only("Spring-catalogue", known)
+
+
+def test_a_word_image_that_cannot_be_read_makes_the_read_partial():
+    import zipfile
+
+    from verytas.media.documents import extract_docx
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("[Content_Types].xml", "<Types/>")
+        zf.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/'
+                    '2006/main"><w:body><w:p><w:r><w:t>Hello there, learners</w:t></w:r></w:p></w:body></w:document>')
+        zf.writestr("word/media/image1.emf", b"\x01\x00\x00\x00" + b"\x00" * 80)
+        zf.writestr("word/media/image2.svg", b'<svg xmlns="http://www.w3.org/2000/svg"><text>Lumen</text></svg>')
+    out = extract_docx(buf.getvalue())
+    assert out.partial and sum("can't be read" in n for n in out.notes) == 2
+
+
+def test_a_plain_text_page_is_not_rendered_again(client, world):
+    doc = pdf([{"text": ["Spring catalogue", "Courses for every learner"]}])
+    _, review = _submit(client, world, body="See the catalogue", channel="linkedin",
+                        attachments={"documents": [{"id": "cat", "data_base64": b64(doc)}]})
+    assert not any(s["id"].endswith(":drawn") for s in review["coverage"]["sources"])
 
 
 def test_a_scanned_pdf_is_rendered_and_read_by_ocr(client, world):
@@ -363,3 +430,13 @@ def test_an_attached_image_is_served_back_to_whoever_can_read_the_piece(client, 
                       ).status_code == 404
     assert client.get(f"/contents/{cid}/versions/999999/images/poster", headers=_auth(world["creator"])
                       ).status_code == 404
+
+
+def test_drawn_pages_past_the_cap_are_reported_partly_read(monkeypatch):
+    from verytas.media import documents
+
+    monkeypatch.setattr(documents, "DRAWN_RENDERS", 1)
+    page = {"text": ["Spring catalogue", "Courses for every learner"], "outlined": ["Spring sale"]}
+    out = documents.extract_pdf(pdf([page, page]))
+    assert out.pages[0].graphics_jpeg is not None and out.pages[1].graphics_jpeg is None
+    assert out.partial and any("page 2: drawn shapes not read" in n for n in out.notes)

@@ -4,8 +4,10 @@ Real-world PDFs are rarely clean. One file can mix pages with a proper text
 layer, pages that are a scanned photo (no selectable text at all) and pages
 with screenshots pasted on top of real text. So each page reports its own
 text layer, its embedded images, and whether it needs to be rendered and read
-by OCR. Text drawn as vector outlines has no text layer either; it is caught
-by the same "too little text, render it" rule.
+by OCR. Text drawn as vector outlines has no text layer either: on a page with
+almost no text it is caught by the "too little text, render it" rule, and on a
+page that also has real text, by rendering any page that draws vector shapes,
+so the review can read what is in the picture but not in the text layer.
 
 A small file can still be a bomb: a 3 KB PDF can declare pages a metre wide,
 a 300 KB Word file can inflate to 90 MB of XML. So every expensive step has a
@@ -22,7 +24,7 @@ import zipfile
 import zlib
 from dataclasses import dataclass, field
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from verytas.media.files import WORK_SIDE, MediaError, flatten, shrink
 
@@ -33,6 +35,12 @@ MIN_IMAGE_SIDE = 48  # icons and rules below this carry no checkable content
 # A page with fewer visible characters than this is treated as scanned.
 SCANNED_CHARS = 25
 RENDER_SCALE = 2.0  # about 144 dpi: enough for OCR, small enough to stay fast
+# A page with real text that draws any vector shape is rendered as well: outlined text and drawn artwork
+# exist only as shapes, and a whole outlined headline can be a single one. Up to this many pages per
+# document; past it the rest are reported as partly read.
+DRAWN_RENDERS = 20
+# Shapes inside nested forms count too, down to this depth.
+SHAPE_DEPTH = 12
 # OCR works at WORK_SIDE anyway, so a page render never needs more than this.
 MAX_RENDER_PIXELS = 4_000_000
 MAX_EMBEDDED_PIXELS = 16_000_000  # one embedded image, as decoded
@@ -66,6 +74,8 @@ class Page:
     images: list[EmbeddedImage] = field(default_factory=list)
     scanned: bool = False
     render_jpeg: bytes | None = None  # set when the page needs OCR
+    # Set when a page with a text layer also draws vector shapes: what is drawn may say more than the layer.
+    graphics_jpeg: bytes | None = None
 
     @property
     def render(self) -> Image.Image | None:
@@ -86,6 +96,7 @@ class _Budget:
         self.pixels = DOC_PIXEL_BUDGET
         self.chars = MAX_DOC_CHARS
         self.images = MAX_IMAGES_TOTAL
+        self.drawn = DRAWN_RENDERS
 
     def take_pixels(self, n: int) -> bool:
         if n > self.pixels:
@@ -205,9 +216,37 @@ def _read_page(pdf, pdfium, i: int, budget: _Budget, out: Extracted) -> Page:
             share = max(0.0, (right - left) * (top - bottom)) / max(1.0, width * height)
             images.append(EmbeddedImage(k + 1, _png(flatten(pil)), (left, bottom, right, top), round(share, 3)))
             budget.images -= 1
-        return Page(i + 1, text, images, False, None)
+        return Page(i + 1, text, images, False, None, _graphics(page, pdfium, i, width, height, budget, out))
     finally:
         page.close()
+
+
+def _graphics(page, pdfium, i: int, width: float, height: float, budget: _Budget, out: Extracted) -> bytes | None:
+    """A render of the page when it draws vector shapes that could hide text or artwork, else None.
+
+    Placed images are painted out of the render: they are read as images on their own, and reading them
+    again here would report a screenshot's text twice."""
+    if next(iter(page.get_objects(filter=(pdfium.raw.FPDF_PAGEOBJ_PATH,), max_depth=SHAPE_DEPTH)), None) is None:
+        return None
+    if budget.drawn <= 0:
+        out.notes.append(f"page {i + 1}: drawn shapes not read, {DRAWN_RENDERS} pages per document are")
+        out.partial = True
+        return None
+    scale = min(RENDER_SCALE, (MAX_RENDER_PIXELS / max(1.0, width * height)) ** 0.5)
+    if not budget.take_pixels(int(width * scale) * int(height * scale)):
+        out.notes.append(f"page {i + 1}: drawn shapes not read, the document's image budget was reached")
+        out.partial = True
+        return None
+    budget.drawn -= 1
+    render = flatten(page.render(scale=scale).to_pil())
+    paint = ImageDraw.Draw(render)
+    for obj in page.get_objects(filter=(pdfium.raw.FPDF_PAGEOBJ_IMAGE,), max_depth=SHAPE_DEPTH):
+        try:
+            left, bottom, right, top = obj.get_bounds()
+        except pdfium.PdfiumError:
+            continue
+        paint.rectangle([left * scale, (height - top) * scale, right * scale, (height - bottom) * scale], fill="white")
+    return _jpeg(render)
 
 
 # --- Word ---------------------------------------------------------------------------------------
@@ -320,7 +359,15 @@ def _docx_images(zf: zipfile.ZipFile, names: dict, budget: _Budget, out: Extract
                 continue
             pil.draft("RGB", (WORK_SIDE, WORK_SIDE))  # JPEG decodes straight to a smaller size
             pil.load()
-        except (OSError, ValueError, Image.DecompressionBombError):
+        except Image.DecompressionBombError:
+            out.notes.append(f"{name.rsplit('/', 1)[-1]} was too large to check")
+            out.partial = True
+            continue
+        except Exception:  # noqa: BLE001, one malformed image (a bad EMF divides by zero in PIL) skips itself
+            # Vector formats (SVG, EMF, WMF) and anything else PIL can't draw can carry text and artwork: say
+            # so, never pass the document as fully read.
+            out.notes.append(f"{name.rsplit('/', 1)[-1]}: an image in a format that can't be read here")
+            out.partial = True
             continue
         images.append(EmbeddedImage(k, _png(flatten(pil))))
         budget.images -= 1
