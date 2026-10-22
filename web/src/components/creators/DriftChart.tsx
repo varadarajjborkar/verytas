@@ -31,9 +31,18 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 
 export function DriftChart({ points }: { points: TrackPoint[] }) {
   const box = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<number | null>(null);
-  // The last point pointed at, where the crosshair rests while it fades, so it never sweeps in from the left.
+  // The last point pointed at, where the crosshair rests while it fades. The glide is off for the first
+  // frame of each hover, so the crosshair and tooltip appear at the point instead of sliding in.
   const [shown, setShown] = useState(0);
-  const pick = (i: number | null) => { setActive(i); if (i != null) setShown(i); };
+  const [glide, setGlide] = useState(false);
+  const pick = (i: number | null) => {
+    if (i != null && active == null) {
+      setGlide(false);
+      requestAnimationFrame(() => requestAnimationFrame(() => setGlide(true)));
+    }
+    setActive(i);
+    if (i != null) setShown(i);
+  };
   const [width, setWidth] = useState(640);
   const [focused, setFocused] = useState<number | null>(null);
   const [touch, setTouch] = useState(false);
@@ -73,7 +82,7 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
             </g>
           ))}
           {/* Drawn at x=0 and moved by transform, so it glides from point to point (attributes don't animate). */}
-          <line x1={0} x2={0} y1={PAD.top} y2={PAD.top + plotH} stroke="var(--vt-line-strong)" className="vt-glide"
+          <line x1={0} x2={0} y1={PAD.top} y2={PAD.top + plotH} stroke="var(--vt-line-strong)" className={glide ? "vt-glide" : undefined}
             style={{ transform: `translateX(${x(shown)}px)`, opacity: a ? 1 : 0 }} />
           <path d={path} fill="none" stroke="var(--vt-accent)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" pathLength={1} className="vt-draw" />
           {points.map((p, i) => {
@@ -106,7 +115,7 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
           ))}
         </svg>
         {a && (
-          <div role="tooltip" className="vt-pop vt-glide pointer-events-none absolute z-10 w-[min(18rem,calc(100%-1rem))] rounded-xl border border-line bg-raised p-3 text-xs shadow-[var(--vt-shadow-pop)]"
+          <div role="tooltip" className={`vt-pop ${glide ? "vt-glide" : ""} pointer-events-none absolute z-10 w-[min(18rem,calc(100%-1rem))] rounded-xl border border-line bg-raised p-3 text-xs shadow-[var(--vt-shadow-pop)]`}
             // Placed by top or bottom, never by transform: the pop-in animation owns transform and would undo it.
             style={{
               left: Math.min(Math.max(0, x(active!) - 144), width - Math.min(288, width - 16)),

@@ -17,6 +17,8 @@ export function TrendBars({ data, series }: {
   const [active, setActive] = useState<number | null>(null);
   // The last day pointed at, so the tooltip fades out where it was instead of jumping home first.
   const [shown, setShown] = useState(0);
+  // Off for the first frame of each hover, so the layer appears under the pointer instead of sliding there.
+  const [glide, setGlide] = useState(false);
   const n = data.length;
   const totals = data.map((d) => d.values.reduce((a, b) => a + b, 0));
   const max = Math.max(1, ...totals);
@@ -28,6 +30,11 @@ export function TrendBars({ data, series }: {
   function point(e: React.PointerEvent<HTMLDivElement>) {
     const box = e.currentTarget.getBoundingClientRect();
     const i = Math.min(n - 1, Math.max(0, Math.floor(((e.clientX - box.left) / box.width) * n)));
+    if (active == null) {
+      setGlide(false);
+      // Two frames: the new position has to be painted before the transition is switched back on.
+      requestAnimationFrame(() => requestAnimationFrame(() => setGlide(true)));
+    }
     setActive(i);
     setShown(i);
   }
@@ -43,7 +50,7 @@ export function TrendBars({ data, series }: {
         <div aria-hidden className="absolute inset-x-0 border-t border-dashed border-line" style={{ bottom: `${(ref / max) * 92}%` }}>
           <span className="absolute -top-2.5 left-0 bg-surface pr-1.5 text-[11px] tabular-nums text-subtle">{ref}</span>
         </div>
-        <div aria-hidden className="vt-glide absolute inset-y-0 left-0 rounded-md bg-sunken"
+        <div aria-hidden className={`${glide ? "vt-glide" : ""} absolute inset-y-0 left-0 rounded-md bg-sunken`}
           style={{ width: `${100 / n}%`, transform: `translateX(${shown * 100}%)`, opacity: active == null ? 0 : 0.8 }} />
         <div className="absolute inset-0 flex items-end gap-1.5 border-b border-line-strong">
           {data.map((d, i) => (
@@ -60,7 +67,7 @@ export function TrendBars({ data, series }: {
           ))}
         </div>
         {at && (
-          <div aria-hidden className="vt-glide pointer-events-none absolute z-10 mb-2 whitespace-nowrap rounded-lg border border-line bg-raised px-2.5 py-1.5 text-xs shadow-[var(--vt-shadow-pop)]"
+          <div aria-hidden className={`${glide ? "vt-glide" : ""} pointer-events-none absolute z-10 mb-2 whitespace-nowrap rounded-lg border border-line bg-raised px-2.5 py-1.5 text-xs shadow-[var(--vt-shadow-pop)]`}
             style={{ left: `${((shown + 0.5) / n) * 100}%`, bottom: `${Math.min(height(shown), 70)}%`, transform: `translateX(${shift})`,
               opacity: active == null ? 0 : 1 }}>
             <p className="font-semibold">{at.label} · {totals[shown]} finding{totals[shown] === 1 ? "" : "s"}</p>
