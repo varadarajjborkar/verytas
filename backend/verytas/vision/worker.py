@@ -8,6 +8,10 @@ worker measures and returns numbers; the review decides what they mean.
 
 Requests carry `X-Vision-Token` matching VERYTAS_VISION_TOKEN. Without a token set, the worker only
 listens on the loopback address.
+
+The models load at start, and /health answers 200 only once they have: whoever woke the instance waits
+for a worker that is ready, not one that will spend its first request loading. Each request touches
+VERYTAS_VISION_STATE/last_used at its start and end, which the instance's idle stop reads.
 """
 
 from __future__ import annotations
@@ -74,19 +78,33 @@ def _image(b64: str) -> Image.Image:
     return img
 
 
-def create_app(models_dir: Path, token: str | None) -> FastAPI:
+def create_app(models_dir: Path, token: str | None, state_dir: Path | None = None,
+               preload: bool = False) -> FastAPI:
     app = FastAPI(title="Verytas vision worker", docs_url=None, redoc_url=None, openapi_url=None)
-    state: dict[str, object] = {"chain": None, "last_used": time.time()}
+    state: dict[str, object] = {"chain": None, "last_used": time.time(), "error": None}
     refs: OrderedDict[str, Reference] = OrderedDict()
     loading = threading.Lock()
 
     def chain() -> Chain:
-        # Loaded on first use, not at start: the instance answers /health while the models load. Two first
-        # requests at once must not load the models twice.
+        # Two first requests (or a request and the preload) must not load the models twice.
         with loading:
             if state["chain"] is None:
                 state["chain"] = Chain(models_dir)
         return state["chain"]  # type: ignore[return-value]
+
+    def touch() -> None:
+        state["last_used"] = time.time()
+        if state_dir is not None:
+            (state_dir / "last_used").touch()
+
+    if preload:
+        def load() -> None:
+            try:
+                chain()
+            except Exception as exc:  # noqa: BLE001, reported by /health; the idle stop still applies
+                state["error"] = f"{type(exc).__name__}: {exc}"[:300]
+
+        threading.Thread(target=load, name="load-models", daemon=True).start()
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
@@ -104,9 +122,14 @@ def create_app(models_dir: Path, token: str | None) -> FastAPI:
         return await call_next(request)
 
     @app.get("/health")
-    def health() -> dict:
-        return {"status": "ok", "models_loaded": state["chain"] is not None,
-                "idle_s": round(time.time() - state["last_used"])}
+    def health():
+        ready = state["chain"] is not None or not preload  # lazily loaded: ready to serve from the start
+        body = {"status": "ok" if ready else "loading", "models_loaded": state["chain"] is not None,
+                "idle_s": round(time.time() - state["last_used"])}  # type: ignore[operator]
+        if state["error"]:
+            body |= {"status": "failed", "error": state["error"]}
+        # Ready only with models in memory, so a wake that sees 200 can send work at once.
+        return body if ready else JSONResponse(body, status_code=503)
 
     def run(body: CharactersIn) -> dict:
         c = chain()
@@ -122,12 +145,12 @@ def create_app(models_dir: Path, token: str | None) -> FastAPI:
                 prepared.append(refs[key])
             t = time.perf_counter()
             scenes = [[asdict(ch) for ch in c.characters(_image(s), prepared, body.prompt)] for s in body.scenes]
-        state["last_used"] = time.time()
+        touch()
         return {"scenes": scenes, "seconds": round(time.perf_counter() - t, 2)}
 
     @app.post("/characters")
     async def characters(body: CharactersIn) -> dict:
-        state["last_used"] = time.time()
+        touch()  # at the start too: a long request is never mistaken for idleness
         return await asyncio.to_thread(run, body)
 
     return app
@@ -140,12 +163,13 @@ def main() -> None:
     p.add_argument("--host", default=None)
     p.add_argument("--port", type=int, default=8100)
     p.add_argument("--models", type=Path, default=Path(os.environ.get("VERYTAS_VISION_MODELS_DIR", ".models")))
+    p.add_argument("--state", type=Path, default=os.environ.get("VERYTAS_VISION_STATE") or None)
     args = p.parse_args()
     token = os.environ.get("VERYTAS_VISION_TOKEN") or None
     host = args.host or ("0.0.0.0" if token else "127.0.0.1")
     if host not in ("127.0.0.1", "localhost") and not token:
         raise SystemExit("set VERYTAS_VISION_TOKEN before listening beyond this machine")
-    uvicorn.run(create_app(args.models, token), host=host, port=args.port, log_level="info")
+    uvicorn.run(create_app(args.models, token, args.state, preload=True), host=host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     vision_worker_url: str | None = None
     vision_worker_token: SecretStr | None = None
     vision_worker_timeout_s: float = Field(150.0, gt=0)
+    # The EC2 instance the worker runs on, when it stops itself when idle: the API starts it on demand
+    # (vision/wake.py) with its own instance role. Unset for a worker that is always on.
+    vision_worker_instance_id: str | None = None
+    # How long a review waits for a stopped worker to boot and load its models (about two minutes).
+    vision_wake_timeout_s: float = Field(240.0, gt=0)
     upload_quota_user_mb: int = Field(default=1024, ge=1)
     upload_quota_workspace_mb: int = Field(default=10 * 1024, ge=1)
     orphan_upload_ttl_h: float = Field(default=24.0, gt=0)

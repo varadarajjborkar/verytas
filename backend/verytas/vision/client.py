@@ -21,6 +21,7 @@ from PIL import Image
 SEND_SIDE = 1280
 # The worker caps one request at 24 scenes; a video's frames go in batches of this size.
 BATCH = 12
+CONNECT_S = 5.0
 
 
 def _private_or_tls(url: str) -> bool:
@@ -87,7 +88,10 @@ class VisionClient:
         self.wake = wake
 
     async def _post(self, body: dict[str, Any]) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.timeout_s, headers=self.headers) as client:
+        # A stopped instance drops packets rather than refusing them: give up connecting in seconds, so the
+        # wake starts at once instead of after the whole request timeout.
+        timeout = httpx.Timeout(self.timeout_s, connect=CONNECT_S)
+        async with httpx.AsyncClient(timeout=timeout, headers=self.headers) as client:
             res = await client.post(f"{self.url}/characters", json=body)
         if res.status_code != 200:
             raise VisionUnavailable(f"vision worker answered {res.status_code}")

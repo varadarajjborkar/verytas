@@ -16,3 +16,6 @@ fastapi==0.152.0
 uvicorn==0.54.0
 pydantic==2.14.1
 httpx==0.28.1
+# SAM2 is built from source with --no-build-isolation, against the torch above, so its build tool is
+# pinned here rather than fetched unpinned into an isolated build.
+setuptools==84.2.0

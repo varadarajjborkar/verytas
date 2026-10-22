@@ -148,3 +148,140 @@ def test_a_long_video_goes_in_batches_in_order(monkeypatch):
     vc = vision_client.VisionClient("http://127.0.0.1:8100", None, 5)
     out = asyncio.run(vc.characters([Image.new("RGB", (8, 8))] * (vision_client.BATCH + 3), []))
     assert sent == [vision_client.BATCH, 3] and len(out) == vision_client.BATCH + 3
+
+
+def test_the_wake_request_is_signed_exactly_as_aws_signs_it():
+    # Expected signature computed once with botocore's SigV4Auth on the same inputs.
+    import datetime as dt
+
+    from verytas.vision.wake import Credentials, signed
+
+    creds = Credentials("AKIDEXAMPLE", "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", "tok/en+=")
+    url, headers, body = signed(creds, "ap-south-1", {"Action": "StartInstances", "Version": "2016-11-15",
+                                                      "InstanceId.1": "i-0abc"},
+                                dt.datetime(2026, 10, 23, 1, 2, 3, tzinfo=dt.UTC))
+    assert url == "https://ec2.ap-south-1.amazonaws.com/"
+    assert body == "Action=StartInstances&InstanceId.1=i-0abc&Version=2016-11-15"
+    assert headers["authorization"].endswith(
+        "Signature=920f849018daccfec3c33d0bcc90ad5426d0f0c880c72cc6a9fbd36e3fc5497c")
+
+
+def test_a_worker_that_is_already_up_is_not_started_again(monkeypatch):
+    from verytas.vision import wake
+
+    async def healthy(self, client):
+        return True
+
+    async def never(client):
+        raise AssertionError("no credentials needed when the worker answers")
+
+    monkeypatch.setattr(wake.Waker, "_healthy", healthy)
+    monkeypatch.setattr(wake, "instance_credentials", never)
+    asyncio.run(wake.Waker("i-0abc", "http://10.0.0.5:8100/health")())
+
+
+def _fake_aws(monkeypatch, *, start_answers, healthy_after=1, metadata_role=True):
+    """A Waker against a fake EC2 and worker: StartInstances replies in order, /health turns 200 after
+    `healthy_after` polls once started."""
+    from verytas.vision import wake
+
+    calls = {"start": 0, "health": 0, "started": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "169.254.169.254" in url:
+            if url.endswith("/api/token"):
+                return httpx.Response(200, text="imds-token")
+            if url.endswith("/security-credentials/"):
+                return httpx.Response(200, text="verytas-api") if metadata_role else httpx.Response(404, text="")
+            if "/security-credentials/" in url:
+                return httpx.Response(200, json={"AccessKeyId": "AK", "SecretAccessKey": "SK", "Token": "T"})
+            return httpx.Response(200, text="ap-south-1")
+        if "ec2.ap-south-1.amazonaws.com" in url:
+            status, text = start_answers[min(calls["start"], len(start_answers) - 1)]
+            calls["start"] += 1
+            calls["started"] = calls["started"] or status == 200
+            return httpx.Response(status, text=text)
+        calls["health"] += 1
+        ok = calls["started"] and calls["health"] > healthy_after
+        return httpx.Response(200 if ok else 503)
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(wake.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+
+    async def no_wait(_):
+        return None
+
+    monkeypatch.setattr(wake.asyncio, "sleep", no_wait)
+    return wake, calls
+
+
+def test_a_stopped_worker_is_started_and_awaited(monkeypatch):
+    wake, calls = _fake_aws(monkeypatch, start_answers=[(200, "<ok/>")], healthy_after=3)
+    asyncio.run(wake.Waker("i-0abc", "http://10.0.0.5:8100/health", timeout_s=60)())
+    assert calls["start"] == 1 and calls["health"] >= 4
+
+
+def test_a_worker_still_stopping_is_started_once_it_can_be(monkeypatch):
+    stopping = (400, "IncorrectInstanceState")
+    wake, calls = _fake_aws(monkeypatch, start_answers=[stopping, stopping, (200, "<ok/>")])
+    asyncio.run(wake.Waker("i-0abc", "http://10.0.0.5:8100/health", timeout_s=60)())
+    assert calls["start"] == 3
+
+
+def test_a_refused_start_fails_and_the_next_review_does_not_retry_at_once(monkeypatch):
+    wake, calls = _fake_aws(monkeypatch, start_answers=[(403, "UnauthorizedOperation")])
+    w = wake.Waker("i-0abc", "http://10.0.0.5:8100/health", timeout_s=60)
+    with pytest.raises(httpx.HTTPError):
+        asyncio.run(w())
+    with pytest.raises(httpx.HTTPError, match="moments ago"):
+        asyncio.run(w())
+    assert calls["start"] == 1
+
+
+def test_no_instance_role_is_a_wake_failure_not_a_crash(monkeypatch):
+    wake, _ = _fake_aws(monkeypatch, start_answers=[(200, "<ok/>")], metadata_role=False)
+    with pytest.raises(httpx.HTTPError):
+        asyncio.run(wake.Waker("i-0abc", "http://10.0.0.5:8100/health", timeout_s=60)())
+
+
+def test_a_worker_that_never_answers_times_out(monkeypatch):
+    wake, _ = _fake_aws(monkeypatch, start_answers=[(200, "<ok/>")], healthy_after=10**9)
+    with pytest.raises(httpx.TimeoutException):
+        asyncio.run(wake.Waker("i-0abc", "http://10.0.0.5:8100/health", timeout_s=0.05)())
+
+
+def test_the_client_wakes_once_then_sends(monkeypatch):
+    sent, woke = [], []
+
+    async def post(self, body):
+        sent.append(1)
+        if len(sent) == 1:
+            raise httpx.ConnectTimeout("stopped")
+        return {"scenes": [[] for _ in body["scenes"]]}
+
+    async def wake():
+        woke.append(1)
+
+    monkeypatch.setattr(vision_client.VisionClient, "_post", post)
+    vc = vision_client.VisionClient("http://10.0.0.5:8100", None, 5, wake=wake)
+    assert asyncio.run(vc.characters([Image.new("RGB", (8, 8))], [])) == [[]]
+    assert sent == [1, 1] and woke == [1]
+
+
+def test_the_worker_reports_loading_until_its_models_are_in(monkeypatch, tmp_path):
+    import time as _t
+
+    class SlowChain(FakeChain):
+        def __init__(self, models_dir, device="cpu"):
+            _t.sleep(0.3)
+            super().__init__(models_dir, device)
+
+    monkeypatch.setattr(worker, "Chain", SlowChain)
+    app = worker.create_app(tmp_path, token="s3cret", state_dir=tmp_path, preload=True)
+    with TestClient(app) as c:
+        assert c.get("/health").status_code == 503
+        _t.sleep(0.5)
+        assert c.get("/health").status_code == 200
+        c.post("/characters", json={"scenes": [_b64()]}, headers={"X-Vision-Token": "s3cret"})
+    assert (tmp_path / "last_used").exists()

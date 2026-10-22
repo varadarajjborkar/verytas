@@ -179,6 +179,18 @@ class Prism:
                     review.finished_at = utcnow()
                     await session.commit()
 
+    def _waker(self):
+        """One waker per process, so concurrent reviews share a single start of the worker instance."""
+        if not self.settings.vision_worker_instance_id or not self.settings.vision_worker_url:
+            return None
+        if getattr(self, "_vision_waker", None) is None:
+            from verytas.vision.wake import Waker
+
+            self._vision_waker = Waker(self.settings.vision_worker_instance_id,
+                                       f"{self.settings.vision_worker_url.rstrip('/')}/health",
+                                       self.settings.vision_wake_timeout_s)
+        return self._vision_waker
+
     async def _review(self, session: AsyncSession, review_id: int) -> None:
         review = await session.get(Review, review_id)
         version = await session.scalar(
@@ -249,7 +261,7 @@ class Prism:
             try:
                 run.characters = VisionClient(self.settings.vision_worker_url,
                                               token.get_secret_value() if token else None,
-                                              self.settings.vision_worker_timeout_s)
+                                              self.settings.vision_worker_timeout_s, wake=self._waker())
             except ValueError as exc:
                 run.notes.append(f"vision worker not used: {exc}")
         # Offers and off-the-record contact in the note go to a person whatever the model makes of it.
