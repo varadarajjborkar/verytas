@@ -446,6 +446,42 @@ Findings so far, all fixed with regression tests (`backend/tests/test_blackbox_r
 
 On a 216-case offline campaign, core recall rose from 78% to 96% and false positives on controls fell from 7% to 0%.
 
+## 23. Multimodal intake and the agent tree
+
+Posts are rarely just text. Prism plans a review from what the submission contains and delegates recursively (`prism/agents.py`):
+
+| Part | Agent | Children it may spawn |
+|---|---|---|
+| Caption / typed text | text agent | rule checks, claim verifier, semantic judge |
+| Image | image agent | OCR agent (local RapidOCR, vision fallback when confidence is low), asset matcher, scene reader, then a text agent for any text found |
+| PDF or Word file | document agent | one page agent per page |
+| Page | page agent | text agent for the text layer; image agent for a scanned page (rendered at about 144 dpi, because it has no text layer); image agent per pasted screenshot |
+| Video | video agent | burned-in captions (frame OCR on text-edge change), subtitle tracks, speech (local Whisper with voice detection), keyframes (asset matcher plus one contact sheet for the vision model) |
+
+Depth (8) and agent count (200) are capped per review. Every node records role, status, timing and findings and is returned with the review; anything cut off, timed out or crashed is a "not checked" gap that blocks approval without a noted override. Findings from derived text carry their source and a locator (image, page, pixel box, video time), sealed into the signature.
+
+**Privacy order:** local OCR runs first, so confidential terms inside an image are blacked out in the pixels (`media/pixels.py`) before any image or video contact sheet reaches the cloud vision model. Confidential-tier content is never sent as pixels at all, and restricted brand assets are never sent as references.
+
+**Brand assets as ground truth** (`media/assets.py`): SIFT keypoints with Lowe's ratio test and a RANSAC homography locate official artwork even scaled or rotated. The match is warped back into the asset's frame and compared cell by cell (SSIM for structure, a blurred 90th-percentile Lab distance for colour), which catches the small details AI redraws get wrong. For assets registered as a part only (a mascot's face), the connected foreground outside the matched box measures whether a body has been attached. Wordmarks are checked against their registered spelling, including digit-for-letter swaps. The vision model adds what pixels can't (an off-model imitation, what the extra parts are), and its opinion alone never blocks.
+
+## 24. Context layers, the creator's note, disputes and learning
+
+**Context layers** (`prism/onion.py`) read for implication rather than wording: two or three paragraphs at a time, then the whole post with the first layer's candidates, then caption plus image text plus scene descriptions. A candidate must quote text that exists in the named source and pass an independent judge question; Hinglish and other language-dependent readings are explicit.
+
+**The creator's note** is a separate realm (`prism/intent.py`). No check reads it. After findings exist, it is weighed against model-judged findings only, by a step whose verdict is checked by a judge that never sees the note. A far-fetched reading is capped at advisory pending a reviewer; a likely one stands with a suggestion that keeps the creator's intent; a note that reveals a problem or tries to steer the review is escalated to the social media manager.
+
+**Disputes** (`prism/disputes.py`) re-judge a finding at four layers (sentence, paragraph, source, everything) with the claim kept away from the judge. Overturned only when every layer and the reasoning step agree the reading is far-fetched; upheld when any layer says a reader would likely see it; escalated in between. Mechanical findings are facts about the content and cannot be overturned by a claim. Resubmission chains disputes before the re-review, so an overturned reading is not raised at full weight again.
+
+**Learning:** each model-judged rule's precision gets a Beta posterior from overturned and upheld disputes and from reviewer decisions; its flag threshold moves within a bounded band (+0.15 to -0.05), so feedback tunes a rule but can never switch it off.
+
+## 25. Intake profiling
+
+Social content is short, so a 300-page PDF behind a caption, a 40 MP image or invisible characters in a caption are irregular and costly to scan (`media/profile.py`). Each channel has two thresholds, typical (irregular: a reason is required) and the platform limit (the post cannot be published as is), as of October 2026 and kept as data. With a reason the upload is accepted, scanned in full up to Verytas's processing caps, and scored with an irregular-input finding. The profile also flags data appended after an image's end, GPS location in EXIF, and active content in PDFs (JavaScript, launch actions, embedded files).
+
+## 26. Fit with Inkloom
+
+Inkloom builds specialised AI models for logo design (public site and repository; see `docs/research/inkloom.md`). The failure mode of generated brand marks is fidelity: lettering garbled, details changed, colours drifting. Sections 23 and 24 address exactly that: registered official artwork is ground truth, matched and compared at the pixel level, wordmarks are spell-checked, and look-alikes are surfaced. The same pipeline governs the social content those marks end up in.
+
 ## References
 
 - Min et al. (2023). *FActScore: Fine-grained Atomic Evaluation of Factual Precision in Long Form Text Generation.* EMNLP.

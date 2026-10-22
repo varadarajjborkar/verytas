@@ -6,11 +6,12 @@ Built for the Inkloom AI brand-governance challenge. Brief: [`docs/problem-state
 
 ## What it does
 
-- **Checks every draft** for banned and preferred wording, brand casing, leaked codenames, outdated or inflated statistics, unsupported superlatives, tone, and accessibility (alt text, contrast, hashtags, link text, readability).
-- **Verifies claims against approved facts** with validity windows, so last year's number is flagged as outdated rather than passed.
-- **Explains and fixes.** Each finding cites the rule or fact it rests on. Fixes are minimal edits, kept only if an intent check says the message and call to action survived.
-- **Keeps humans in charge.** A draft, review, approve, publish workflow, where blockers (including checks that could not run) need an explicit, noted override.
-- **Shows where the brand book is weak.** Guideline health ranks rules by override rate, reviewer disagreement and "unclear" feedback.
+- **Reads everything a post contains.** The caption, images (with local OCR), PDFs and Word files page by page (text layers, scanned pages and screenshots pasted inside them), and video (burned-in captions, on-screen text, subtitle tracks and speech).
+- **Checks it all the same way** for banned and preferred wording, brand casing, leaked codenames, outdated or inflated statistics, unsupported claims, tone, AI-disclosure labels and accessibility.
+- **Guards the brand's own artwork.** Official logos and mascots are ground truth: altered details, garbled wordmarks, look-alikes and bodies attached to an approved face are flagged, with the pixel region.
+- **Reads between the lines.** Context layers widen from a paragraph to the whole post to caption plus image, catching indirect taunts, sarcasm and meanings that depend on the language (Hinglish included).
+- **Explains, fixes and keeps humans in charge.** Every finding cites its rule or fact. Creators work through a P1/P2/P3 checklist, apply fixes, dispute misreadings and resubmit; blockers and unread content need a noted override.
+- **Learns from the people using it.** Disputes and reviewer decisions tune how sure each model-judged rule must be, and guideline health shows which rules are unclear.
 
 ## Architecture
 
@@ -18,44 +19,49 @@ Built for the Inkloom AI brand-governance challenge. Brief: [`docs/problem-state
 flowchart TB
     subgraph Clients
         direction LR
-        UI["Web app<br/>dashboard, review, ask"]:::client
+        UI["Web app<br/>review, dashboard, ask"]:::client
         BB["Black-box simulator<br/>tests via API only"]:::sim
     end
 
-    API["REST API<br/>auth, roles, clearance"]:::api
-    DB[("Knowledge store<br/>rules, facts, terms")]:::data
+    API["REST API<br/>auth, roles, intake check"]:::api
+    DB[("Knowledge store<br/>rules, facts, terms, assets")]:::data
+    NOTE["Creator's note<br/>kept apart from checks"]:::note
 
-    subgraph Pipeline["Review pipeline"]
+    subgraph Pipeline["Prism: agents spawned per part"]
         direction LR
-        PRISM["Prism orchestrator<br/>plans and guards workers"]:::core
-        DET["Rule checks<br/>terms, leaks, a11y"]:::check
-        CLM["Claim verifier<br/>facts with dates"]:::check
-        SEM["Semantic judge<br/>tone and messaging"]:::check
-        FIX["Explain and fix<br/>minimal edits"]:::core
-        PRISM --> DET & CLM & SEM --> FIX
+        TXT["Text agent<br/>caption, page text"]:::check
+        IMG["Image agent<br/>OCR, assets, scene"]:::check
+        DOC["Document agent<br/>page agents"]:::check
+        VID["Video agent<br/>captions, speech, frames"]:::check
+        ONION["Context layers<br/>paragraph to post"]:::core
+        DOC --> IMG
+        VID --> TXT
+        IMG --> TXT
     end
 
     subgraph Models["Model access"]
         direction LR
-        RED["Redaction<br/>secrets and PII removed"]:::sec
-        LLM["Ollama Cloud<br/>gpt-oss 120b and 20b"]:::ext
+        RED["Redaction<br/>text and pixels"]:::sec
+        LLM["Ollama Cloud<br/>gpt-oss, gemma4 vision"]:::ext
         RED --> LLM
     end
 
     subgraph Governance
         direction LR
-        SIG["Signed findings<br/>Ed25519"]:::sec
-        FLOW["Approval workflow<br/>blocker gate"]:::api
+        SIG["Signed findings<br/>P1, P2, P3"]:::sec
+        FLOW["Checklist and approval<br/>disputes, resubmit"]:::api
         AUD["Audit chain<br/>hash-linked log"]:::sec
-        INS["Insights<br/>guideline health"]:::api
+        LEARN["Learning<br/>rule thresholds, health"]:::api
         SIG --> FLOW --> AUD
-        FLOW --> INS
+        FLOW --> LEARN
     end
 
     Clients --> API --> Pipeline
     DB --> Pipeline
     Pipeline -. "model calls" .-> Models
     Pipeline --> Governance
+    NOTE -. "read only after findings" .-> Governance
+    LEARN -. "feeds back" .-> Pipeline
 
     style Clients fill:#f8fafc,stroke:#94a3b8,color:#334155
     style Pipeline fill:#f8fafc,stroke:#94a3b8,color:#334155
@@ -70,18 +76,19 @@ flowchart TB
     classDef sec fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
     classDef data fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef ext fill:#f3f4f6,stroke:#6b7280,color:#111827
+    classDef note fill:#fff7ed,stroke:#ea580c,color:#7c2d12,stroke-dasharray: 4 3
 ```
 
-**Legend:** blue = clients · purple = API and workflow · indigo = orchestration · green = checks · red = security · amber = data · grey = external models · pink = test harness
+**Legend:** blue = clients · purple = API, workflow and learning · green = agents per content type · indigo = context layers · red = security · amber = data · grey = external models · dashed orange = the creator's note, a separate realm · pink = test harness
 
 ### How a review flows
 
-1. A creator submits a draft. The API checks their role and clearance, stores a new version and queues a review.
-2. **Prism** loads only the rules and facts the content's tier may see, then fans out to three stateless workers under timeouts and circuit breakers.
-3. **Rule checks** are deterministic and Unicode-aware. The **claim verifier** extracts claims and compares every figure with the approved fact for that date. The **semantic judge** answers per-rule yes/no and tone-level questions with probabilities.
-4. Confidential terms and personal data are **redacted** before any text reaches a model.
-5. Model-judged findings get a plain explanation and a minimal fix, which is dropped unless the meaning survives. Every finding is **signed**, so a level or fix edited in the database fails verification.
-6. Reviewers accept, reject or edit each finding. Approval is gated on blockers and on checks that didn't run, and every action lands in the **hash-chained audit log**.
+1. A creator uploads a caption plus any images, documents and video. Before anything is accepted, the intake check compares it with what the channel normally carries (caption length, page count, image size, video length, hidden characters). Anything irregular needs a reason, and still counts against the score.
+2. **Prism** loads the rules, facts and official assets the content's tier may see, then spawns an agent per part. Agents spawn their own: a PDF gets a page agent per page, each pasted screenshot an image agent, each image its OCR, asset and scene agents, and every piece of text found a text agent running the same checks as typed text. Depth and agent counts are capped; anything cut off is reported as not checked.
+3. Text is read locally first. Confidential terms are **blacked out in the pixels** before any image or video frame reaches the vision model, and redacted from all text sent to a model. Confidential-tier content never leaves the machine as pixels.
+4. **Context layers** then read the whole submission, from paragraphs to the full post to caption plus images. Each candidate must quote real text and pass an independent judge question.
+5. Only now is the **creator's note** weighed, and only against model-judged findings. It can cap a far-fetched reading at advisory, never clear a mechanical one; a note that tries to steer the review is escalated.
+6. Findings are **signed**, ordered P1 to P3, and shown as a checklist. Creators tick what they fixed, apply suggestions, dispute misreadings and resubmit. Disputes are re-judged layer by layer without the claim in view, and the system can still say no. Every step lands in the **hash-chained audit log**, and outcomes tune each rule's threshold.
 
 ## Tested from the outside
 
@@ -95,7 +102,7 @@ On a 216-case campaign, core recall rose from 78% to 96%, false positives on con
 | --- | --- |
 | `backend/` | FastAPI service: checks, Prism, workflow, insights, security (Python 3.12+) |
 | `web/` | Next.js 16 on OpenUI: dashboard, review workspace, guideline health, Ask Verytas |
-| `blackbox/` | Black-box reality simulator and its reports |
+| `blackbox/` | Black-box reality simulator: invents brands, writes posts, images, PDFs and video, grades Verytas |
 | `docs/` | Problem statement, architecture, submission checklist |
 
 ## Run locally
@@ -121,7 +128,9 @@ On first run, `POST /bootstrap` creates the workspace and returns an admin token
 
 | Service | Used for | When |
 | --- | --- | --- |
-| Ollama Cloud (`gpt-oss:120b`, `gpt-oss:20b`) | claim extraction, explanations, fixes, the semantic judge, Ask Verytas, simulator content | when `OLLAMA_API_KEY` is set |
+| Ollama Cloud (`gpt-oss:120b`, `gpt-oss:20b`) | claim extraction, explanations, fixes, the semantic judge, context layers, disputes, Ask Verytas, simulator content | when `OLLAMA_API_KEY` is set |
+| Ollama Cloud (`gemma4:31b`) | image and video-frame understanding, asset comparison, OCR fallback | when `OLLAMA_API_KEY` is set; never for confidential-tier content |
+| RapidOCR, faster-whisper, OpenCV, pdfium (local) | OCR, speech-to-text, asset matching, PDF rendering | always local; nothing leaves the machine |
 | TypeSafe Jev (`jev-1.13.0`) | semantic judge, if preferred | optional, when `TYPESAFE_API_KEY` is set |
 | Anthropic Claude | alternative LLM backend | only with `VERYTAS_LLM_BACKEND=claude` |
 | Sentry | error monitoring, without request bodies or PII | only when `SENTRY_DSN` is set |
