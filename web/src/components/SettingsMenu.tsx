@@ -153,8 +153,9 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
       <div className="vt-backdrop absolute inset-0 bg-[color-mix(in_srgb,var(--vt-bg)_45%,transparent)] backdrop-blur-[6px]"
         onClick={onClose} aria-hidden />
       <div ref={panel} role="dialog" aria-modal="true" aria-labelledby={titleId}
-        className="vt-pop relative flex max-h-[min(36rem,calc(100dvh-2rem))] w-full max-w-[30rem] flex-col overflow-hidden rounded-2xl border border-line bg-raised shadow-[var(--vt-shadow-pop)]">
-        <div className="flex items-center justify-between px-5 pb-3 pt-4">
+        // One fixed size (60% of the window wide, 70% tall) so switching tabs never resizes it.
+        className="vt-pop relative flex h-[min(70dvh,calc(100dvh-2rem))] min-h-[24rem] w-full max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-line bg-raised shadow-[var(--vt-shadow-pop)] md:w-[60vw] md:max-w-[64rem]">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
           <h2 id={titleId} className="text-base font-semibold">Settings</h2>
           <button type="button" onClick={onClose} aria-label="Close settings"
             className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-sunken hover:text-ink">
@@ -162,20 +163,23 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div role="tablist" aria-label="Settings sections" className="mx-5 grid grid-cols-3 gap-1 rounded-xl bg-sunken p-1 text-[13px] font-medium"
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <div role="tablist" aria-label="Settings sections" aria-orientation="vertical"
+          className="mx-5 mt-4 grid grid-cols-3 gap-1 rounded-xl bg-sunken p-1 text-[13px] font-medium md:m-0 md:flex md:w-52 md:shrink-0 md:flex-col md:gap-0.5 md:rounded-none md:border-r md:border-line md:bg-transparent md:p-3"
           onKeyDown={(e) => arrows(e, TABS.map((t) => t.value), tab, setTab)}>
           {TABS.map((t, i) => (
             <button key={t.value} role="tab" type="button" aria-selected={tab === t.value} onClick={() => setTab(t.value)}
               id={`${ids}-tab-${t.value}`} aria-controls={`${ids}-panel`} tabIndex={tab === t.value ? 0 : -1}
               data-autofocus={i === 0 ? true : undefined}
-              className={`rounded-lg px-2 py-1.5 transition ${tab === t.value ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
+              className={`rounded-lg px-2 py-1.5 transition md:px-3 md:py-2 md:text-left md:text-sm ${tab === t.value
+                ? "bg-raised text-ink shadow-[var(--vt-shadow)] md:bg-accent/12 md:shadow-none" : "text-muted hover:text-ink md:hover:bg-sunken"}`}>
               {t.label}
             </button>
           ))}
         </div>
 
         <div id={`${ids}-panel`} role="tabpanel" aria-labelledby={`${ids}-tab-${tab}`}
-          className="min-h-0 flex-1 overflow-auto px-5 pb-5 pt-4">
+          className="min-h-0 flex-1 overflow-auto px-5 pb-5 pt-4 md:px-7 md:py-6">
           {tab === "profile" && (
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-3">
@@ -234,6 +238,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
               ))}
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>,
