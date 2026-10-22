@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -29,6 +30,9 @@ _ACCEPTED = ("image/", "video/", "application/pdf", "application/vnd.openxmlform
 # Uploads are read whole into memory once, so cap the request before reading.
 _UPLOAD_CAP = 150 * 1024 * 1024
 _METRICS_DEADLINE = 30  # seconds
+# A read that times out keeps its thread until it finishes, so metrics get their own two threads: a run
+# of slow files queues here instead of starving the default pool every other blocking call shares.
+_METRICS_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="media-metrics")
 
 
 @router.post("/media", response_model=MediaOut, status_code=status.HTTP_201_CREATED)
@@ -55,7 +59,8 @@ async def upload(session: Session, user: Writer, file: Annotated[UploadFile, Fil
     # The upload is stored by now; its metrics are a courtesy, so a file that is slow to read gets none
     # rather than holding the request (the review that reads it in full has its own deadline).
     try:
-        metrics = await asyncio.wait_for(asyncio.to_thread(_metrics, kind, raw), _METRICS_DEADLINE)
+        metrics = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(_METRICS_POOL, _metrics, kind, raw),
+                                         _METRICS_DEADLINE)
     except TimeoutError:
         metrics = {"error": "the file took too long to read"}
     return MediaOut(id=blob.id, media_type=kind, name=blob.name, bytes=len(raw), sha256=digest, metrics=metrics)
