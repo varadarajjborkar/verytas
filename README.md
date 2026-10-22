@@ -200,6 +200,12 @@ flowchart LR
 - **Over 320 backend tests** run fully offline in about 25 seconds, plus type checks, lint and a production build for the web apps, all on every push.
 - **Tested from the outside.** [`blackbox/`](blackbox/README.md) is a simulator that knows Verytas only through its API. It invents brands, writes posts, images, PDFs and video with planted violations, and steers each round toward what Verytas misses. Across a 216-case campaign, recall on core checks rose **from 78% to 96%**, false alarms on clean posts fell **from 7% to 0%**, and server errors fell **from 17 to 0**, even at 32 parallel submissions.
 
+## What comes next
+
+- **One-on-one meetings.** A creator asks the manager who looks after them for a meeting by chat, voice or video; the manager accepts or proposes another time or way. Calls go through temporary masked numbers, the way delivery apps connect a rider and a customer, and only the time, the way and an outcome note go on the record. It is designed and previewed in both apps (marked *Planned*), not built: in a demo one person plays both sides, and masked calling needs a paid telephony provider.
+- **Self-hosted vision and video models** on a GPU that wakes on demand, so confidential artwork never leaves the brand's own cloud.
+- **Finer image and video decomposition:** layout regions, logo placement and scene-by-scene checks in place of whole-frame reads.
+
 ## Run it locally
 
 ```bash

@@ -7,6 +7,7 @@ import type { ContentRow, Person, TimelineItem } from "@/lib/types";
 import { ArrowRightIcon, ChatIcon, PlusIcon } from "../Icons";
 import { StageDots } from "../Journey";
 import { useViewer } from "../Viewer";
+import { MeetingPreview } from "../MeetingPreview";
 import { Panel } from "../ui";
 import { useOnRefresh } from "@/lib/refresh";
 
@@ -130,6 +131,8 @@ export function CreatorHome() {
             : <PieceList rows={groups.done.slice(0, 6)} />}
         </Panel>
       </div>
+
+      <MeetingPreview side="creator" />
     </div>
   );
 }
