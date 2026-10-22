@@ -330,3 +330,49 @@ export type EventImpact = { content_id: number; title: string; revision: number;
 
 export type PublicContact = { id: number; kind: "phone" | "email" | "handle" | "url"; value: string; normalized: string;
   label: string | null; source_ref: string | null; active: boolean };
+
+/** A creator on the brand team's roster (GET /insights/creators). */
+export type CreatorRow = {
+  id: number;
+  name: string;
+  role: "creator";
+  pieces: number;
+  by_status: Partial<Record<ContentStatus, number>>;
+  open_escalations: number;
+  last_at: string | null;
+};
+
+/** One piece on a creator's line: as sent, scored by its first review. */
+export type TrackPoint = {
+  content_id: number;
+  title: string;
+  channel: string;
+  status: ContentStatus;
+  at: string;
+  /** 40 per must-fix, 15 per should-fix, 4 per note, capped at 100. Zero is on brand. */
+  distance: number;
+  blockers: number;
+  warnings: number;
+  advisories: number;
+  /** Categories where tone or topic drift was found ("tone", "messaging"). */
+  drift: string[];
+  issues: { category: string; title: string; level: "blocker" | "warning" | "advisory" }[];
+  summary: string;
+  event: string | null;
+};
+
+export type CreatorTrack = {
+  person: { id: number; name: string; role: string };
+  stats: {
+    pieces: number;
+    reviewed: number;
+    on_brand_as_sent: number;
+    published: number;
+    in_review: number;
+    changes_requested: number;
+    open_escalations: number;
+    average_distance: number | null;
+  };
+  categories: Record<string, number>;
+  points: TrackPoint[];
+};

@@ -121,7 +121,7 @@ export const WIDGETS: Record<string, WidgetDef> = {
   },
   creators: {
     title: "Your creators", blurb: "Each creator's pieces, what is waiting and how clean they arrive.", size: "half",
-    link: { href: "/review?queue=all&group=creator", label: "By creator" },
+    link: { href: "/creators", label: "All creators" },
     render: (d) => {
       if (d.demo) return <NeedsApi />;
       if (!d.rows) return <Skeleton rows={4} />;
@@ -151,7 +151,7 @@ export const WIDGETS: Record<string, WidgetDef> = {
             {list.map((c) => (
               <tr key={c.id}>
                 <td className="truncate py-2">
-                  <Link href={`/review?queue=all&creator=${c.id}`} className="font-medium hover:text-accent">{c.name}</Link>
+                  <Link href={`/creators?id=${c.id}`} className="font-medium hover:text-accent">{c.name}</Link>
                   <span className="block text-[11px] text-subtle">{c.back ? `${c.back} sent back · ` : ""}active {relativeTime(c.last)}</span>
                 </td>
                 <td className="py-2 text-right tabular-nums">{c.total}</td>
