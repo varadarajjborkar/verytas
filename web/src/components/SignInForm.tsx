@@ -5,8 +5,9 @@ import { useState } from "react";
 
 export function SignInForm() {
   const asked = useSearchParams().get("next");
-  // Only same-site paths, so the form can't be used to bounce people elsewhere.
-  const next = asked && asked.startsWith("/") && !asked.startsWith("//") ? asked : "/";
+  // Only same-site paths, so the form can't bounce people elsewhere. Browsers read "/\evil.com"
+  // as "//evil.com" and drop tabs and newlines, so those are refused with the "//" form.
+  const next = asked && /^\/(?![/\\])/.test(asked) && !/[\\\s\u0000-\u001f]/.test(asked) ? asked : "/";
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

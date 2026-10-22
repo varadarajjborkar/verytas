@@ -10,8 +10,18 @@ export async function GET() {
   return Response.json({ required: signinRequired });
 }
 
+/** Same-site JSON only. Without this a page elsewhere could post a form (text/plain needs
+ * no preflight) and sign the visitor in as the attacker, so their drafts land in the
+ * attacker's workspace. */
+function crossSite(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  if (origin && new URL(origin).host !== new URL(request.url).host) return true;
+  return !(request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json");
+}
+
 /** Sign in: the token is checked against the API before it is stored. */
 export async function POST(request: Request) {
+  if (crossSite(request)) return Response.json({ error: "Sign in from this console." }, { status: 403 });
   if (!API_URL) return Response.json({ error: "No Verytas API is configured; this console runs on demo data." }, { status: 503 });
   const parsed = Input.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "That doesn't look like a Verytas token." }, { status: 400 });
@@ -31,7 +41,9 @@ export async function POST(request: Request) {
   return Response.json(await res.json());
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  const origin = request.headers.get("origin");
+  if (origin && new URL(origin).host !== new URL(request.url).host) return new Response(null, { status: 403 });
   (await cookies()).delete(SESSION_COOKIE);
   return new Response(null, { status: 204 });
 }
