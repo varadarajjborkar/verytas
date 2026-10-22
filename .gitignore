@@ -37,3 +37,4 @@ cred*.txt
 # Black-box simulator memory and reports (local)
 blackbox/.runs/
 .keys-demo/
+.keys-*/

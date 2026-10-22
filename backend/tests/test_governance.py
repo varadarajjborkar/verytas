@@ -83,7 +83,8 @@ def test_a_creator_escalates_and_the_brand_team_decides_with_the_record_beside_i
     assert client.post(f"/escalations/{row['id']}/resolve", headers=_auth(approver),
                        json={"outcome": "cleared"}).status_code == 422
     done = client.post(f"/escalations/{row['id']}/resolve", headers=_auth(approver),
-                       json={"outcome": "cleared", "reason_code": "not_applicable", "note": "Public since the keynote."})
+                       json={"outcome": "cleared", "reason_code": "not_applicable",
+                             "note": "Public since the keynote."})
     assert done.status_code == 200 and done.json()["resolution"]["by"]["name"] == "Approver"
 
     decisions = next(x for x in _findings(client, creator, made["review_id"]) if x["id"] == f["id"])["decisions"]
@@ -131,7 +132,8 @@ def test_only_listed_numbers_may_appear_in_a_post(client, world):
     assert client.post("/public-contacts", headers=admin,
                        json={"kind": "phone", "value": "022-4000-1234"}).status_code == 409
     listed = _post(client, world["creator"], "Questions? Call our support line on +91 22 4000 1234 today.")
-    assert not [x for x in _findings(client, world["creator"], listed["review_id"]) if x["category"] == "confidentiality"]
+    found = _findings(client, world["creator"], listed["review_id"])
+    assert not [x for x in found if x["category"] == "confidentiality"]
     unlisted = _post(client, world["creator"], "Questions? Call Rohan directly on 98200 12345 any time.")
     hits = [x for x in _findings(client, world["creator"], unlisted["review_id"])
             if x["title"].startswith("Phone number")]
@@ -160,7 +162,8 @@ def test_an_event_reaches_reviews_and_rechecks_pieces_in_flight(client, world):
     assert client.post("/events", headers=_auth(creator), json={
         "name": "Mine", "starts_on": today.isoformat()}).status_code == 403
 
-    tagged = _post(client, creator, "The cheapest courses in town, this week only.", title="Sale post", event_id=ev["id"])
+    tagged = _post(client, creator, "The cheapest courses in town, this week only.", title="Sale post",
+                   event_id=ev["id"])
     codes = {x["citations"][0]["label"].split(" ")[0] for x in _findings(client, creator, tagged["review_id"])
              if x["citations"]}
     assert f"EVT-{ev['id']}-AVOID" in codes and f"EVT-{ev['id']}-TAGS" in codes
