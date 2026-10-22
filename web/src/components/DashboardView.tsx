@@ -1,13 +1,13 @@
 "use client";
 
-import { PieChart } from "@openuidev/react-ui";
 import Link from "next/link";
 import type { Overview, Recurring, RuleHealth } from "@/lib/types";
-import { HBars, Meter, Panel, Stat, TrendBars } from "./ui";
+import { Donut, HBars, Meter, Panel, Stat, TrendBars } from "./ui";
 
-const LEVEL_PALETTE = ["#b42318", "#dc6803", "#2e90fa"];
+// Mid-tone hues that hold up on both the light and the dark surface.
+const LEVEL_PALETTE = ["#e0604f", "#e0a04a", "#8aa6c4"];
 const STATUS_ORDER = ["draft", "in_review", "changes_requested", "approved", "published"];
-const PIPELINE_PALETTE = ["#94a3b8", "#4f46e5", "#dc6803", "#16a34a", "#0e7490"];
+const PIPELINE_PALETTE = ["#8a93a3", "#3d8bf2", "#e0a04a", "#4fb487", "#22b8a6"];
 const TREND_DAYS = 14;
 const pct = (v: number | null | undefined) => (v == null ? "n/a" : `${Math.round(v * 100)}%`);
 
@@ -31,8 +31,8 @@ export function DashboardView({ overview, recurring, health }: {
   ];
   const categories = Object.entries(overview.findings.by_category)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([category, findings]) => ({ category, findings }));
+    .slice(0, 6)
+    .map(([category, findings]) => ({ label: category, value: findings }));
   const pipeline = STATUS_ORDER.filter((s) => overview.content[s]).map((s) => ({
     status: s.replace("_", " "),
     items: overview.content[s],
@@ -41,35 +41,32 @@ export function DashboardView({ overview, recurring, health }: {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat label="Reviews run" value={overview.reviews.total.toLocaleString()}
-              hint={`${overview.reviews.failed} failed and flagged, never passed`} />
-        <Stat label="Findings" value={overview.findings.total.toLocaleString()}
-              hint="every one cited to a rule or fact" />
-        <Stat label="Blockers caught" value={(levels.blocker ?? 0).toLocaleString()}
-              hint="stopped before publication" />
-        <Stat label="Fix acceptance" value={pct(overview.decisions.acceptance_rate)}
-              hint={`${overview.decisions.rejected ?? 0} overridden with a reason`} />
-        <Stat label="Published" value={published.toLocaleString()} hint={`${inFlight} in review right now`} />
+      <div className="vt-stagger grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Stat label="Reviews" value={overview.reviews.total.toLocaleString()}
+          hint={overview.reviews.failed ? `${overview.reviews.failed} failed` : undefined} />
+        <Stat label="Findings" value={overview.findings.total.toLocaleString()} />
+        <Stat label="Blockers caught" value={(levels.blocker ?? 0).toLocaleString()} />
+        <Stat label="Fixes accepted" value={pct(overview.decisions.acceptance_rate)} />
+        <Stat label="Published" value={published.toLocaleString()} hint={inFlight ? `${inFlight} in review` : undefined} />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-3">
-        <Panel title={`Findings over the last ${TREND_DAYS} days`} subtitle="Stacked by severity" className="xl:col-span-2">
-          <div className="h-72">
+        <Panel title="Findings, last 14 days" className="xl:col-span-2">
+          <div className="h-64">
             <TrendBars data={trend} series={trendSeries} />
           </div>
         </Panel>
-        <Panel title="Content pipeline" subtitle="Where everything sits in the approval flow">
-          <div className="flex h-72 flex-col">
-            <div className="mx-auto aspect-square h-60 max-w-full shrink-0">
-              <PieChart data={pipeline} categoryKey="status" dataKey="items" variant="donut" format="number"
-                legend={false} customPalette={PIPELINE_PALETTE} />
+        <Panel title="Pipeline">
+          <div className="flex h-64 flex-col gap-4">
+            <div className="grid min-h-0 flex-1 place-items-center">
+              <Donut data={pipeline.map((p) => ({ label: p.status, value: p.items }))} colours={PIPELINE_PALETTE} label="pieces" />
             </div>
-            <ul className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs">
+            <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
               {pipeline.map((p, i) => (
-                <li key={p.status} className="inline-flex items-center gap-1.5 capitalize">
-                  <span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: PIPELINE_PALETTE[i % PIPELINE_PALETTE.length] }} />
-                  {p.status} <span className="tabular-nums text-muted">{p.items}</span>
+                <li key={p.status} className="flex items-center gap-1.5 capitalize text-muted">
+                  <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: PIPELINE_PALETTE[i % PIPELINE_PALETTE.length] }} />
+                  <span className="truncate">{p.status}</span>
+                  <span className="ml-auto tabular-nums text-ink">{p.items}</span>
                 </li>
               ))}
             </ul>
@@ -78,69 +75,53 @@ export function DashboardView({ overview, recurring, health }: {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <Panel title="What goes wrong most" subtitle="Findings by check family">
-          <HBars data={categories.map((c) => ({ label: c.category, value: c.findings }))} />
+        <Panel title="Where issues come from">
+          <HBars data={categories} />
         </Panel>
-        <Panel title="Rules that fire most" subtitle="Top rules by findings">
-          {/* A plain table: it sizes to the card instead of pushing its last column out of view. */}
-          <table className="w-full table-fixed text-sm">
-            <thead>
-              <tr className="border-b border-line text-left text-xs text-muted">
-                <th className="w-[38%] py-2 pr-2 font-medium">Rule</th>
-                <th className="py-2 pr-2 font-medium">What it checks</th>
-                <th className="w-20 py-2 text-right font-medium">Findings</th>
-              </tr>
-            </thead>
-            <tbody>
-              {overview.top_rules.slice(0, 8).map((r) => (
-                <tr key={r.rule_id} className="border-b border-line last:border-0">
-                  <td className="truncate py-2 pr-2"><code className="text-xs">{r.code}</code></td>
-                  <td className="truncate py-2 pr-2" title={r.title}>{r.title}</td>
-                  <td className="py-2 text-right tabular-nums">{r.findings}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Panel>
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <Panel title="Recurring problems" subtitle="Same rule, same phrase, many pieces of content: a training or template fix">
+        <Panel title="Busiest rules">
           <ul className="divide-y divide-line">
-            {recurring.slice(0, 6).map((r) => (
-              <li key={`${r.rule}-${r.phrase}`} className="flex items-center justify-between gap-3 py-2.5">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">&ldquo;{r.phrase}&rdquo;</p>
-                  <p className="text-xs text-muted"><code>{r.rule}</code> {r.title}</p>
-                </div>
-                <p className="shrink-0 text-right text-sm tabular-nums">
-                  {r.count}
-                  <span className="block text-xs text-muted">in {r.reviews} reviews</span>
-                </p>
+            {overview.top_rules.slice(0, 6).map((r) => (
+              <li key={r.rule_id} className="flex items-center gap-3 py-2.5 text-sm first:pt-0 last:pb-0">
+                <code className="w-28 shrink-0 truncate text-xs text-muted">{r.code}</code>
+                <span className="min-w-0 flex-1 truncate" title={r.title}>{r.title}</span>
+                <span className="tabular-nums">{r.findings}</span>
               </li>
             ))}
           </ul>
         </Panel>
-        <Panel title="Guidelines that look unclear" subtitle="From reviewer overrides and disagreement, not from the model">
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Panel title="Recurring phrases">
+          <ul className="divide-y divide-line">
+            {recurring.slice(0, 5).map((r) => (
+              <li key={`${r.rule}-${r.phrase}`} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">&ldquo;{r.phrase}&rdquo;</p>
+                  <p className="truncate text-xs text-subtle">{r.title}</p>
+                </div>
+                <p className="shrink-0 text-sm tabular-nums" title={`${r.count} times across ${r.reviews} reviews`}>{r.count}</p>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+        <Panel title="Rules that look unclear"
+          aside={<Link href="/guidelines" className="text-xs font-medium text-accent hover:underline">View all</Link>}>
           {unclear.length === 0 ? (
-            <p className="text-sm text-muted">No rule has enough overrides to look ambiguous yet.</p>
+            <p className="text-sm text-muted">Nothing stands out yet.</p>
           ) : (
             <ul className="flex flex-col gap-4">
               {unclear.map((h) => (
                 <li key={h.rule_id}>
-                  <div className="mb-1 flex items-baseline justify-between gap-3">
-                    <p className="text-sm font-medium"><code className="text-xs">{h.code}</code> {h.title}</p>
-                    <p className="text-xs text-muted">{h.decisions} decisions</p>
+                  <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                    <p className="truncate text-sm font-medium">{h.title}</p>
+                    <code className="shrink-0 text-xs text-subtle">{h.code}</code>
                   </div>
                   <Meter value={h.ambiguity ?? 0} label={`Ambiguity of ${h.code}`} tone="danger" />
-                  {h.advice[0] && <p className="mt-1 text-xs text-muted">{h.advice[0]}</p>}
                 </li>
               ))}
             </ul>
           )}
-          <Link href="/guidelines" className="mt-4 inline-block text-sm font-medium text-accent hover:underline">
-            Open guideline health
-          </Link>
         </Panel>
       </div>
     </div>

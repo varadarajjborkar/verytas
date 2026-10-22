@@ -1,61 +1,90 @@
 @import "tailwindcss";
 
+/*
+ * One neutral ramp carries the interface; a single azure accent marks what is
+ * actionable, and its teal partner appears only in the brand mark and the
+ * faint glow behind each page. Light is a soft cool grey rather than paper
+ * white; dark is designed on its own (raised surfaces get lighter, not more
+ * shadowed). Level colours always come with an icon and a label.
+ */
 :root {
-  --vt-bg: #f7f8fa;
-  --vt-surface: #ffffff;
-  --vt-ink: #14161a;
-  --vt-muted: #5b6270;
-  --vt-line: #e3e6eb;
-  --vt-accent: #4f46e5;
+  --vt-bg: #eceef2;
+  --vt-surface: #f6f7f9;
+  --vt-raised: #fbfbfc;
+  --vt-sunken: #e4e7ec;
+  --vt-ink: #1b1e26;
+  --vt-muted: #5f6776;
+  --vt-subtle: #8a91a0;
+  --vt-line: #d9dde4;
+  --vt-line-strong: #c5cbd5;
+  --vt-accent: #1d6ae5;
+  --vt-accent-2: #0fa3a0;
   --vt-accent-ink: #ffffff;
-  /* Level colours are always paired with an icon and a text label. */
-  --vt-blocker: #b42318;
-  --vt-blocker-bg: #fee4e2;
-  --vt-warning: #93370d;
-  --vt-warning-bg: #fef0c7;
-  --vt-advisory: #175cd3;
-  --vt-advisory-bg: #d1e9ff;
-  --vt-ok: #067647;
-  --vt-ok-bg: #dcfae6;
+  --vt-glow: rgba(29, 106, 229, 0.07);
+  --vt-shadow: 0 1px 2px rgba(18, 24, 40, 0.04), 0 1px 3px rgba(18, 24, 40, 0.05);
+  --vt-shadow-pop: 0 12px 32px -8px rgba(18, 24, 40, 0.18), 0 2px 6px rgba(18, 24, 40, 0.06);
+  --vt-blocker: #c2361f;
+  --vt-blocker-bg: #f9e5e1;
+  --vt-warning: #9a5806;
+  --vt-warning-bg: #f8eed9;
+  --vt-advisory: #3f6584;
+  --vt-advisory-bg: #e3eaf1;
+  --vt-ok: #13804f;
+  --vt-ok-bg: #ddf1e6;
   color-scheme: light;
 }
 
-/* Dark theme: chosen explicitly, or following the system when no choice is saved. */
 :root[data-theme="dark"] {
-  --vt-bg: #0e1015;
-  --vt-surface: #161921;
-  --vt-ink: #e8eaef;
-  --vt-muted: #9aa2b1;
-  --vt-line: #2a2f3b;
-  --vt-accent: #8f8cff;
-  --vt-accent-ink: #0b0d12;
-  --vt-blocker: #fd8b80;
-  --vt-blocker-bg: #3a1714;
-  --vt-warning: #fdb840;
-  --vt-warning-bg: #352707;
-  --vt-advisory: #8ccbff;
-  --vt-advisory-bg: #0d2a47;
-  --vt-ok: #5fd99a;
-  --vt-ok-bg: #0e2e1f;
+  --vt-bg: #0c0e13;
+  --vt-surface: #13161d;
+  --vt-raised: #1a1e27;
+  --vt-sunken: #0f1217;
+  --vt-ink: #e4e7ed;
+  --vt-muted: #969eae;
+  --vt-subtle: #6b7383;
+  --vt-line: #232835;
+  --vt-line-strong: #313847;
+  --vt-accent: #4c9bff;
+  --vt-accent-2: #2dd4bf;
+  --vt-accent-ink: #06101e;
+  --vt-glow: rgba(76, 155, 255, 0.06);
+  --vt-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --vt-shadow-pop: 0 16px 40px -10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --vt-blocker: #f08a7a;
+  --vt-blocker-bg: #2d1715;
+  --vt-warning: #e6b25a;
+  --vt-warning-bg: #2a2111;
+  --vt-advisory: #9db6cf;
+  --vt-advisory-bg: #172230;
+  --vt-ok: #5cc794;
+  --vt-ok-bg: #10261c;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --vt-bg: #0e1015;
-    --vt-surface: #161921;
-    --vt-ink: #e8eaef;
-    --vt-muted: #9aa2b1;
-    --vt-line: #2a2f3b;
-    --vt-accent: #8f8cff;
-    --vt-accent-ink: #0b0d12;
-    --vt-blocker: #fd8b80;
-    --vt-blocker-bg: #3a1714;
-    --vt-warning: #fdb840;
-    --vt-warning-bg: #352707;
-    --vt-advisory: #8ccbff;
-    --vt-advisory-bg: #0d2a47;
-    --vt-ok: #5fd99a;
-    --vt-ok-bg: #0e2e1f;
+    --vt-bg: #0c0e13;
+    --vt-surface: #13161d;
+    --vt-raised: #1a1e27;
+    --vt-sunken: #0f1217;
+    --vt-ink: #e4e7ed;
+    --vt-muted: #969eae;
+    --vt-subtle: #6b7383;
+    --vt-line: #232835;
+    --vt-line-strong: #313847;
+    --vt-accent: #4c9bff;
+    --vt-accent-2: #2dd4bf;
+    --vt-accent-ink: #06101e;
+    --vt-glow: rgba(76, 155, 255, 0.06);
+    --vt-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    --vt-shadow-pop: 0 16px 40px -10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --vt-blocker: #f08a7a;
+    --vt-blocker-bg: #2d1715;
+    --vt-warning: #e6b25a;
+    --vt-warning-bg: #2a2111;
+    --vt-advisory: #9db6cf;
+    --vt-advisory-bg: #172230;
+    --vt-ok: #5cc794;
+    --vt-ok-bg: #10261c;
     color-scheme: dark;
   }
 }
@@ -63,9 +92,13 @@
 @theme inline {
   --color-bg: var(--vt-bg);
   --color-surface: var(--vt-surface);
+  --color-raised: var(--vt-raised);
+  --color-sunken: var(--vt-sunken);
   --color-ink: var(--vt-ink);
   --color-muted: var(--vt-muted);
+  --color-subtle: var(--vt-subtle);
   --color-line: var(--vt-line);
+  --color-line-strong: var(--vt-line-strong);
   --color-accent: var(--vt-accent);
   --color-accent-ink: var(--vt-accent-ink);
   --font-sans: var(--font-geist-sans);
@@ -73,10 +106,17 @@
 }
 
 body {
-  background: var(--vt-bg);
+  /* A faint wash of the accent at the top: the only decoration on the page. */
+  background:
+    radial-gradient(60rem 28rem at 85% -10%, var(--vt-glow), transparent 70%),
+    var(--vt-bg);
+  background-attachment: fixed;
   color: var(--vt-ink);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
 }
+
+::selection { background: color-mix(in srgb, var(--vt-accent) 24%, transparent); }
 
 /* Visible focus everywhere, never just a colour change. */
 :focus-visible {
@@ -97,6 +137,52 @@ body {
   border-radius: 0.5rem;
 }
 
+/* --- shared pieces ------------------------------------------------------- */
+
+.vt-card {
+  background: var(--vt-surface);
+  border: 1px solid var(--vt-line);
+  border-radius: 14px;
+  box-shadow: var(--vt-shadow);
+}
+
+.vt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 9px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  line-height: 1.25rem;
+  transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out, transform 90ms ease-out;
+}
+.vt-btn:active:not(:disabled) { transform: scale(0.98); }
+.vt-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+.vt-btn-primary { background: var(--vt-accent); color: var(--vt-accent-ink); }
+.vt-btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--vt-accent) 88%, var(--vt-ink)); }
+.vt-btn-quiet { border: 1px solid var(--vt-line); background: var(--vt-raised); color: var(--vt-ink); }
+.vt-btn-quiet:hover:not(:disabled) { border-color: var(--vt-line-strong); background: var(--vt-surface); }
+
+.vt-input {
+  width: 100%;
+  border-radius: 9px;
+  border: 1px solid var(--vt-line);
+  background: var(--vt-raised);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--vt-ink);
+  transition: border-color 140ms ease-out, box-shadow 140ms ease-out;
+}
+.vt-input::placeholder { color: var(--vt-subtle); }
+.vt-input:focus { outline: none; border-color: var(--vt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vt-accent) 18%, transparent); }
+
+.vt-mark {
+  background: linear-gradient(135deg, var(--vt-accent), var(--vt-accent-2));
+  color: #fff;
+}
+
 mark[data-level] {
   border-radius: 3px;
   padding: 0 2px;
@@ -108,13 +194,31 @@ mark[data-level="warning"] { background: var(--vt-warning-bg); box-shadow: inset
 mark[data-level="advisory"] { background: var(--vt-advisory-bg); box-shadow: inset 0 -2px 0 var(--vt-advisory); }
 mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+/* --- motion -------------------------------------------------------------- */
+/* Short and ease-out. Each page rises in once; groups reveal in order; overlays
+   scale in from 97%. Nothing loops except progress indicators. */
+
+@keyframes vt-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
+@keyframes vt-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes vt-pop {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+.vt-page { animation: vt-rise 280ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.vt-stagger > * { animation: vt-rise 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.vt-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.vt-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.vt-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.vt-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.vt-stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
+.vt-backdrop { animation: vt-fade 180ms ease-out both; }
+.vt-pop { animation: vt-pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.vt-lift { transition: transform 160ms ease-out, border-color 160ms ease-out; }
+.vt-lift:hover { transform: translateY(-1px); border-color: var(--vt-line-strong); }
 
 /* Notifications rise from the bottom edge with a small spring and sink back when dismissed. */
 @keyframes vt-toast-in {
@@ -133,6 +237,20 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
 .vt-toast-out { animation: vt-toast-out 180ms ease-in both; }
 .vt-toast-timer { transform-origin: left; animation: vt-toast-timer linear forwards; }
 .vt-toast:hover .vt-toast-timer, .vt-toast:focus-within .vt-toast-timer { animation-play-state: paused; }
+
+@keyframes vt-dot {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+.vt-typing span { animation: vt-dot 1.1s infinite ease-in-out; }
+.vt-typing span:nth-child(2) { animation-delay: 0.15s; }
+.vt-typing span:nth-child(3) { animation-delay: 0.3s; }
+
 @media (prefers-reduced-motion: reduce) {
-  .vt-toast-in, .vt-toast-out { animation-duration: 1ms; }
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
 }

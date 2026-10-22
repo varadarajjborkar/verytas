@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { fmtBytes, precheck, upload } from "@/lib/review-client";
+import { ChevronIcon, UploadIcon } from "../Icons";
 import { useToast } from "../Toaster";
 import type { Precheck, UploadedMedia } from "@/lib/types";
 
@@ -61,7 +62,7 @@ const KIND_OF = (type: string): Attachment["kind"] | null =>
   type.startsWith("image/") ? "image" : type.startsWith("video/") ? "video"
     : type === "application/pdf" || type.includes("wordprocessingml") ? "document" : null;
 
-const field = "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted/70 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20";
+const field = "vt-input";
 
 /** A native select with its own chevron: the browser's arrow sits against the
  * right border and drifts between engines, so it is hidden and drawn inset. */
@@ -71,9 +72,7 @@ function Select({ value, onChange, children }: { value: string; onChange: (v: st
       <select className={`${field} cursor-pointer appearance-none pr-9`} value={value} onChange={(e) => onChange(e.target.value)}>
         {children}
       </select>
-      <svg aria-hidden viewBox="0 0 16 16" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted">
-        <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <ChevronIcon size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted" />
     </span>
   );
 }
@@ -189,30 +188,30 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
       <fieldset className="flex min-w-0 flex-col gap-2">
         <legend className="mb-1 text-xs font-medium text-muted">Attachments</legend>
         <div className="grid gap-2 sm:grid-cols-3">
-          <DropTile id={`${ids}-img`} label="Images" hint="PNG, JPG, WebP, GIF · up to 6 MB" accept="image/png,image/jpeg,image/webp,image/gif"
+          <DropTile id={`${ids}-img`} label="Images" hint="PNG, JPG, WebP, GIF" accept="image/png,image/jpeg,image/webp,image/gif"
             disabled={demo} onFiles={(f) => addFiles(f, "image")} />
-          <DropTile id={`${ids}-doc`} label="Documents" hint="PDF or Word · scanned pages are read too" accept="application/pdf,.docx"
+          <DropTile id={`${ids}-doc`} label="Documents" hint="PDF or Word" accept="application/pdf,.docx"
             disabled={demo} onFiles={(f) => addFiles(f, "document")} />
-          <DropTile id={`${ids}-vid`} label="Video" hint="MP4, MOV, WebM · captions and speech are read" accept="video/mp4,video/quicktime,video/webm"
+          <DropTile id={`${ids}-vid`} label="Video" hint="MP4, MOV, WebM" accept="video/mp4,video/quicktime,video/webm"
             disabled={demo} onFiles={(f) => addFiles(f, "video")} />
         </div>
-        {demo && <p className="text-xs text-muted">Uploads need the Verytas API; this page is running on demo data.</p>}
+        {demo && <p className="text-xs text-subtle">Uploads need the live API.</p>}
         {uploading.length > 0 && <p className="text-xs text-muted" role="status">Uploading {uploading.join(", ")}…</p>}
         {uploadError && <p className="text-xs text-[var(--vt-blocker)]" role="alert">{uploadError}</p>}
         {draft.attachments.length > 0 && (
           <ul className="flex flex-col gap-2">
             {draft.attachments.map((a) => (
-              <li key={a.localId} className="flex flex-col gap-2 rounded-lg border border-line bg-bg p-2.5">
+              <li key={a.localId} className="vt-pop flex flex-col gap-2 rounded-xl border border-line bg-raised p-2.5">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="w-[4.5rem] shrink-0 rounded bg-surface px-1.5 py-0.5 text-center text-[11px] font-semibold uppercase text-muted">{a.kind}</span>
+                  <span className="w-[4.5rem] shrink-0 rounded-md bg-sunken px-1.5 py-0.5 text-center text-[11px] font-medium capitalize text-muted">{a.kind}</span>
                   <span className="min-w-0 flex-1 truncate text-sm" title={a.name ?? ""}>{a.name ?? a.id}</span>
                   <span className="shrink-0 text-xs text-muted">{fmtBytes(a.bytes)}{metricText(a)}</span>
-                  <button type="button" onClick={() => remove(a.localId)} className="shrink-0 rounded px-2 py-1 text-xs text-muted hover:bg-surface hover:text-ink">
+                  <button type="button" onClick={() => remove(a.localId)} className="shrink-0 rounded-md px-2 py-1 text-xs text-muted transition hover:bg-sunken hover:text-ink">
                     Remove
                   </button>
                 </div>
                 {a.kind === "image" && (
-                  <input className={field} value={a.alt} placeholder="Alt text: describe the image for people who can't see it"
+                  <input className={field} value={a.alt} placeholder="Alt text"
                     aria-label={`Alt text for ${a.name}`} onChange={(e) => setAlt(a.localId, e.target.value)} />
                 )}
               </li>
@@ -222,7 +221,7 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
       </fieldset>
 
       {needsReason && check && (
-        <div className="rounded-lg border border-[var(--vt-warning)]/40 bg-[var(--vt-warning-bg)] p-3" role="alert">
+        <div className="rounded-xl bg-[var(--vt-warning-bg)] p-3" role="alert">
           <p className="text-sm font-semibold text-[var(--vt-warning)]">This upload is unusual for {CHANNELS.find((c) => c.value === draft.channel)?.label ?? channelOf(draft)}</p>
           <ul className="mt-2 flex flex-col gap-1 text-xs">
             {check.irregularities.map((i, k) => (
@@ -233,7 +232,7 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
             ))}
           </ul>
           <label className="mt-3 flex flex-col gap-1 text-xs font-medium">
-            Why is it this way? It will still be checked in full, and this will count against its score.
+            Why is it this way?
             <textarea className={`${field} min-h-16`} value={draft.irregularityReason} maxLength={2000}
               placeholder="e.g. The marketing team asked for the full catalogue as one LinkedIn document"
               onChange={(e) => set({ irregularityReason: e.target.value })} />
@@ -241,19 +240,15 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
         </div>
       )}
 
-      <div className="rounded-lg border border-line">
+      <div className="rounded-xl border border-line">
         <button type="button" onClick={() => setShowNotes((s) => !s)} aria-expanded={showNotes}
           className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium">
-          <span>What do you mean by it? <span className="font-normal text-muted">(optional)</span></span>
-          <span aria-hidden className="text-muted">{showNotes ? "−" : "+"}</span>
+          <span>Context for reviewers <span className="font-normal text-subtle">optional</span></span>
+          <ChevronIcon size={16} className={`text-muted transition-transform duration-200 ${showNotes ? "rotate-180" : ""}`} />
         </button>
         {showNotes && (
-          <div className="flex flex-col gap-3 border-t border-line p-3">
-            <p className="text-xs text-muted">
-              Kept apart from the checks. It is only read once something is flagged, and never clears a rule by
-              itself: content has to work without its author next to it. Tell us about in-jokes, a new style, or
-              what a phrase means in your language.
-            </p>
+          <div className="vt-pop flex flex-col gap-3 border-t border-line p-3">
+            <p className="text-xs text-subtle">Read only when something is flagged. It never clears a rule on its own.</p>
             <textarea className={`${field} min-h-20`} value={draft.intent} maxLength={2000}
               placeholder="e.g. 'Dhamaka' here means a big sale, not an explosion" onChange={(e) => set({ intent: e.target.value })} />
             <div className="grid gap-3 sm:grid-cols-2">
@@ -274,10 +269,10 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
 
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" disabled={busy || !draft.body.trim() || uploading.length > 0 || !reasonOk}
-          className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-ink shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
+          className="vt-btn vt-btn-primary">
           {busy ? "Checking…" : "Run review"}
         </button>
-        {!reasonOk && <span className="text-xs text-[var(--vt-warning)]">Add a short reason (15+ characters) for the unusual upload.</span>}
+        {!reasonOk && <span className="text-xs text-[var(--vt-warning)]">Add a short reason for the unusual upload.</span>}
       </div>
     </form>
   );
@@ -299,9 +294,10 @@ function DropTile({ id, label, hint, accept, disabled, onFiles }: {
       onDragOver={(e) => { e.preventDefault(); setOver(true); }}
       onDragLeave={() => setOver(false)}
       onDrop={(e) => { e.preventDefault(); setOver(false); if (!disabled) onFiles(e.dataTransfer.files); }}
-      className={`flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed px-3 py-4 text-center transition ${over ? "border-accent bg-accent/5" : "border-line bg-bg hover:border-accent/60"} ${disabled ? "pointer-events-none opacity-50" : ""}`}>
-      <span className="text-sm font-medium">+ {label}</span>
-      <span className="text-[11px] text-muted">{hint}</span>
+      className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed px-3 py-4 text-center transition ${over ? "border-accent bg-accent/5" : "border-line-strong hover:border-accent/60 hover:bg-sunken/50"} ${disabled ? "pointer-events-none opacity-50" : ""}`}>
+      <UploadIcon size={16} className="text-muted" />
+      <span className="text-sm font-medium">{label}</span>
+      <span className="text-[11px] text-subtle">{hint}</span>
       <input id={id} type="file" multiple accept={accept} disabled={disabled} className="sr-only"
         onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
     </label>

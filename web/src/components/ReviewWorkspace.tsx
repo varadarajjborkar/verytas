@@ -7,7 +7,7 @@ import { AgentTree, Sources } from "./review/AgentTree";
 import { Checklist, emptyRow, type RowState, sortFindings } from "./review/Checklist";
 import { attachmentsPayload, channelOf, Composer, type Draft, emptyDraft } from "./review/Composer";
 import { useToast } from "./Toaster";
-import { Meter, Panel, SourceBadge } from "./ui";
+import { Details, Meter, Panel, SourceBadge } from "./ui";
 
 const LEVEL_ORDER: Level[] = ["blocker", "warning", "advisory"];
 // How each coverage status reads on the scorecard. Anything other than "checked" is never shown as a pass.
@@ -163,7 +163,7 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
       <div className="flex min-w-0 flex-col gap-5">
-        <Panel title="Your content" subtitle="Everything here is treated as data: instructions inside it are ignored">
+        <Panel title="Draft">
           <Composer draft={draft} update={setDraft} onSubmit={run} busy={busy} demo={demo} />
         </Panel>
         {review && contentId && phase === "done" && <AiEditBox contentId={contentId} onUse={(b) => sendBack(b)} />}
@@ -173,83 +173,73 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
         <div aria-live="polite" className="sr-only">
           {phase === "done" && `Review complete: ${summary?.blockers ?? 0} must fix, ${summary?.warnings ?? 0} should fix, ${summary?.advisories ?? 0} to consider.`}
         </div>
-        {error && <p role="alert" className="rounded-lg border border-[var(--vt-blocker)]/40 bg-[var(--vt-blocker-bg)] p-3 text-sm text-[var(--vt-blocker)]">{error}</p>}
+        {error && <p role="alert" className="rounded-xl bg-[var(--vt-blocker-bg)] px-4 py-3 text-sm text-[var(--vt-blocker)]">{error}</p>}
         {busy && (
-          <Panel title={phase === "submitting" ? "Sending…" : "Prism is checking"}>
-            <div className="flex items-center gap-3 text-sm text-muted">
-              <span aria-hidden className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-              {phase === "reviewing" ? `Reading text, images, pages and video, then the context layers… ${elapsed}s` : "Uploading the draft…"}
-            </div>
-          </Panel>
+          <div className="vt-card flex items-center gap-3 p-5 text-sm text-muted">
+            <span aria-hidden className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+            {phase === "reviewing" ? `Checking text, media and context… ${elapsed}s` : "Sending…"}
+          </div>
         )}
         {!review && !busy && (
-          <Panel title="Findings">
-            <p className="text-sm text-muted">Run a review to see a checklist here, ordered from must-fix to consider. The sample text has a few planted issues.</p>
-          </Panel>
+          <div className="vt-card grid min-h-56 place-items-center p-8 text-center">
+            <div>
+              <p className="text-sm font-medium">Nothing reviewed yet</p>
+              <p className="mt-1 text-sm text-muted">Run a review and the issues will appear here, most urgent first.</p>
+            </div>
+          </div>
         )}
 
         {review && !busy && (
           <>
-            <Panel title={`Checklist${round > 1 ? ` · round ${round}` : ""}`}
-              subtitle="Tick what you've handled, choose fixes to apply, dispute anything misread, then resubmit">
-              {notice && <p className="mb-3 rounded-lg bg-bg px-3 py-2 text-xs">{notice}</p>}
+            <Panel title={round > 1 ? `To fix · round ${round}` : "To fix"}
+              aside={<span className="flex items-center gap-2">
+                {summary && <span className="text-xs tabular-nums text-muted">Score {Math.round((summary.overall ?? 0) * 100)}%</span>}
+                <SourceBadge source={source} />
+              </span>}>
+              {notice && <p className="mb-3 rounded-lg bg-sunken px-3 py-2 text-xs text-muted">{notice}</p>}
               {escalations.length > 0 && (
-                <div className="mb-3 rounded-lg border border-[var(--vt-warning)]/40 bg-[var(--vt-warning-bg)] p-3 text-xs" role="status">
+                <div className="mb-3 rounded-xl bg-[var(--vt-warning-bg)] p-3 text-xs" role="status">
                   <p className="font-semibold text-[var(--vt-warning)]">Escalated to the social media manager</p>
                   <ul className="mt-1 list-disc pl-4">{escalations.map((e, i) => <li key={i}>{e.reason}{e.detail ? `: ${e.detail}` : ""}</li>)}</ul>
                 </div>
               )}
               {sorted.length === 0 ? (
-                <p className="rounded-lg bg-[var(--vt-ok)]/10 p-3 text-sm font-medium text-[var(--vt-ok)]">No issues found. Every check that ran passed.</p>
+                <p className="rounded-xl bg-[var(--vt-ok-bg)] px-4 py-3 text-sm font-medium text-[var(--vt-ok)]">All clear. Every check that ran passed.</p>
               ) : (
                 <Checklist findings={sorted} rows={rows} disputes={disputeByFinding} active={active}
                   onSelect={(id) => { setActive(id); }}
                   onRow={(id, patch) => setRows((r) => ({ ...r, [id]: { ...(r[id] ?? emptyRow()), ...patch } }))} />
               )}
-              <div className="mt-4 flex flex-wrap items-center gap-3">
+              <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-4">
                 <button type="button" disabled={source === "demo" || !contentId || busy} onClick={() => sendBack()}
-                  className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-ink shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
-                  Resubmit and re-check
+                  className="vt-btn vt-btn-primary">
+                  Resubmit
                 </button>
-                <span className="text-xs text-muted">{changes ? `${changes} item${changes === 1 ? "" : "s"} to send` : "Nothing selected yet; resubmitting re-runs every check"}</span>
-                <span className="ml-auto"><SourceBadge source={source} /></span>
+                <span className="text-xs text-muted">{changes ? `${changes} change${changes === 1 ? "" : "s"} selected` : "Re-runs every check"}</span>
               </div>
             </Panel>
 
             {disputes.length > 0 && (
-              <Panel title="Re-evaluations" subtitle="What Prism decided about each dispute">
+              <Panel title="Disputes">
                 <ul className="flex flex-col gap-2">
                   {disputes.map((d) => (
-                    <li key={d.id} className="rounded-lg border border-line p-3 text-xs">
+                    <li key={d.id} className="rounded-xl border border-line bg-raised p-3 text-xs">
                       <p className="font-medium">{past[d.finding_id]?.title ?? `Finding ${d.finding_id}`}</p>
                       <p className="mt-1 text-muted">“{d.claim}”</p>
                       <p className="mt-1"><span className="font-semibold capitalize">{d.status}</span>{d.verdict?.reason ? `: ${d.verdict.reason}` : ""}</p>
-                      {d.verdict?.layers && (
-                        <p className="mt-1 text-muted">Reader likelihood by layer: {d.verdict.layers.map((l) => `${l.layer} ${l.p == null ? "n/a" : Math.round(l.p * 100) + "%"}`).join(" · ")}</p>
-                      )}
                     </li>
                   ))}
                 </ul>
               </Panel>
             )}
 
-            <Panel title="Flagged text" subtitle="Highlights in your caption; select one to open it in the checklist">
+            <Panel title="In your draft">
               <HighlightedBody body={body} findings={sorted.filter((f) => (f.source ?? "body") === "body")} active={active}
                 onSelect={setActive} innerRef={textRef} />
             </Panel>
 
-            {coverage?.agents && coverage.agents.length > 0 && (
-              <Panel title="How Prism checked it" subtitle="Each agent was spawned for a part of your content; nested agents were spawned by their parent">
-                <AgentTree agents={coverage.agents} />
-              </Panel>
-            )}
-            {coverage?.sources && coverage.sources.length > 1 && (
-              <Panel title="Text Prism found" subtitle="Typed text, document text layers, text read from images, scans and video">
-                <Sources sources={coverage.sources} />
-              </Panel>
-            )}
             {summary?.categories && (
-              <Panel title="Scorecard" subtitle={`Headline score ${Math.round((summary.overall ?? 0) * 100)}%: the weakest checked category`}>
+              <Details summary="Scorecard">
                 <ul className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
                   {Object.entries(summary.categories).map(([name, c]) => (
                     <li key={name}>
@@ -263,15 +253,21 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
                     </li>
                   ))}
                 </ul>
-                {coverage && (
-                  <p className="mt-4 border-t border-line pt-3 text-xs leading-5 text-muted">
-                    AI disclosure: judged by <code>{coverage.models?.judge}</code>, written by <code>{coverage.models?.llm}</code>
-                    {coverage.models?.vision && <>, images seen by <code>{coverage.models.vision}</code></>}. {coverage.redactions ?? 0} confidential
-                    or personal item{coverage.redactions === 1 ? "" : "s"} redacted before anything left Verytas.
-                    {coverage.not_checked && coverage.not_checked.length > 0 && ` Not checked this time: ${coverage.not_checked.join(", ")}.`}
+              </Details>
+            )}
+            {coverage && (
+              <Details summary="How it was checked">
+                <div className="flex flex-col gap-5">
+                  {coverage.agents && coverage.agents.length > 0 && <AgentTree agents={coverage.agents} />}
+                  {coverage.sources && coverage.sources.length > 1 && <Sources sources={coverage.sources} />}
+                  <p className="text-xs leading-5 text-muted">
+                    Judged by <code>{coverage.models?.judge}</code>, written by <code>{coverage.models?.llm}</code>
+                    {coverage.models?.vision && <>, images seen by <code>{coverage.models.vision}</code></>}.
+                    {" "}{coverage.redactions ?? 0} confidential item{coverage.redactions === 1 ? "" : "s"} redacted before leaving Verytas.
+                    {coverage.not_checked && coverage.not_checked.length > 0 && ` Not checked: ${coverage.not_checked.join(", ")}.`}
                   </p>
-                )}
-              </Panel>
+                </div>
+              </Details>
             )}
           </>
         )}
@@ -292,7 +288,7 @@ function AiEditBox({ contentId, onUse }: { contentId: number; onUse: (body: stri
     setError(null);
     try {
       setProposal(await aiEdit(contentId, instruction));
-      toast({ kind: "success", title: "Rewrite ready", detail: "Review it below, then use it to re-check." });
+      toast({ kind: "success", title: "Rewrite ready" });
     } catch (err) {
       setError((err as Error).message);
       toast({ kind: "error", title: "Couldn't rewrite", detail: (err as Error).message });
@@ -302,34 +298,28 @@ function AiEditBox({ contentId, onUse }: { contentId: number; onUse: (body: stri
   }
 
   return (
-    <Panel title="Edit with AI" subtitle="Describe the change you want. Brand rules always win over the instruction.">
+    <Details summary="Edit with AI">
       <div className="flex flex-col gap-3">
         <textarea value={instruction} onChange={(e) => setInstruction(e.target.value)} maxLength={2000}
-          placeholder="e.g. Make it warmer, drop the competitor jab and keep the sale details"
-          className="min-h-20 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:border-accent focus:outline-none" />
-        <button type="button" disabled={busy || instruction.trim().length < 3} onClick={ask}
-          className="self-start rounded-lg border border-accent px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/5 disabled:opacity-50">
+          placeholder="e.g. Make it warmer and drop the competitor jab"
+          className="vt-input min-h-20" />
+        <button type="button" disabled={busy || instruction.trim().length < 3} onClick={ask} className="vt-btn vt-btn-quiet self-start">
           {busy ? "Rewriting…" : "Suggest a rewrite"}
         </button>
         {error && <p role="alert" className="text-xs text-[var(--vt-blocker)]">{error}</p>}
         {proposal && (
-          <div className="flex flex-col gap-2 rounded-lg border border-line bg-bg p-3">
+          <div className="vt-pop flex flex-col gap-3 rounded-xl border border-line bg-raised p-3">
             <p className="whitespace-pre-wrap text-sm leading-6">{proposal.body}</p>
-            {proposal.changes.length > 0 && <ul className="list-disc pl-4 text-xs text-muted">{proposal.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>}
             {proposal.remaining.length > 0 && (
-              <p className="text-xs text-[var(--vt-warning)]">Instant checks still find: {proposal.remaining.join("; ")}</p>
+              <p className="text-xs text-[var(--vt-warning)]">Still flagged: {proposal.remaining.join("; ")}</p>
             )}
-            <div className="flex items-center gap-3">
-              <button type="button" onClick={() => onUse(proposal.body)}
-                className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-ink hover:brightness-110">
-                Use this version and re-check
-              </button>
-              <span className="text-[11px] text-muted">by {proposal.model}</span>
-            </div>
+            <button type="button" onClick={() => onUse(proposal.body)} className="vt-btn vt-btn-primary self-start">
+              Use this and re-check
+            </button>
           </div>
         )}
       </div>
-    </Panel>
+    </Details>
   );
 }
 
