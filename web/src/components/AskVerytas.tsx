@@ -9,7 +9,7 @@ import { ArrowUpIcon, PlusIcon, SparkIcon } from "./Icons";
 // callouts) streamed from /api/chat; OpenUI's renderer draws it with the app's
 // own theme. The conversation lives in this page only.
 
-type Message = { id: number; role: "user" | "assistant"; content: string; error?: boolean };
+type Message = { id: number; role: "user" | "assistant"; content: string; error?: boolean; note?: string };
 
 const STARTERS = [
   { label: "Which rules get overridden most?", prompt: "Which rules do reviewers override most, and why might that be?" },
@@ -18,27 +18,43 @@ const STARTERS = [
   { label: "Where do problems come from?", prompt: "Break down findings by category and tell me the biggest source of problems." },
 ];
 
-/** Reads an OpenAI-style SSE stream, calling `onText` with each content delta. */
+/** Reads an OpenAI-style SSE stream, calling `onText` with each content delta.
+ * Lines are only parsed once complete; an error payload from upstream throws. */
 async function readStream(res: Response, onText: (t: string) => void) {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  const handle = (line: string) => {
+    const data = line.startsWith("data:") ? line.slice(5).trim() : "";
+    if (!data || data === "[DONE]") return;
+    let event: { error?: { message?: string } | string; choices?: { delta?: { content?: unknown } }[] };
+    try {
+      event = JSON.parse(data);
+    } catch {
+      return; // not JSON (a comment or keep-alive); complete lines are never split
+    }
+    if (event.error) throw new Error(typeof event.error === "string" ? event.error : event.error.message ?? "The model failed.");
+    const delta = event.choices?.[0]?.delta?.content;
+    if (typeof delta === "string") onText(delta);
+  };
   for (;;) {
     const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    buffer += decoder.decode(value, { stream: !done });
     const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      const data = line.startsWith("data:") ? line.slice(5).trim() : "";
-      if (!data || data === "[DONE]") continue;
-      try {
-        const delta = JSON.parse(data)?.choices?.[0]?.delta?.content;
-        if (typeof delta === "string") onText(delta);
-      } catch {
-        // A keep-alive or partial line; the next chunk completes it.
-      }
-    }
+    buffer = done ? "" : lines.pop() ?? "";
+    lines.forEach(handle);
+    if (done) break;
+  }
+}
+
+/** Only web links from a model answer are opened; anything else (javascript:, data:) is ignored. */
+function safeUrl(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
   }
 }
 
@@ -49,10 +65,15 @@ export function AskVerytas() {
   const abort = useRef<AbortController | null>(null);
   const nextId = useRef(1);
   const end = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
+  const [status, setStatus] = useState("");
 
+  // Follow the answer only while the reader is at the bottom; scrolling up to
+  // read something earlier is never fought.
   useEffect(() => {
-    end.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const el = scroller.current;
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 120) end.current?.scrollIntoView({ block: "end" });
   }, [messages]);
   useEffect(() => () => abort.current?.abort(), []);
 
@@ -64,6 +85,7 @@ export function AskVerytas() {
     setMessages([...history, { id: answerId, role: "assistant", content: "" }]);
     setInput("");
     setStreaming(true);
+    setStatus("Verytas is answering");
     const write = (fn: (m: Message) => Message) => setMessages((all) => all.map((m) => (m.id === answerId ? fn(m) : m)));
     const controller = new AbortController();
     abort.current = controller;
@@ -79,26 +101,36 @@ export function AskVerytas() {
         throw new Error(detail?.error ?? "Ask Verytas is unavailable right now.");
       }
       await readStream(res, (t) => write((m) => ({ ...m, content: m.content + t })));
+      write((m) => (m.content ? m : { ...m, note: "No answer came back. Try asking another way." }));
+      setStatus("Answer ready");
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
+      if ((err as Error).name === "AbortError") {
+        write((m) => (m.content ? m : { ...m, note: "Stopped." }));
+        setStatus("Stopped");
+      } else {
         write((m) => ({ ...m, error: true, content: (err as Error).message }));
+        setStatus("The answer failed");
       }
     } finally {
-      setStreaming(false);
-      abort.current = null;
-      box.current?.focus();
+      if (abort.current === controller) {
+        setStreaming(false);
+        abort.current = null;
+      }
     }
   }, [messages, streaming]);
 
   const onAction = useCallback((event: ActionEvent) => {
     if (event.type === "continue_conversation") void send(event.humanFriendlyMessage);
-    else if (event.type === "open_url" && typeof event.params?.url === "string") {
-      window.open(event.params.url, "_blank", "noopener,noreferrer");
+    else if (event.type === "open_url") {
+      const url = safeUrl(event.params?.url);
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
     }
   }, [send]);
 
   function reset() {
     abort.current?.abort();
+    abort.current = null;
+    setStreaming(false);
     setMessages([]);
     setInput("");
     box.current?.focus();
@@ -118,7 +150,8 @@ export function AskVerytas() {
       </div>
 
       <div className="vt-card flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-y-auto" aria-live="polite">
+        <p className="sr-only" role="status" aria-live="polite">{status}</p>
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
           {empty ? (
             <div className="vt-stagger mx-auto flex h-full max-w-2xl flex-col items-center justify-center px-6 py-10 text-center">
               <span aria-hidden className="vt-mark grid h-12 w-12 place-items-center rounded-2xl"><SparkIcon size={22} /></span>
@@ -201,6 +234,8 @@ function ChatMessage({ message: m, streaming, onAction }: {
       <div className="min-w-0 flex-1 text-sm leading-6">
         {m.error ? (
           <p className="rounded-xl bg-[var(--vt-blocker-bg)] px-3 py-2 text-[var(--vt-blocker)]">{m.content}</p>
+        ) : m.note && !m.content ? (
+          <p className="py-1.5 text-muted">{m.note}</p>
         ) : !m.content ? (
           <span className="vt-typing inline-flex gap-1 py-2" aria-label="Thinking">
             <span className="h-1.5 w-1.5 rounded-full bg-subtle" /><span className="h-1.5 w-1.5 rounded-full bg-subtle" />
