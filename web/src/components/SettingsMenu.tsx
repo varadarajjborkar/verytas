@@ -29,19 +29,7 @@ const TABS = [
   { value: "profile", label: "Profile" },
   { value: "social", label: "Socials" },
   { value: "theme", label: "Appearance" },
-  { value: "ai", label: "AI and data" },
 ] as const;
-
-// What reads a post, and where it runs. The brief asks for AI and external services to be
-// disclosed, so the product says it to every user, not just the README.
-const SERVICES = [
-  { name: "Ollama Cloud: gpt-oss 120b and 20b", use: "Reads claims, judges tone and meaning, writes explanations and fixes, answers Ask Verytas, reads brand books", where: "Cloud, when a key is set" },
-  { name: "Ollama Cloud: gemma4 31b", use: "Looks at images and video frames, compares artwork with official assets", where: "Cloud, never for confidential content" },
-  { name: "RapidOCR, faster-whisper, OpenCV, pdfium", use: "Reads text in images, transcribes speech, matches logos, renders PDF pages", where: "On the Verytas server only" },
-  { name: "TypeSafe Jev", use: "Optional second judge for model-judged rules", where: "Cloud, only if configured" },
-  { name: "Anthropic Claude", use: "Alternative model backend for the same tasks", where: "Cloud, only when chosen in the server settings" },
-  { name: "Rule checks", use: "Banned and preferred terms, casing, codenames, facts and dates", where: "On the Verytas server, no model" },
-];
 type Tab = (typeof TABS)[number]["value"];
 
 /** The settings button, and the settings window it opens over a blurred page. */
@@ -190,7 +178,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div role="tablist" aria-label="Settings sections" aria-orientation="vertical"
-          className="mx-5 mt-4 grid grid-cols-4 gap-1 rounded-xl bg-sunken p-1 text-[13px] font-medium md:m-0 md:flex md:w-52 md:shrink-0 md:flex-col md:gap-0.5 md:rounded-none md:border-r md:border-line md:bg-transparent md:p-3"
+          className="mx-5 mt-4 grid grid-cols-3 gap-1 rounded-xl bg-sunken p-1 text-[13px] font-medium md:m-0 md:flex md:w-52 md:shrink-0 md:flex-col md:gap-0.5 md:rounded-none md:border-r md:border-line md:bg-transparent md:p-3"
           onKeyDown={(e) => arrows(e, TABS.map((t) => t.value), tab, setTab)}>
           {TABS.map((t, i) => (
             <button key={t.value} role="tab" type="button" aria-selected={tab === t.value} onClick={() => setTab(t.value)}
@@ -263,28 +251,6 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
               <button type="button" onClick={saveSocials} className="vt-btn vt-btn-primary self-end">Save</button>
-            </div>
-          )}
-
-          {tab === "ai" && (
-            <div className="flex flex-col gap-4">
-              <p className="text-sm text-muted">
-                What reads your posts, and where it runs. Confidential terms are removed from text and blacked out in images before
-                anything reaches a cloud model, and confidential content never leaves the server as pixels.
-              </p>
-              <ul className="overflow-hidden rounded-xl border border-line">
-                {SERVICES.map((sv) => (
-                  <li key={sv.name} className="border-b border-line px-4 py-3 last:border-0">
-                    <p className="text-sm font-medium">{sv.name}</p>
-                    <p className="mt-0.5 text-xs text-muted">{sv.use}</p>
-                    <p className="mt-1 text-[11px] text-subtle">{sv.where}</p>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-xs text-muted">
-                Every model-judged finding names the model that made it. Without keys, model checks fall back to an offline reading
-                and are marked degraded, never passed.
-              </p>
             </div>
           )}
 

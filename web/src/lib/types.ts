@@ -195,6 +195,10 @@ export type ContentRow = {
   updated_at: string | null;
   /** When it entered its current status: how long it has waited in a queue. */
   status_since?: string | null;
+  event_id?: number | null;
+  open_escalations?: number;
+  /** The event whose change last re-checked this piece (the update chain). */
+  rechecked_for_event?: number | null;
   latest_review: {
     id: number; status: Review["status"]; overall: number | null;
     blockers: number; warnings: number; advisories: number; finished_at: string | null;
@@ -222,6 +226,9 @@ export type TimelineItem = { at: string; actor: Person | null } & (
   | { type: "comment"; id: number; parent_id: number | null; version: number | null; body: string; span: [number, number] | null }
   | { type: "decision"; finding: string; level: Level; version: number; action: Decision["action"];
       reason_code: string | null; reason: string | null }
+  | { type: "escalation"; id: number; finding: string; level: Level; message: string | null;
+      state: "raised" | "upheld" | "cleared" | "withdrawn" }
+  | { type: "event"; event: string; change: "created" | "updated" | "cancelled"; revision: number; review_id: number | null }
 );
 export type Timeline = { status: ContentStatus; author: Person | null; items: TimelineItem[] };
 
@@ -243,6 +250,8 @@ export type Rule = {
   tier: "public" | "internal" | "confidential";
   status: "draft" | "active" | "retired";
   system: boolean;
+  /** Set on rules a brand event owns; they are edited through the event, not here. */
+  event_id?: number | null;
 };
 export type RuleDraft = Omit<Rule, "id" | "version" | "status" | "system">;
 
@@ -275,3 +284,49 @@ export type BrandAsset = {
   created_at: string;
   warning?: string | null;
 };
+
+// --- escalations, events and public contacts --------------------------------------------------
+
+export type GuardFlag = { code: string; label: string; quote: string };
+
+export type RuleCitation = {
+  kind: "rule"; id: number; code: string; version: number; latest_version: number | null; title: string; text: string;
+  severity: Rule["severity"]; category: string; rule_kind: RuleKind; good_examples: string[]; bad_examples: string[];
+  pattern: Record<string, unknown>; source_ref: string | null; status: Rule["status"]; event_id: number | null; system: boolean;
+};
+export type FactCitation = {
+  kind: "fact"; id: number; statement: string; value: number | null; unit: string | null; subject: string | null;
+  source_ref: string; valid_from: string; valid_to: string | null; approved: boolean; valid_today: boolean;
+};
+
+/** A creator's request for a person to look at a finding (GET /escalations). */
+export type EscalationRequest = {
+  id: number;
+  status: "open" | "upheld" | "cleared" | "withdrawn";
+  created_at: string;
+  resolved_at: string | null;
+  message: string;
+  guard: { refused: GuardFlag[]; flagged: GuardFlag[] };
+  raised_by: Person | null;
+  raised_before: number;
+  content: { id: number; title: string; channel: string; status: ContentStatus; tier: string; author: Person | null;
+    event_id: number | null };
+  version: { id: number; version_no: number } | null;
+  finding: { id: number; title: string; level: Level; category: string; explanation: string; checker: string;
+    model: string | null; confidence: number; source: string };
+  excerpt: { before: string; quote: string; after: string; clipped_start: boolean; clipped_end: boolean };
+  citations: (RuleCitation | FactCitation)[];
+  resolution: { outcome: string; code: string | null; note: string | null; by: Person | null } | null;
+};
+
+export type EventKind = "launch" | "campaign" | "sale" | "crisis" | "partnership" | "other";
+export type BrandEvent = {
+  id: number; name: string; kind: EventKind; starts_on: string; ends_on: string | null; summary: string; guidance: string;
+  hashtags: string[]; avoid_terms: string[]; blackout: boolean; status: "active" | "cancelled"; tier: string;
+  revision: number; updated_at: string; live: boolean; rules: string[]; pieces: number; rechecked: number[];
+};
+export type EventImpact = { content_id: number; title: string; revision: number; change: string; review_id: number | null;
+  review_status: string | null; blockers: number | null; at: string };
+
+export type PublicContact = { id: number; kind: "phone" | "email" | "handle" | "url"; value: string; normalized: string;
+  label: string | null; source_ref: string | null; active: boolean };

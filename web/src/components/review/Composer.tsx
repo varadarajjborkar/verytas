@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { fmtBytes, precheck, upload } from "@/lib/review-client";
+import { fmtBytes, listEvents, precheck, upload } from "@/lib/review-client";
 import { ChevronIcon, UploadIcon } from "../Icons";
 import { useToast } from "../Toaster";
-import type { Precheck, UploadedMedia } from "@/lib/types";
+import type { BrandEvent, Precheck, UploadedMedia } from "@/lib/types";
 
 export const CHANNELS: { value: string; label: string; limit?: number }[] = [
   { value: "instagram", label: "Instagram", limit: 2200 },
@@ -35,11 +35,13 @@ export type Draft = {
   language: string;
   aiUsed: boolean;
   irregularityReason: string;
+  /** The brand event this piece is for, if any: its brief and hashtag then apply. */
+  eventId: number | null;
 };
 
 export const emptyDraft = (body: string): Draft => ({
   title: "Launch announcement", channel: "instagram", otherChannel: "", tier: "public", body, attachments: [],
-  intent: "", language: "", aiUsed: false, irregularityReason: "",
+  intent: "", language: "", aiUsed: false, irregularityReason: "", eventId: null,
 });
 
 export function channelOf(d: Draft): string {
@@ -164,6 +166,7 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
           </Select>
         </label>
       </div>
+      <EventPicker value={draft.eventId} onChange={(eventId) => set({ eventId })} />
       {draft.channel === "other" && (
         <label className="flex flex-col gap-1 text-xs font-medium text-muted">
           Which app or channel?
@@ -300,6 +303,33 @@ function DropTile({ id, label, hint, accept, disabled, onFiles }: {
       <span className="text-[11px] text-subtle">{hint}</span>
       <input id={id} type="file" multiple accept={accept} disabled={disabled} className="sr-only"
         onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
+    </label>
+  );
+}
+
+/** Running and scheduled brand events a piece can be made for. Hidden when there are none. */
+function EventPicker({ value, onChange }: { value: number | null; onChange: (id: number | null) => void }) {
+  const [events, setEvents] = useState<BrandEvent[]>([]);
+  useEffect(() => {
+    let live = true;
+    listEvents().then((xs) => { if (live) setEvents(xs.filter((e) => e.status === "active" && (e.live || e.starts_on > new Date().toISOString().slice(0, 10)))); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+  if (events.length === 0) return null;
+  const chosen = events.find((e) => e.id === value);
+  return (
+    <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+      Made for a brand event?
+      <Select value={value == null ? "" : String(value)} onChange={(v) => onChange(v ? Number(v) : null)}>
+        <option value="">No, a regular post</option>
+        {events.map((e) => <option key={e.id} value={e.id}>{e.name}{e.live ? " (running now)" : ` (from ${e.starts_on})`}</option>)}
+      </Select>
+      {chosen && (chosen.guidance || chosen.hashtags.length > 0) && (
+        <span className="mt-1 rounded-lg bg-sunken px-3 py-2 text-[12px] font-normal leading-5 text-muted">
+          {chosen.guidance}{chosen.hashtags.length > 0 && <> Use {chosen.hashtags.map((t) => (t.startsWith("#") ? t : `#${t}`)).join(" or ")}.</>}
+        </span>
+      )}
     </label>
   );
 }

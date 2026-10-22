@@ -47,6 +47,19 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^brand-assets$/],
   ["DELETE", /^brand-assets\/\d+$/],
   ["GET", /^brand-assets\/\d+\/image$/],
+  // Escalations to a person, brand events and the public-contacts register.
+  ["POST", /^findings\/\d+\/escalations$/],
+  ["GET", /^escalations$/],
+  ["GET", /^escalations\/\d+$/],
+  ["POST", /^escalations\/\d+\/(?:resolve|withdraw)$/],
+  ["GET", /^events$/],
+  ["POST", /^events$/],
+  ["PATCH", /^events\/\d+$/],
+  ["POST", /^events\/\d+\/cancel$/],
+  ["GET", /^events\/\d+\/impacts$/],
+  ["GET", /^public-contacts$/],
+  ["POST", /^public-contacts$/],
+  ["DELETE", /^public-contacts\/\d+$/],
 ];
 // Uploads are forwarded as-is; the API sniffs and limits them again.
 const MAX_BODY = 150 * 1024 * 1024;

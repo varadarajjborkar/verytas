@@ -1,6 +1,7 @@
 import "server-only";
 
 import { cookies } from "next/headers";
+import { APP } from "./app";
 
 // Each person signs in with their own Verytas API token. It lives in an
 // httpOnly cookie, so page scripts can't read it, and every call to the API is
@@ -27,9 +28,11 @@ const DEV_TOKEN = !signinRequired
 export const PERSONA_COOKIE = "vt_persona";
 export type Persona = "manager" | "creator";
 const CREATOR_TOKEN = !signinRequired ? process.env.VERYTAS_CREATOR_TOKEN : undefined;
-export const personasAvailable = Boolean(DEV_TOKEN && CREATOR_TOKEN);
+// A server fixed to one side (lib/app.ts) never switches: it is that side's app.
+export const personasAvailable = APP === null && Boolean(DEV_TOKEN && CREATOR_TOKEN);
 
 export async function currentPersona(): Promise<Persona> {
+  if (APP) return APP;
   return (await cookies()).get(PERSONA_COOKIE)?.value === "creator" ? "creator" : "manager";
 }
 
@@ -37,6 +40,9 @@ export async function sessionToken(): Promise<string | null> {
   const jar = await cookies();
   const own = jar.get(SESSION_COOKIE)?.value;
   if (own) return own;
+  // With sign-in off, a fixed app uses its side's demo account and nothing else.
+  if (APP === "creator") return CREATOR_TOKEN || null;
+  if (APP === "manager") return DEV_TOKEN || null;
   if (CREATOR_TOKEN && jar.get(PERSONA_COOKIE)?.value === "creator") return CREATOR_TOKEN;
   return DEV_TOKEN || null;
 }

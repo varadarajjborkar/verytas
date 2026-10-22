@@ -172,6 +172,16 @@ function EventItem({ i }: { i: Exclude<TimelineItem, Comment> }) {
         : <ReviewIcon size={13} className="text-accent" />;
     line = <><Who i={i} /> {MOVE[i.to] ?? `moved it to ${i.to}`}</>;
     note = i.note;
+  } else if (i.type === "escalation") {
+    icon = <ChatIcon size={13} className={i.state === "raised" ? "text-accent" : i.state === "cleared" ? "text-[var(--vt-ok)]" : "text-muted"} />;
+    line = i.state === "raised"
+      ? <><Who i={i} /> asked the brand team to review &ldquo;{i.finding}&rdquo;</>
+      : i.state === "withdrawn" ? <><Who i={i} /> withdrew the request on &ldquo;{i.finding}&rdquo;</>
+        : <><Who i={i} /> {i.state === "cleared" ? "cleared" : "upheld"} &ldquo;{i.finding}&rdquo; after review</>;
+    note = i.message;
+  } else if (i.type === "event") {
+    icon = <RefreshIcon size={13} className="text-accent" />;
+    line = <>Event &ldquo;{i.event}&rdquo; {i.change === "created" ? "started" : i.change === "cancelled" ? "was cancelled" : "changed"}: re-checked against it</>;
   } else if (i.type === "decision") {
     icon = <CheckIcon size={13} className="text-muted" />;
     line = <><Who i={i} /> {ACTION_LABEL[i.action].toLowerCase()} &ldquo;{i.finding}&rdquo;

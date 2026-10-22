@@ -115,6 +115,15 @@ body {
 
 ::selection { background: color-mix(in srgb, var(--vt-accent) 24%, transparent); }
 
+/* The parts the browser draws still carry the palette: caret, scrollbars, figures in data. */
+:root { caret-color: var(--vt-accent); accent-color: var(--vt-accent); }
+* { scrollbar-width: thin; scrollbar-color: var(--vt-line-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--vt-line-strong); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background-color: var(--vt-subtle); }
+*::-webkit-scrollbar-track { background: transparent; }
+table, .tabular-nums { font-variant-numeric: tabular-nums; }
+
 /* Visible focus everywhere, never just a colour change. */
 :focus-visible {
   outline: 2px solid var(--vt-accent);
@@ -173,6 +182,19 @@ body {
   transition: border-color 140ms ease-out, box-shadow 140ms ease-out;
 }
 .vt-input::placeholder { color: var(--vt-subtle); }
+/* Native selects keep their keyboard and screen-reader behaviour; only the arrow is redrawn, inset from
+   the edge like every other control's padding, instead of the platform's arrow pressed against the border. */
+select.vt-input:not(.appearance-none) {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 2.1rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a92a2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  background-size: 14px 14px;
+  text-overflow: ellipsis;
+}
+select.vt-input option { background: var(--vt-raised); color: var(--vt-ink); }
 .vt-input:focus { outline: none; border-color: var(--vt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vt-accent) 18%, transparent); }
 
 /* Fixed stops, not the theme accents, so the white mark stays readable (5:1+) in both themes. */
@@ -206,13 +228,11 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
   to { opacity: 1; transform: none; }
 }
 
-.vt-page { animation: vt-rise 280ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
-.vt-stagger > * { animation: vt-rise 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
-.vt-stagger > *:nth-child(2) { animation-delay: 40ms; }
-.vt-stagger > *:nth-child(3) { animation-delay: 80ms; }
-.vt-stagger > *:nth-child(4) { animation-delay: 120ms; }
-.vt-stagger > *:nth-child(5) { animation-delay: 160ms; }
-.vt-stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
+.vt-page { animation: vt-fade 200ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.vt-stagger > * { animation: vt-rise 240ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.vt-stagger > *:nth-child(2) { animation-delay: 30ms; }
+.vt-stagger > *:nth-child(3) { animation-delay: 60ms; }
+.vt-stagger > *:nth-child(n + 4) { animation-delay: 90ms; }
 .vt-backdrop { animation: vt-fade 180ms ease-out both; }
 .vt-pop { animation: vt-pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 /* A side panel being brought back slides in from the left edge it folded into. */
@@ -237,10 +257,21 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
   from { transform: scaleX(1); }
   to { transform: scaleX(0); }
 }
-.vt-toast-in { animation: vt-toast-in 340ms cubic-bezier(0.22, 1.2, 0.36, 1) both; }
+.vt-toast-in { animation: vt-toast-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .vt-toast-out { animation: vt-toast-out 180ms ease-in both; }
 .vt-toast-timer { transform-origin: left; animation: vt-toast-timer linear forwards; }
 .vt-toast:hover .vt-toast-timer, .vt-toast:focus-within .vt-toast-timer { animation-play-state: paused; }
+
+/* Dashboard editing: tiles wobble gently, like apps on a phone home screen when they can be moved.
+   Each tile is offset (--vt-wobble-delay) so they never swing in step; the swing is under a degree,
+   so it reads as "movable" without being hard to look at. */
+@keyframes vt-wobble {
+  0%, 100% { transform: rotate(-0.45deg); }
+  50% { transform: rotate(0.45deg); }
+}
+.vt-wobble { animation: vt-wobble 380ms ease-in-out infinite; animation-delay: var(--vt-wobble-delay, 0ms); transform-origin: 50% 40%; }
+.vt-wobble:hover, .vt-wobble:focus-within, .vt-dragging { animation-play-state: paused; }
+.vt-dragging { transform: scale(1.015); box-shadow: var(--vt-shadow-pop); z-index: 5; cursor: grabbing; }
 
 @keyframes vt-dot {
   0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
@@ -251,6 +282,8 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
 .vt-typing span:nth-child(3) { animation-delay: 0.3s; }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Editing mode then shows by its dashed outline and controls instead of motion. */
+  .vt-wobble { animation: none !important; }
   *, *::before, *::after {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;

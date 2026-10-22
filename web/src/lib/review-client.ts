@@ -2,7 +2,7 @@
 // server proxy (app/api/v), which holds the API token and an allowlist.
 
 import type {
-  BrandAsset, ContentDetail, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
+  BrandAsset, BrandEvent, ContentDetail, EscalationRequest, EventImpact, PublicContact, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
   Review, Rule, RuleDraft, Term, Timeline, UploadedMedia,
 } from "./types";
 
@@ -59,6 +59,23 @@ export const addComment = (contentId: number, body: string, versionId?: number, 
 export const decide = (findingId: number, action: Decision["action"], reasonCode?: string | null, reasonText?: string | null) =>
   api<Decision>(`findings/${findingId}/decision`, json({ action, reason_code: reasonCode ?? null, reason_text: reasonText || null }));
 export const listPeople = () => api<Person[]>("users");
+
+// --- escalations, events, public contacts ---
+export const escalate = (findingId: number, message: string) =>
+  api<EscalationRequest>(`findings/${findingId}/escalations`, json({ message }));
+export const listEscalations = (state: "open" | "resolved" | "all" = "open", contentId?: number) =>
+  api<EscalationRequest[]>(`escalations?state=${state}${contentId ? `&content_id=${contentId}` : ""}`);
+export const resolveEscalation = (id: number, outcome: "upheld" | "cleared", reasonCode?: string | null, note?: string | null) =>
+  api<EscalationRequest>(`escalations/${id}/resolve`, json({ outcome, reason_code: reasonCode ?? null, note: note || null }));
+export const withdrawEscalation = (id: number) => api<EscalationRequest>(`escalations/${id}/withdraw`, json({}));
+export const listEvents = () => api<BrandEvent[]>("events");
+export const createEvent = (e: Partial<BrandEvent>) => api<BrandEvent>("events", json(e));
+export const updateEvent = (id: number, e: Partial<BrandEvent>) => api<BrandEvent>(`events/${id}`, send("PATCH", e));
+export const cancelEvent = (id: number) => api<BrandEvent>(`events/${id}/cancel`, json({}));
+export const eventImpacts = (id: number) => api<EventImpact[]>(`events/${id}/impacts`);
+export const listContacts = () => api<PublicContact[]>("public-contacts");
+export const addContact = (c: Partial<PublicContact>) => api<PublicContact>("public-contacts", json(c));
+export const retireContact = (id: number) => api<null>(`public-contacts/${id}`, send("DELETE"));
 
 // --- the brand library (writes are brand-admin only; the API enforces it) ---
 const send = (method: string, body?: unknown): RequestInit => ({

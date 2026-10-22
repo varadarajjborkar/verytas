@@ -69,6 +69,16 @@ export const ChatIcon = (p: IconProps) => (
 export const PanelIcon = (p: IconProps) => (
   <Icon {...p}><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /></Icon>
 );
+export const InboxIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></Icon>
+);
+export const CalendarIcon = (p: IconProps) => (
+  <Icon {...p}><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></Icon>
+);
+export const GripIcon = (p: IconProps) => (
+  <Icon {...p}><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" />
+    <circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" /></Icon>
+);
 export const HomeIcon = (p: IconProps) => (
   <Icon {...p}><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9v11a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9" /></Icon>
 );

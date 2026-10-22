@@ -6,17 +6,27 @@ import { type Journey, STAGES, stageOf } from "@/lib/journey";
 import type { ContentStatus } from "@/lib/types";
 import { CheckIcon, RefreshIcon } from "./Icons";
 
-/** Five dots, filled up to the stage reached; a loop mark when the piece was sent back. */
+/**
+ * The route in miniature: five stops on one line, travelled up to the stage reached.
+ * The same drawing as the journey map, so a row in any list reads like the map it opens.
+ */
 export function StageDots({ status, checked }: { status: ContentStatus; checked: boolean }) {
   const at = stageOf(status, checked);
   const label = at < 0 ? "Withdrawn" : `${STAGES[at]}, step ${at + 1} of ${STAGES.length}`;
+  const x = (i: number) => 4 + i * 14;
   return (
     <span role="img" aria-label={label} title={label} className="inline-flex items-center gap-1">
-      {STAGES.map((s, i) => (
-        <span key={s} className={`h-1.5 w-1.5 rounded-full ${
-          at < 0 ? "bg-line-strong" : i < at ? "bg-accent" : i === at ? "bg-accent ring-2 ring-accent/25" : "bg-line-strong"}`} />
-      ))}
-      {status === "changes_requested" && <RefreshIcon size={11} className="ml-0.5 text-[var(--vt-warning)]" />}
+      <svg width="64" height="10" viewBox="0 0 64 10" aria-hidden className="shrink-0 overflow-visible">
+        <line x1={x(0)} x2={x(4)} y1="5" y2="5" stroke="var(--vt-line-strong)" strokeWidth="1.5" strokeLinecap="round" />
+        {at > 0 && <line x1={x(0)} x2={x(at)} y1="5" y2="5" stroke="var(--vt-accent)" strokeWidth="1.5" strokeLinecap="round" />}
+        {STAGES.map((s, i) => (
+          <circle key={s} cx={x(i)} cy="5" r={i === at ? 3.25 : 2.25}
+            fill={at >= 0 && i <= at ? "var(--vt-accent)" : "var(--vt-raised)"}
+            stroke={at >= 0 && i <= at ? "var(--vt-accent)" : "var(--vt-line-strong)"} strokeWidth="1.25" />
+        ))}
+        {at >= 0 && <circle cx={x(at)} cy="5" r="5.5" fill="none" stroke="var(--vt-accent)" strokeOpacity="0.25" strokeWidth="2" />}
+      </svg>
+      {status === "changes_requested" && <RefreshIcon size={11} className="text-[var(--vt-warning)]" />}
     </span>
   );
 }

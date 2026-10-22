@@ -4,11 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:manager": "VERYTAS_APP=manager next dev -p 3000",
+    "dev:creator": "VERYTAS_APP=creator NEXT_DIST_DIR=.next-creator next dev -p 3001",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "gen:prompt": "node scripts/gen-openui-prompt.mjs",
     "predev": "node scripts/gen-openui-prompt.mjs",
+    "predev:manager": "node scripts/gen-openui-prompt.mjs",
+    "predev:creator": "node scripts/gen-openui-prompt.mjs",
     "prebuild": "node scripts/gen-openui-prompt.mjs"
   },
   "dependencies": {
