@@ -629,7 +629,8 @@ def _misspelled(wordmark: str, lines: list[local_ocr.OcrLine]) -> str | None:
         for i in range(len(words)):
             cand = " ".join(words[i:i + n]).strip(".,!?:;\"'()")
             c = cand.casefold()
-            if not c or c == target:
+            # The wordmark used as a hashtag, a handle, a possessive or a plural is spelled right.
+            if not c or c == target or _BRAND_FORMS.sub("", c) == target:
                 continue
             # Digits and look-alike letters standing in for the real ones
             # ("Inkl00m", "Nlke", "Arnazon") are the commonest garble, in
@@ -643,6 +644,9 @@ def _misspelled(wordmark: str, lines: list[local_ocr.OcrLine]) -> str | None:
                     and abs(len(c) - len(target)) <= (3 if len(target) >= 8 else 1) or _transposed(c, target):
                 return cand
     return None
+
+
+_BRAND_FORMS = re.compile(r"^[#@]|(?:['\u2019]s?|e?s)$")
 
 
 def _transposed(a: str, b: str) -> bool:

@@ -367,3 +367,24 @@ def test_data_appended_after_an_image_is_found_even_behind_a_fake_end_marker():
     assert _trailing_bytes(png + junk, "PNG") == 5000
     assert _trailing_bytes(png + junk + b"IEND" + b"\x00" * 4, "PNG") == 5008
     assert _trailing_bytes(jpeg + junk + b"\xff\xd9", "JPEG") == 5002
+
+
+def test_a_word_text_box_is_read_once_not_again_from_its_fallback_copy():
+    # errcheck 231: Word stores a text box as DrawingML and again as VML for old readers.
+    w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    mc = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+    box = '<w:txbxContent><w:p><w:r><w:t>50% OFF TODAY</w:t></w:r></w:p></w:txbxContent>'
+    xml = (f'<w:document xmlns:w="{w}" xmlns:mc="{mc}"><w:body><w:p><w:r><mc:AlternateContent>'
+           f'<mc:Choice Requires="wps">{box}</mc:Choice><mc:Fallback>{box}</mc:Fallback>'
+           '</mc:AlternateContent></w:r></w:p></w:body></w:document>').encode()
+    body, _ = documents._docx_text(xml)
+    assert body == "50% OFF TODAY"
+
+
+@pytest.mark.parametrize("token", ["Kitepath's", "Kitepath’s", "#Kitepath", "@kitepath", "Kitepaths"])
+def test_the_wordmark_as_a_hashtag_handle_possessive_or_plural_is_not_a_misspelling(token):
+    # errcheck 230: these used to raise "Wordmark misspelled" at 0.9 confidence.
+    line = agents.local_ocr.OcrLine(f"Learn with {token} today", 0.99, (0, 0, 10, 10))
+    assert agents._misspelled("Kitepath", [line]) is None
+    garbled = agents.local_ocr.OcrLine("Learn with Kitepaht today", 0.99, (0, 0, 10, 10))
+    assert agents._misspelled("Kitepath", [garbled]) == "Kitepaht"
