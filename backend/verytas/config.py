@@ -44,6 +44,14 @@ class Settings(BaseSettings):
 
     keys_dir: Path = Path(".keys")
 
+    environment: str = "development"
+    cors_origins: list[str] = ["http://localhost:3000"]
+    # Error monitoring is opt-in; nothing is sent unless a DSN is configured.
+    sentry_dsn: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("SENTRY_DSN", "VERYTAS_SENTRY_DSN")
+    )
+    sentry_traces_sample_rate: float = 0.0
+
     # Governor limits (architecture section 6.3).
     max_concurrent_tasks: int = 8
     task_timeout_s: float = 60.0
