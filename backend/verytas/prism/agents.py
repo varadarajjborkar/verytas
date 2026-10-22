@@ -365,6 +365,10 @@ async def image_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_i
         run.notes.append(f"{image_id}: not sent to a vision model because local OCR failed, so confidential "
                          "text in it could not be blacked out first")
     _asset_findings(run, node, image_id, locator, matches or [], scene, lines)
+    contrast = run.rule_by_code.get("A11Y-CONTRAST")
+    if contrast and lines:
+        await run.tree.spawn(node, "contrast", "Measure text contrast",
+                             lambda n: _contrast_agent(run, n, pil, image_id, locator, lines, contrast))
     if image_id in run.layouts:
         names = {a.id: f"{a.kind} '{a.name}'" for a in run.assets}
         run.layouts[image_id]["lines"] = [(ln.text, ln.box) for ln in lines]
@@ -417,6 +421,65 @@ async def ocr_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_id:
                      parent=image_id)
         await run.tree.spawn(node, "text", "Text found in image", lambda n: text_agent(run, n, src))
     return result
+
+
+# Most posts are seen on phones, so text is sized as it shows at a phone's width (CSS px) when telling
+# large text (WCAG: 18pt, 24px) from body text. An OCR box is about 1.2 times the font size tall.
+_PHONE_CSS_WIDTH = 390
+_LARGE_TEXT_PX = 24
+_CONTRAST_MAX_FINDINGS = 5
+
+
+def _low_contrast_lines(pil: Image.Image, lines: list[local_ocr.OcrLine], min_ratio: float,
+                        min_large: float) -> list[tuple[local_ocr.OcrLine, tuple, tuple, float, float, bool]]:
+    """Lines whose text is below the contrast minimum, with (text colour, background, ratio, needed, busy)."""
+    import numpy as np
+
+    from verytas.checks.color import text_contrast
+
+    arr = np.asarray(pil.convert("RGB"))
+    height, width = arr.shape[:2]
+    scale = min(1.0, _PHONE_CSS_WIDTH / width)
+    out = []
+    for ln in lines:
+        x0, y0, x1, y1 = ln.box
+        h = y1 - y0
+        # Stray marks and badly read fragments say nothing about legibility.
+        if h < 8 or ln.confidence < 0.6 or sum(ch.isalnum() for ch in ln.text) < 3:
+            continue
+        pad = max(3, h // 4)
+        measured = text_contrast(arr[max(0, y0 - pad):min(height, y1 + pad), max(0, x0 - pad):min(width, x1 + pad)])
+        if measured is None:
+            continue
+        fg, bg, ratio, busy = measured
+        needed = min_large if h * scale / 1.2 >= _LARGE_TEXT_PX else min_ratio
+        if ratio < needed:
+            out.append((ln, fg, bg, ratio, needed, busy))
+    return out
+
+
+async def _contrast_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_id: str, locator: dict[str, Any],
+                          lines: list[local_ocr.OcrLine], rule: RuleView) -> None:
+    from verytas.checks.color import rgb_to_hex
+
+    low = await run.blocking(_low_contrast_lines, pil, lines, float(rule.pattern.get("min_ratio", 4.5)),
+                             float(rule.pattern.get("min_ratio_large", 3.0)))
+    node.detail = {"lines": len(lines), "low": len(low)}
+    found = []
+    for i, (ln, fg, bg, ratio, needed, busy) in enumerate(low[:_CONTRAST_MAX_FINDINGS], start=1):
+        over = "a busy background (median colour)" if busy else rgb_to_hex(bg)
+        found.append(RawFinding(
+            unit_id=f"{image_id}:contrast{i}", category=rule.category,
+            title=f'Low contrast text "{ln.text[:60]}": {ratio:.1f}:1 (needs {needed:g}:1)',
+            explanation=f"Measured from the image: text {rgb_to_hex(fg)} on {over}, {ratio:.2f}:1. {rule.text}",
+            # Over a photo the background colour is an estimate, so the finding is less certain.
+            confidence=0.6 if busy else 0.95, checker="contrast", rule_code=rule.code, source=image_id,
+            locator={**locator, "image": image_id, "box": list(ln.box)},
+        ))
+    if len(low) > _CONTRAST_MAX_FINDINGS:
+        run.notes.append(f"{image_id}: {len(low)} lines are below the contrast minimum; the first "
+                         f"{_CONTRAST_MAX_FINDINGS} are reported")
+    run.add(node, "media", found)
 
 
 def _unreadable(run: ReviewRun, node: AgentNode, image_id: str, locator: dict[str, Any], why: str) -> None:

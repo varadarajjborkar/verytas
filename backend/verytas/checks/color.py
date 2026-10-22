@@ -147,3 +147,43 @@ def dominant_colours(pixels: np.ndarray, k: int = 5, iters: int = 12, seed: int 
     counts = np.bincount(labels, minlength=k) / len(data)
     order = np.argsort(-counts)
     return [(tuple(int(round(v)) for v in centres[i]), float(counts[i])) for i in order]
+
+
+def _luminance_array(rgb: np.ndarray) -> np.ndarray:
+    """WCAG relative luminance of every pixel of an (H, W, 3) or (N, 3) uint8 array."""
+    c = rgb.astype(np.float64) / 255.0
+    lin = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    return lin @ np.array([0.2126, 0.7152, 0.0722])
+
+
+def text_contrast(crop: np.ndarray) -> tuple[RGB, RGB, float, bool] | None:
+    """(text colour, background colour, contrast ratio, busy background) for a crop holding one line of text.
+
+    The crop should have a margin around the text: its border is the background. The text is the pixels
+    that differ from the background, on whichever side (darker or lighter) differs most; its colour is
+    the core of the strokes (the furthest 30% of those), not their anti-aliased edges, so a thin font is
+    not read as low contrast. A background whose border spans a wide range of luminance (a photo) is
+    reported as busy: the one colour given for it is then a median. None when nothing stands out.
+    """
+    if crop.ndim != 3 or min(crop.shape[:2]) < 6:
+        return None
+    rgb = crop[..., :3]
+    lum = _luminance_array(rgb)
+    ring = np.concatenate([lum[0], lum[-1], lum[1:-1, 0], lum[1:-1, -1]])
+    ring_rgb = np.concatenate([rgb[0], rgb[-1], rgb[1:-1, 0], rgb[1:-1, -1]])
+    bg = float(np.median(ring))
+    diff = lum - bg
+    darker, lighter = diff < -0.01, diff > 0.01
+    side = darker if np.abs(diff[darker]).sum() >= np.abs(diff[lighter]).sum() else lighter
+    if side.sum() < 12:
+        return None
+    dist = np.abs(diff[side])
+    core = side.copy()
+    core[side] = dist >= np.percentile(dist, 70)
+    text_l = float(np.median(lum[core]))
+    near = np.abs(ring - bg) <= max(0.02, float(np.median(np.abs(ring - bg))))
+    bg_rgb: RGB = tuple(int(v) for v in np.median(ring_rgb[near], axis=0))  # type: ignore[assignment]
+    text_rgb: RGB = tuple(int(v) for v in np.median(rgb[core], axis=0))  # type: ignore[assignment]
+    hi_l, lo_l = max(bg, text_l), min(bg, text_l)
+    busy = float(np.percentile(ring, 90) - np.percentile(ring, 10)) > 0.25
+    return text_rgb, bg_rgb, (hi_l + 0.05) / (lo_l + 0.05), busy

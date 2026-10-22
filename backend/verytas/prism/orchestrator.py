@@ -87,6 +87,7 @@ _ROLE_COVERS: dict[str, set[str]] = {
     **{r: MEDIA_COVERS for r in _MEDIA_ROLES},
     "prism": set(CATEGORIES), "text": _ALL_TEXT,
     "policy": {"messaging", "legal"}, "presentation": {"legal", "visual", "accessibility"},
+    "contrast": {"accessibility"},
 }
 _ASSET_ROLES = {"assets", "scene", "keyframes"}  # visual, when the workspace has official artwork
 # Context reading is a second opinion over text that was already checked:
