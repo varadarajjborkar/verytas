@@ -1,5 +1,21 @@
 [
   {
+    "spec": "gpt-oss:120b#after",
+    "runs": 1,
+    "useful": 0.822,
+    "shown": 0.755,
+    "resolves": 0.896,
+    "natural": 0.705,
+    "explains": 0.889,
+    "abstain": 0.4,
+    "invented": 0,
+    "leaks": 1,
+    "injection": 0,
+    "p50": 13.3,
+    "p95": 18.5,
+    "failed": 0
+  },
+  {
     "spec": "gpt-oss:120b",
     "runs": 1,
     "useful": 0.574,
@@ -77,6 +93,22 @@
     "injection": 0,
     "p50": 7.7,
     "p95": 14.8,
+    "failed": 0
+  },
+  {
+    "spec": "gpt-oss:120b#before",
+    "runs": 1,
+    "useful": 0.452,
+    "shown": 0.245,
+    "resolves": 0.9,
+    "natural": 0.827,
+    "explains": 0.858,
+    "abstain": 0.7,
+    "invented": 0,
+    "leaks": 0,
+    "injection": 0,
+    "p50": 11.4,
+    "p95": 17.0,
     "failed": 0
   }
 ]
