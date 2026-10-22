@@ -173,3 +173,26 @@ def test_a_true_figure_worded_unlike_the_fact_library_is_supported():
     quote = "Our current churn rate is 9%, a number we keep pushing down."
     [res] = _verify_numbers(quote, parse_numbers(quote), [], make_ctx(quote, facts=[fact]))
     assert res.verdict == "supported" and res.fact is fact
+
+
+# A fact can store its scale in the unit ("1.2" + "million"), the way the showcase brand does.
+LEARNERS = FactView(6, "Verytas has 1.2 million learners", 1.2, "million", "learners on Verytas",
+                    "Annual report 2026", date(2026, 1, 1), None)
+
+
+async def test_fact_with_a_multiplier_unit_supports_the_same_figure():
+    assert await _run("Verytas has 1.2 million learners.", [LEARNERS]) == []
+
+
+async def test_fix_keeps_the_claims_own_multiplier():
+    # The fix once read "Verytas has 1.2 learners.": the number was swapped and the word dropped.
+    [f] = await _run("Verytas has 2 million learners.", [LEARNERS])
+    assert f.rule_code == "CLAIM-CONTRADICTED"
+    assert f.suggestion.proposed == "Verytas has 1.2 million learners."
+    [f] = await _run("Verytas has 2M learners.", [LEARNERS])
+    assert f.suggestion.proposed == "Verytas has 1.2M learners."
+
+
+def test_indian_multipliers_parse():
+    assert parse_number("12 lakh learners").value == pytest.approx(1_200_000)
+    assert parse_number("1.5 crore views").value == pytest.approx(15_000_000)

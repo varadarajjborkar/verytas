@@ -50,13 +50,17 @@ _PROMO = re.compile(
 _NUMBER = re.compile(
     r"(?P<prefix>\b(?:more than|over|at least|up to|nearly|almost)\s+)?"
     r"(?P<num>\d{1,2}(?:,\d{2})+,\d{3}(?:\.\d+)?|\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
-    r"\s?(?P<mult>[kKmMbB]\b|thousand\b|million\b|billion\b)?"
+    r"\s?(?P<mult>[kKmMbB]\b|thousand\b|million\b|billion\b|lakhs?\b|crores?\b)?"
     r"(?P<plus>\+)?\s?(?P<pct>%|percent\b)?",
     re.IGNORECASE,
 )
 _YEAR = re.compile(r"^(19|20)\d{2}$")
 _SCALE = re.compile(r"\d\s*(?:out\s+of|/)\s*$", re.IGNORECASE)
-_MULT = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "b": 1e9, "billion": 1e9}
+_MULT = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "b": 1e9, "billion": 1e9,
+         "lakh": 1e5, "lakhs": 1e5, "crore": 1e7, "crores": 1e7}
+# A fact's unit scales its value only when it is a spelled-out multiplier: a unit of "m" is as
+# likely metres as millions, and "k" alone is rare enough in a fact library to read literally.
+_UNIT_MULT = {k: v for k, v in _MULT.items() if len(k) > 1}
 
 
 @dataclass(frozen=True)
@@ -179,10 +183,24 @@ def compare_numbers(claim: ParsedNumber, fact_value: float) -> Verdict:
     return "contradicted"
 
 
+def _amount(fact: FactView) -> float:
+    """A fact's value as a plain number: "1.2" with unit "million" is 1,200,000, as a claim's "1.2M" is."""
+    assert fact.value is not None
+    return fact.value * _UNIT_MULT.get((fact.unit or "").strip().lower(), 1)
+
+
 def _format_like(original: str, value: float) -> str:
-    if value.is_integer():
-        return f"{int(value):,}" if "," in original else str(int(value))
-    return f"{value:g}"
+    """`value` written the way the claim wrote its figure: "2 million" becomes "1.2 million", not "1200000"."""
+    m = _NUMBER.match(original.strip())
+    mult = m.group("mult") if m else None
+    if mult:
+        value /= _MULT[mult.lower()]
+    whole = f"{int(value):,}" if "," in original else str(int(value))
+    text = whole if value.is_integer() else f"{value:g}"
+    if mult:
+        # Keep the claim's own spacing and spelling of the multiplier ("2M", "2 million").
+        text += original[m.end("num"):m.end("mult")]
+    return text
 
 
 @dataclass
@@ -234,8 +252,8 @@ def _verify_numbers(quote: str, numbers: list[ParsedNumber], candidates: list[Fa
             # simulator: true statistics were flagged "unsupported" when the post
             # phrased the subject unlike the fact library.
             exact = next((f for f in ctx.facts if f.value is not None and f.valid_on(ctx.today)
-                          and (f.unit == "%") == n.percent and compare_numbers(n, f.value) == "supported"
-                          and abs(n.value - f.value) <= 0.02 * max(1.0, abs(f.value))
+                          and (f.unit == "%") == n.percent and compare_numbers(n, _amount(f)) == "supported"
+                          and abs(n.value - _amount(f)) <= 0.02 * max(1.0, abs(_amount(f)))
                           and relevance(quote, f) >= _EXACT_TOPIC_FLOOR), None)
             results.append(_NumberResult(n, "supported", exact) if exact else _NumberResult(n, "unmatched"))
             continue
@@ -246,11 +264,11 @@ def _verify_numbers(quote: str, numbers: list[ParsedNumber], candidates: list[Fa
         future = [f for f in family if ctx.today < f.valid_from]
         if valid:
             fact = valid[0]
-            if compare_numbers(n, fact.value) == "supported":
+            if compare_numbers(n, _amount(fact)) == "supported":
                 results.append(_NumberResult(n, "supported", fact))
                 continue
             # Wrong today but right in the past is stale copy: report it as outdated.
-            stale = next((f for f in past if compare_numbers(n, f.value) == "supported"), None)
+            stale = next((f for f in past if compare_numbers(n, _amount(f)) == "supported"), None)
             results.append(_NumberResult(n, "outdated", stale, fact) if stale
                            else _NumberResult(n, "contradicted", fact, fact))
         elif past:
@@ -324,7 +342,7 @@ def _numeric_finding(base: dict, quote: str, results: list[_NumberResult], ctx: 
                                     f"becomes valid on {fact.valid_from.isoformat()}. Publishing earlier would "
                                     "pre-announce it.")
             if r.replacement is not None and r.replacement.value is not None:
-                edits.append((r.number, _format_like(r.number.raw, r.replacement.value)))
+                edits.append((r.number, _format_like(r.number.raw, _amount(r.replacement))))
         suggestion = None
         if edits:
             proposed = quote
