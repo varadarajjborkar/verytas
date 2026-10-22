@@ -2,87 +2,51 @@
 
 /*
  * One neutral ramp carries the interface; a single azure accent marks what is
- * actionable, and its teal partner appears only in the brand mark and the
- * faint glow behind each page. Light is a soft cool grey rather than paper
- * white; dark is designed on its own (raised surfaces get lighter, not more
- * shadowed). Level colours always come with an icon and a label.
+ * actionable, and tints the brand mark and the faint glow behind each page.
+ * Light is a soft cool grey rather than paper white; dark is designed on its
+ * own (raised surfaces get lighter, not more shadowed). Level colours always
+ * come with an icon and a label.
  */
 :root {
-  --vt-bg: #eceef2;
-  --vt-surface: #f6f7f9;
-  --vt-raised: #fbfbfc;
-  --vt-sunken: #e4e7ec;
-  --vt-ink: #1b1e26;
-  --vt-muted: #535b69;
-  --vt-subtle: #626978;
-  --vt-line: #d9dde4;
-  --vt-line-strong: #c5cbd5;
-  --vt-accent: #1a5fd1;
-  --vt-accent-ink: #ffffff;
-  --vt-glow: rgba(26, 95, 209, 0.07);
+  /* Each colour is written once as light-dark(light, dark); color-scheme picks the side. It follows
+     the system unless Settings pins a theme (data-theme on <html>). */
+  color-scheme: light dark;
+  --vt-bg: light-dark(#eceef2, #0c0e13);
+  --vt-surface: light-dark(#f6f7f9, #13161d);
+  --vt-raised: light-dark(#fbfbfc, #1a1e27);
+  --vt-sunken: light-dark(#e4e7ec, #0f1217);
+  --vt-ink: light-dark(#1b1e26, #e4e7ed);
+  --vt-muted: light-dark(#535b69, #969eae);
+  --vt-subtle: light-dark(#626978, #8a92a2);
+  --vt-line: light-dark(#d9dde4, #232835);
+  --vt-line-strong: light-dark(#c5cbd5, #313847);
+  --vt-accent: light-dark(#1a5fd1, #4c9bff);
+  --vt-accent-ink: light-dark(#ffffff, #06101e);
+  --vt-glow: light-dark(rgba(26, 95, 209, 0.07), rgba(76, 155, 255, 0.06));
+  --vt-blocker: light-dark(#b8321c, #f08a7a);
+  --vt-blocker-bg: light-dark(#f9e5e1, #2d1715);
+  --vt-warning: light-dark(#94540a, #e6b25a);
+  --vt-warning-bg: light-dark(#f8eed9, #2a2111);
+  --vt-advisory: light-dark(#3f6584, #9db6cf);
+  --vt-advisory-bg: light-dark(#e3eaf1, #172230);
+  --vt-ok: light-dark(#0f7446, #5cc794);
+  --vt-ok-bg: light-dark(#ddf1e6, #10261c);
   --vt-shadow: 0 1px 2px rgba(18, 24, 40, 0.04), 0 1px 3px rgba(18, 24, 40, 0.05);
   --vt-shadow-pop: 0 12px 32px -8px rgba(18, 24, 40, 0.18), 0 2px 6px rgba(18, 24, 40, 0.06);
-  --vt-blocker: #b8321c;
-  --vt-blocker-bg: #f9e5e1;
-  --vt-warning: #94540a;
-  --vt-warning-bg: #f8eed9;
-  --vt-advisory: #3f6584;
-  --vt-advisory-bg: #e3eaf1;
-  --vt-ok: #0f7446;
-  --vt-ok-bg: #ddf1e6;
-  color-scheme: light;
 }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
+/* Shadows aren't colours, so light-dark() can't hold them: dark mode raises surfaces with a faint
+   top highlight instead of a drop shadow. */
 :root[data-theme="dark"] {
-  --vt-bg: #0c0e13;
-  --vt-surface: #13161d;
-  --vt-raised: #1a1e27;
-  --vt-sunken: #0f1217;
-  --vt-ink: #e4e7ed;
-  --vt-muted: #969eae;
-  --vt-subtle: #8a92a2;
-  --vt-line: #232835;
-  --vt-line-strong: #313847;
-  --vt-accent: #4c9bff;
-  --vt-accent-ink: #06101e;
-  --vt-glow: rgba(76, 155, 255, 0.06);
   --vt-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   --vt-shadow-pop: 0 16px 40px -10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  --vt-blocker: #f08a7a;
-  --vt-blocker-bg: #2d1715;
-  --vt-warning: #e6b25a;
-  --vt-warning-bg: #2a2111;
-  --vt-advisory: #9db6cf;
-  --vt-advisory-bg: #172230;
-  --vt-ok: #5cc794;
-  --vt-ok-bg: #10261c;
-  color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --vt-bg: #0c0e13;
-    --vt-surface: #13161d;
-    --vt-raised: #1a1e27;
-    --vt-sunken: #0f1217;
-    --vt-ink: #e4e7ed;
-    --vt-muted: #969eae;
-    --vt-subtle: #8a92a2;
-    --vt-line: #232835;
-    --vt-line-strong: #313847;
-    --vt-accent: #4c9bff;
-    --vt-accent-ink: #06101e;
-    --vt-glow: rgba(76, 155, 255, 0.06);
     --vt-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
     --vt-shadow-pop: 0 16px 40px -10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    --vt-blocker: #f08a7a;
-    --vt-blocker-bg: #2d1715;
-    --vt-warning: #e6b25a;
-    --vt-warning-bg: #2a2111;
-    --vt-advisory: #9db6cf;
-    --vt-advisory-bg: #172230;
-    --vt-ok: #5cc794;
-    --vt-ok-bg: #10261c;
-    color-scheme: dark;
   }
 }
 
@@ -200,9 +164,9 @@ table, .tabular-nums { font-variant-numeric: tabular-nums; }
   .vt-input:focus { outline: none; border-color: var(--vt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vt-accent) 18%, transparent); }
 }
 
-/* Fixed stops, not the theme accents, so the white mark stays readable (5:1+) in both themes. */
+/* A fixed azure, not the theme accent, so the white mark stays readable (5:1+) in both themes. */
 .vt-mark {
-  background: linear-gradient(135deg, #1a5fd1, #0c7c79);
+  background: #1a5fd1;
   color: #fff;
 }
 

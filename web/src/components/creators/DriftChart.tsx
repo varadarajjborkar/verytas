@@ -66,7 +66,7 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
           {[0, 50, 100].map((v) => (
             <g key={v}>
               <line x1={PAD.left} x2={width - PAD.right} y1={y(v)} y2={y(v)} stroke="var(--vt-line)" strokeDasharray={v ? "2 4" : undefined} />
-              <text x={PAD.left - 8} y={y(v)} dy="0.32em" textAnchor="end" className="fill-[var(--vt-subtle)] text-[10px] tabular-nums">{v}</text>
+              <text x={PAD.left - 8} y={y(v)} dy="0.32em" textAnchor="end" className="fill-[var(--vt-subtle)] text-[11px] tabular-nums">{v}</text>
             </g>
           ))}
           {a && <line x1={x(active!)} x2={x(active!)} y1={PAD.top} y2={PAD.top + plotH} stroke="var(--vt-line-strong)" />}
@@ -95,7 +95,7 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
             );
           })}
           {[0, points.length - 1].filter((i, n, all) => all.indexOf(i) === n).map((i) => (
-            <text key={i} x={x(i)} y={H - 8} textAnchor={points.length === 1 ? "middle" : i ? "end" : "start"} className="fill-[var(--vt-subtle)] text-[10px]">
+            <text key={i} x={x(i)} y={H - 8} textAnchor={points.length === 1 ? "middle" : i ? "end" : "start"} className="fill-[var(--vt-subtle)] text-[11px]">
               {day(points[i].at)}
             </text>
           ))}

@@ -67,6 +67,9 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
   }, [active]);
   const counts = LEVEL_ORDER.map((l) => findings.filter((f) => f.level === l).length);
   const done = findings.filter((f) => rows[f.id]?.done).length;
+  // Fixes that land in the text itself; a change inside an attachment has to be made by hand.
+  const fixable = findings.filter((f) => f.suggestions[0] && (f.source ?? "body") === "body");
+  const allApplied = fixable.length > 0 && fixable.every((f) => rows[f.id]?.apply);
 
   return (
     <div className="flex flex-col gap-3">
@@ -74,7 +77,17 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
         {LEVEL_ORDER.map((l, i) => counts[i] > 0 && (
           <span key={l} className="inline-flex items-center gap-1.5"><PriorityPill level={l} /><span className="tabular-nums text-muted">{counts[i]}</span></span>
         ))}
-        {creator && <span className="ml-auto tabular-nums text-subtle">{done}/{findings.length} done</span>}
+        {creator && (
+          <span className="ml-auto flex items-center gap-3">
+            {fixable.length > 1 && (
+              <button type="button" onClick={() => fixable.forEach((f) => onRow(f.id, { apply: !allApplied }))}
+                className="font-medium text-accent hover:underline">
+                {allApplied ? "Unselect fixes" : `Apply all ${fixable.length} fixes`}
+              </button>
+            )}
+            <span className="tabular-nums text-subtle">{done}/{findings.length} done</span>
+          </span>
+        )}
       </div>
       {/* Rows run edge to edge inside the parent card, split by hairlines: a card in a card adds depth, not meaning. */}
       <ul ref={list} className="vt-stagger -mx-4 border-t border-line">
@@ -108,6 +121,7 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                     )}
                     <span className="flex flex-wrap gap-x-2 text-xs text-muted">
                       <span>{whereLabel(f)}</span>
+                      {row.apply && <span className="font-medium text-[var(--vt-ok)]">· Fix will be applied</span>}
                       {d && <span className="text-accent">· {DISPUTE_TEXT[d.status]}</span>}
                       {f.assessment?.outcome && <span>· {f.assessment.outcome}</span>}
                       <DecisionTag f={f} />
