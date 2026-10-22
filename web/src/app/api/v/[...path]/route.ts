@@ -17,6 +17,12 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^findings\/\d+\/decision$/],
   ["GET", /^brand-assets$/],
   ["GET", /^me$/],
+  ["GET", /^contents$/],
+  ["GET", /^chats$/],
+  ["POST", /^chats$/],
+  ["GET", /^chats\/\d+$/],
+  ["PUT", /^chats\/\d+$/],
+  ["DELETE", /^chats\/\d+$/],
 ];
 // Uploads are forwarded as-is; the API sniffs and limits them again.
 const MAX_BODY = 150 * 1024 * 1024;
@@ -62,7 +68,7 @@ async function handle(request: Request, ctx: { params: Promise<{ path: string[] 
   const tooLarge = Response.json({ error: "That file is over 150 MB." }, { status: 413 });
   // Content-Length is a fast early answer only; the stream cap is what holds.
   if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return tooLarge;
-  const body = request.method === "GET" || !request.body ? undefined : capped(request.body, MAX_BODY);
+  const body = request.method === "GET" || request.method === "DELETE" || !request.body ? undefined : capped(request.body, MAX_BODY);
   const tripped = () => body?.tripped() ?? false;
   const query = new URL(request.url).search;
   try {
@@ -81,3 +87,5 @@ async function handle(request: Request, ctx: { params: Promise<{ path: string[] 
 
 export const GET = handle;
 export const POST = handle;
+export const PUT = handle;
+export const DELETE = handle;

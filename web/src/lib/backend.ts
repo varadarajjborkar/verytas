@@ -51,6 +51,17 @@ export const getOverview = () => liveOrDemo<Overview>("/insights/overview", demo
 export const getGuidelineHealth = () => liveOrDemo<RuleHealth[]>("/insights/guideline-health", demoHealth);
 export const getRecurring = () => liveOrDemo<Recurring[]>("/insights/recurring", demoRecurring);
 
+/** What Ask Verytas may see for this person and question; null when the API isn't reachable. */
+export async function getAssistantContext(question: string): Promise<Record<string, unknown> | null> {
+  if (!backendConfigured) return null;
+  try {
+    return await call<Record<string, unknown>>(`/assistant/context?q=${encodeURIComponent(question.slice(0, 2000))}`);
+  } catch (err) {
+    console.error("[verytas] assistant context unavailable:", (err as Error).message);
+    return null;
+  }
+}
+
 type SubmitOut = { content: { id: number }; version: { id: number; body: string }; review_id: number };
 
 export async function submitForReview(input: { title: string; channel: string; body: string }): Promise<ReviewResult> {
