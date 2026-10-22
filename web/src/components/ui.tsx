@@ -26,8 +26,10 @@ export function PageHeader({ title, lead, aside, refresh = false }: { title: str
   );
 }
 
+/** Says so only when a page is showing sample data; live data is the normal case and needs no badge. */
 export function SourceBadge({ source }: { source: Source }) {
   const live = source === "live";
+  if (live) return null;
   return (
     <span title={live ? undefined : "The backend isn't connected, so this shows sample data."}
       className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-medium text-muted">
@@ -68,11 +70,14 @@ export function Stat({ label, value, hint }: { label: string; value: ReactNode; 
   );
 }
 
-export function Panel({ title, aside, children, className = "" }: {
+export function Panel({ title, aside, children, className = "", scroll = false }: {
   title: string;
   aside?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** A list that can grow: it scrolls inside the panel past a set height, so one long list never
+   *  stretches its box out of line with the panels beside it. */
+  scroll?: boolean;
 }) {
   return (
     // min-w-0: as a grid or flex item a panel would otherwise grow to its widest
@@ -82,7 +87,8 @@ export function Panel({ title, aside, children, className = "" }: {
         <h2 className="text-sm font-semibold">{title}</h2>
         {aside}
       </div>
-      <div className="mt-4">{children}</div>
+      <div className={scroll ? "vt-scroll -mr-2 mt-4 max-h-[22rem] overflow-y-auto overscroll-contain pr-2" : "mt-4"}
+        tabIndex={scroll ? 0 : undefined}>{children}</div>
     </section>
   );
 }
