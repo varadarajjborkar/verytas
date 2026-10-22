@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { fmtBytes, listEvents, precheck, upload } from "@/lib/review-client";
 import { ChevronIcon, UploadIcon } from "../Icons";
+import { BRIEF_MIN, type BriefAudio, BriefBox } from "./BriefBox";
 import { today } from "../library/parts";
 import { useToast } from "../Toaster";
 import { CHANNELS } from "@/lib/channels";
@@ -22,13 +23,16 @@ export type Draft = {
   language: string;
   aiUsed: boolean;
   irregularityReason: string;
+  /** What is in the images or video, in the creator's words or a voice note: required with a video. */
+  brief: string;
+  briefAudio: BriefAudio | null;
   /** The brand event this piece is for, if any: its brief and hashtag then apply. */
   eventId: number | null;
 };
 
 export const emptyDraft = (body: string): Draft => ({
   title: "Launch announcement", channel: "instagram", otherChannel: "", tier: "public", body, attachments: [],
-  intent: "", language: "", aiUsed: false, irregularityReason: "", eventId: null,
+  intent: "", language: "", aiUsed: false, irregularityReason: "", brief: "", briefAudio: null, eventId: null,
 });
 
 export function channelOf(d: Draft): string {
@@ -122,6 +126,9 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
     update((d) => ({ ...d, attachments: d.attachments.filter((a) => a.localId !== localId) }));
   const setAlt = (localId: string, alt: string) =>
     update((d) => ({ ...d, attachments: d.attachments.map((a) => (a.localId === localId ? { ...a, alt } : a)) }));
+  const hasVideo = draft.attachments.some((a) => a.kind === "video");
+  const hasImage = draft.attachments.some((a) => a.kind === "image");
+  const briefOk = !hasVideo || draft.briefAudio !== null || draft.brief.trim().length >= BRIEF_MIN;
   const needsReason = Boolean(check?.needs_reason);
   const reasonOk = !needsReason || draft.irregularityReason.trim().length >= 15;
   const over = channel?.limit ? draft.body.length > channel.limit : false;
@@ -230,6 +237,11 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
         </div>
       )}
 
+      {(hasVideo || hasImage) && (
+        <BriefBox text={draft.brief} audio={draft.briefAudio} required={hasVideo}
+          onText={(brief) => set({ brief })} onAudio={(briefAudio) => set({ briefAudio })} />
+      )}
+
       <div className="rounded-xl border border-line">
         <button type="button" onClick={() => setShowNotes((s) => !s)} aria-expanded={showNotes}
           className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium">
@@ -258,7 +270,7 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button type="submit" disabled={busy || !draft.body.trim() || uploading.length > 0 || !reasonOk}
+        <button type="submit" disabled={busy || !draft.body.trim() || uploading.length > 0 || !reasonOk || !briefOk}
           className="vt-btn vt-btn-primary">
           {busy ? "Checking…" : "Run review"}
         </button>

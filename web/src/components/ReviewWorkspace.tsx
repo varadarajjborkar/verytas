@@ -143,6 +143,7 @@ function NewReview({ initialBody, demo, onCreated }: { initialBody: string; demo
         creator_notes: {
           intent: draft.intent.trim() || null, language: draft.language.trim() || null,
           ai_used: draft.aiUsed || null, irregularity: draft.irregularityReason.trim() || null,
+          brief: draft.brief.trim() || null, brief_audio_blob_id: draft.briefAudio?.id ?? null,
         },
       });
       toast({ kind: "success", title: "Review started" });
