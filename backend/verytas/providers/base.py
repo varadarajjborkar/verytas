@@ -3,9 +3,10 @@
 Two kinds of model sit behind the checks:
 
 * a JudgeProvider answers typed questions (yes/no, ordered score, choice) about
-  a piece of content with probabilities. TypeSafe Jev in production.
+  a piece of content with probabilities. TypeSafe Jev when a key is set,
+  otherwise a model on Ollama Cloud (providers/ollama_judge).
 * an LLMProvider produces structured text work: claim extraction, explanations
-  and minimal-edit rewrites. Claude in production.
+  and minimal-edit rewrites. Ollama Cloud by default, Claude as an alternative.
 
 Both have offline implementations so the full pipeline runs in tests and demos
 without network access or keys.

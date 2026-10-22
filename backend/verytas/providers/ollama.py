@@ -51,7 +51,10 @@ class OllamaLLM:
             f"It must validate against this JSON Schema:\n{json.dumps(strict_schema(task.schema))}"
         )
         messages: list[dict[str, Any]] = [{"role": "system", "content": system}, _user_message(task.user_content())]
-        body: dict[str, Any] = {"model": model, "stream": False, "options": {"temperature": 0}}
+        # Tasks are deterministic by default; the judge raises temperature only
+        # when it resamples a borderline answer.
+        temperature = float(getattr(task, "temperature", 0.0))
+        body: dict[str, Any] = {"model": model, "stream": False, "options": {"temperature": temperature}}
         if model.startswith("gpt-oss"):
             # gpt-oss always reasons; keep it short for extraction-style work.
             body["think"] = "low" if task.fast else "medium"
