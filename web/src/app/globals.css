@@ -22,6 +22,9 @@
   --vt-line-strong: light-dark(#c5cbd5, #313847);
   --vt-accent: light-dark(#1a5fd1, #4c9bff);
   --vt-accent-ink: light-dark(#ffffff, #06101e);
+  /* The mark is a sticker: dark outline on white in light mode, inverted in dark. */
+  --vt-logo-ink: light-dark(#10141c, #eef2f8);
+  --vt-logo-paper: light-dark(#ffffff, #0c0e13);
   --vt-glow: light-dark(rgba(26, 95, 209, 0.07), rgba(76, 155, 255, 0.06));
   --vt-blocker: light-dark(#b8321c, #f08a7a);
   --vt-blocker-bg: light-dark(#f9e5e1, #2d1715);
@@ -272,3 +275,14 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
     scroll-behavior: auto !important;
   }
 }
+
+/* Sign-in brand panel: the accent glow, a faint dot grid, and the example finding tilted a degree. */
+.vt-signin-aside {
+  background:
+    radial-gradient(32rem 22rem at 0% 0%, color-mix(in srgb, var(--vt-accent) 16%, transparent), transparent 70%),
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--vt-ink) 9%, transparent) 1px, transparent 0) 0 0 / 18px 18px,
+    var(--vt-bg);
+}
+.vt-signin-sample { transform: rotate(-1deg); transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1); }
+.vt-signin-sample:hover { transform: rotate(0deg) translateY(-2px); }
+@media (prefers-reduced-motion: reduce) { .vt-signin-sample, .vt-signin-sample:hover { transform: none; } }
