@@ -73,22 +73,22 @@ export function EscalationsInbox() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div role="tablist" aria-label="Escalations" className="inline-flex rounded-lg bg-sunken p-0.5 text-xs font-medium"
+        <div role="tablist" aria-label="Escalations" className="inline-flex rounded-lg bg-sunken p-0.5 text-[13px] font-medium"
           onKeyDown={tabKeys(["open", "resolved"] as const, tab, setTab, "esc-tab")}>
           {(["open", "resolved"] as const).map((t) => (
             <button key={t} id={`esc-tab-${t}`} type="button" role="tab" aria-selected={tab === t} aria-controls="esc-panel"
               tabIndex={tab === t ? 0 : -1} onClick={() => setTab(t)}
-              className={`rounded-md px-3 py-1.5 transition ${tab === t ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
+              className={`rounded-md px-3 py-2 transition ${tab === t ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
               {t === "open" ? "Waiting for you" : "Decided"}
               {t === tab && rows ? <span className="ml-1.5 tabular-nums text-subtle">{rows.length}</span> : null}
             </button>
           ))}
         </div>
-        <select value={creator} onChange={(e) => setCreator(e.target.value)} aria-label="Creator" className="vt-input vt-select w-auto py-1.5 text-xs">
+        <select value={creator} onChange={(e) => setCreator(e.target.value)} aria-label="Creator" className="vt-input vt-select h-9 w-auto py-0 text-[13px]">
           <option value="all">Every creator</option>
           {creators.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <select value={level} onChange={(e) => setLevel(e.target.value)} aria-label="Severity" className="vt-input vt-select w-auto py-1.5 text-xs">
+        <select value={level} onChange={(e) => setLevel(e.target.value)} aria-label="Severity" className="vt-input vt-select h-9 w-auto py-0 text-[13px]">
           <option value="all">Any severity</option>
           <option value="blocker">{PRIORITY.blocker.label}</option>
           <option value="warning">{PRIORITY.warning.label}</option>
