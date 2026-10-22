@@ -1,7 +1,10 @@
 // Browser-side calls for the review workspace. Everything goes through the
 // server proxy (app/api/v), which holds the API token and an allowlist.
 
-import type { ContentDetail, ContentRow, ContentStatus, Dispute, Finding, Level, Me, Precheck, Review, UploadedMedia } from "./types";
+import type {
+  BrandAsset, ContentDetail, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
+  Review, Rule, RuleDraft, Term, Timeline, UploadedMedia,
+} from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public detail?: unknown) {
@@ -50,6 +53,34 @@ export const resubmit = (contentId: number, body: unknown) =>
   api<{ submit: SubmitOut; disputes: number[]; applied: number; skipped: string[] }>(`contents/${contentId}/resubmit`,
     json(body));
 export const listContents = (mine: boolean) => api<ContentRow[]>(`contents${mine ? "?mine=true" : ""}`);
+export const getTimeline = (contentId: number) => api<Timeline>(`contents/${contentId}/timeline`);
+export const addComment = (contentId: number, body: string, versionId?: number, parentId?: number) =>
+  api<{ id: number }>(`contents/${contentId}/comments`, json({ body, version_id: versionId ?? null, parent_id: parentId ?? null }));
+export const decide = (findingId: number, action: Decision["action"], reasonCode?: string | null, reasonText?: string | null) =>
+  api<Decision>(`findings/${findingId}/decision`, json({ action, reason_code: reasonCode ?? null, reason_text: reasonText || null }));
+export const listPeople = () => api<Person[]>("users");
+
+// --- the brand library (writes are brand-admin only; the API enforces it) ---
+const send = (method: string, body?: unknown): RequestInit => ({
+  method, headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+export const listRules = () => api<Rule[]>("rules");
+export const createRule = (rule: RuleDraft) => api<Rule>("rules", json(rule));
+export const updateRule = (id: number, patch: Partial<Rule>) => api<Rule>(`rules/${id}`, send("PATCH", patch));
+export const extractRules = (input: { text?: string; blob_id?: string; source_ref?: string }) =>
+  api<{ rules: RuleDraft[]; notes: string[]; model: string }>("rules/extract", json(input));
+export const listFacts = () => api<Fact[]>("facts");
+export const createFact = (fact: Partial<Fact>) => api<Fact>("facts", json(fact));
+export const retireFact = (id: number) => api<Fact>(`facts/${id}/retire`, json({}));
+export const listTerms = () => api<Term[]>("confidential-terms");
+export const createTerm = (term: Partial<Term>) => api<Term>("confidential-terms", json(term));
+export const updateTerm = (id: number, patch: Partial<Term>) => api<Term>(`confidential-terms/${id}`, send("PATCH", patch));
+export const deleteTerm = (id: number) => api<null>(`confidential-terms/${id}`, send("DELETE"));
+export const listAssets = () => api<BrandAsset[]>("brand-assets");
+export const createAsset = (asset: Record<string, unknown>) => api<BrandAsset>("brand-assets", json(asset));
+export const retireAsset = (id: number) => api<null>(`brand-assets/${id}`, send("DELETE"));
+export const assetImageUrl = (id: number) => `/api/v/brand-assets/${id}/image`;
 export const getContent = (id: number) => api<ContentDetail>(`contents/${id}`);
 export const getMe = () => api<Me>("me");
 export const transition = (contentId: number, to: ContentStatus, note?: string, override = false) =>

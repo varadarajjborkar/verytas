@@ -69,3 +69,10 @@ export const ChatIcon = (p: IconProps) => (
 export const PanelIcon = (p: IconProps) => (
   <Icon {...p}><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /></Icon>
 );
+export const HomeIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9v11a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9" /></Icon>
+);
+export const BookIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" /><path d="M8 7h8M8 11h6" /></Icon>
+);
+export const ArrowRightIcon = (p: IconProps) => <Icon {...p}><path d="M5 12h14M12 5l7 7-7 7" /></Icon>;
