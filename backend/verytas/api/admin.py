@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from verytas.api.deps import CurrentUser, Session, new_token, require
 from verytas.models import AuditEntry, Role, User, Workspace
-from verytas.schemas import AuditOut, BootstrapIn, TokenOut, UserIn, UserOut
+from verytas.schemas import AuditOut, BootstrapIn, PersonOut, TokenOut, UserIn, UserOut
 from verytas.security.audit import append, verify_chain
 from verytas.services.workspace import create_workspace
 
@@ -49,9 +49,13 @@ async def create_user(body: UserIn, session: Session, admin: Admin) -> TokenOut:
     return TokenOut(user=UserOut.model_validate(user), token=token)
 
 
-@router.get("/users", response_model=list[UserOut])
-async def list_users(session: Session, user: CurrentUser) -> list[User]:
-    return list((await session.scalars(select(User).where(User.workspace_id == user.workspace_id))).all())
+@router.get("/users", response_model=list[UserOut] | list[PersonOut])
+async def list_users(session: Session, user: CurrentUser) -> list[UserOut] | list[PersonOut]:
+    """Brand admins manage accounts and see emails and clearances; everyone else gets names and roles."""
+    users = (await session.scalars(select(User).where(User.workspace_id == user.workspace_id))).all()
+    if user.role is Role.brand_admin:
+        return [UserOut.model_validate(u) for u in users]
+    return [PersonOut.model_validate(u) for u in users]
 
 
 @router.get("/audit", response_model=list[AuditOut])
