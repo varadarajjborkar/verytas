@@ -118,3 +118,13 @@ async def test_existing_workspaces_get_public_built_in_rules(client, tmp_path):
         assert await backfill_system_rule_tiers(s) > 0
         tiers = {r.tier for r in (await s.scalars(select(Rule).where(Rule.system.is_(True)))).all()}
     assert tiers == {Tier.public}
+
+
+def test_a_suggested_fix_that_restores_a_codename_is_dropped():
+    # Live black-box finding: the model saw [[TERM_1]], restoring it put the
+    # codename back into the proposed fix.
+    from verytas.prism.suggest import _leaks
+
+    assert _leaks("Silver Quill is hinting at a new upgrade.", ["Silver Quill"])
+    assert _leaks("Silver\u200bQuill soon", ["Silver Quill"])
+    assert not _leaks("A new upgrade is on the way.", ["Silver Quill"])

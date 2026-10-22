@@ -20,6 +20,13 @@ dependencies = [
     "pypdf>=5.0",
     "python-docx>=1.1",
     "sentry-sdk[fastapi]>=2.0",
+    # Local media stack: nothing here calls out to a service.
+    "pypdfium2>=5.0",               # PDF text layers, page renders, embedded images
+    "rapidocr>=3.10",               # OCR (PP-OCR models on onnxruntime, CPU)
+    "onnxruntime>=1.20",
+    "opencv-python-headless>=4.10", # brand-asset matching (SIFT, homography)
+    "av>=14",                       # video decoding (FFmpeg bundled)
+    "faster-whisper>=1.1",          # speech-to-text for video, runs locally
 ]
 
 [project.optional-dependencies]

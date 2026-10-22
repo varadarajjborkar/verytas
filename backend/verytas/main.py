@@ -7,11 +7,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from verytas import __version__
-from verytas.api import admin, content, insights, knowledge
+from verytas.api import admin, content, insights, knowledge, media
 from verytas.config import Settings, get_settings
 from verytas.db import Database
 from verytas.prism.orchestrator import Prism
-from verytas.services.workspace import backfill_system_rule_tiers
+from verytas.services.workspace import backfill_system_rule_tiers, backfill_system_rules
 
 
 def _init_sentry(settings: Settings) -> None:
@@ -43,6 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await db.create_all()
         async with db.sessionmaker() as session:
             await backfill_system_rule_tiers(session)
+            await backfill_system_rules(session)
         yield
         await prism.drain()
         await db.dispose()
@@ -68,7 +69,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok", "version": __version__, "llm_mode": settings.llm_mode,
                 "llm_backend": settings.llm_backend}
 
-    for module in (admin, knowledge, content, insights):
+    # media before content: /contents/precheck must not be read as a content id.
+    for module in (admin, knowledge, media, content, insights):
         app.include_router(module.router)
     return app
 

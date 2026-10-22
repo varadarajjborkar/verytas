@@ -49,6 +49,21 @@ class Settings(BaseSettings):
     # Resamples run in parallel inside one provider slot, so keep the cap small.
     judge_resamples: int = Field(default=2, ge=0, le=4)
 
+    # Image understanding. gemma4:31b is the free-plan vision model on Ollama
+    # Cloud (verified 2026-10-20: exact transcription of a test image in ~1 s).
+    ollama_vision_model: str = "gemma4:31b"
+    # Below this local OCR confidence, the image is also transcribed by the
+    # vision model (after pixel redaction).
+    ocr_min_confidence: float = Field(default=0.8, ge=0, le=1)
+    # Agent tree limits per review: how deep delegation may go, and how many
+    # agents one submission may spawn in total.
+    agent_max_depth: int = Field(default=8, ge=2, le=12)
+    agent_max_nodes: int = Field(default=200, ge=10, le=1000)
+    # Local speech-to-text for video (faster-whisper). "base" is multilingual
+    # and about 145 MB; "small" reads Hinglish noticeably better at 3x the cost.
+    asr_model: str = "base"
+    video_max_seconds: int = Field(default=15 * 60, ge=10, le=3600)
+
     keys_dir: Path = Path(".keys")
 
     environment: str = "development"
@@ -62,6 +77,9 @@ class Settings(BaseSettings):
     # Governor limits (architecture section 6.3).
     max_concurrent_tasks: int = 8
     task_timeout_s: float = 60.0
+    # One blocking media step (decode a PDF, OCR an image, transcribe audio).
+    # Past it the part is reported as not checked and the review moves on.
+    media_timeout_s: float = Field(180.0, gt=0)
     review_token_budget: int = 400_000
 
     # Judge thresholds (architecture section 8.1). Tuned later by calibration.

@@ -61,7 +61,7 @@ class ExplainAndFixTask:
 
 
 async def explain_and_fix(findings: list[RawFinding], rules: dict[str, RuleView], llm: LLMProvider,
-                          judge: JudgeProvider) -> None:
+                          judge: JudgeProvider, confidential: list[str] | None = None) -> None:
     """Better explanations, plus suggestions that pass both checks.
 
     Proposed fixes are held aside and only attached to findings once every
@@ -85,6 +85,10 @@ async def explain_and_fix(findings: list[RawFinding], rules: dict[str, RuleView]
             original, proposed = fix.original.strip(), fix.proposed.strip()
             if not original or not proposed or original == proposed or original not in (f.quote or ""):
                 continue  # no fix, or the model edited text that isn't there
+            if _leaks(proposed, confidential):
+                # The model saw a placeholder; restoring it put the codename back
+                # into the "fix". A fix must never re-publish what is confidential.
+                continue
             proposals.append((f, SuggestedEdit(original, proposed, fix.explanation.strip(), model=llm.name)))
 
     for f, suggestion in await _check_intent(proposals, judge):
@@ -110,3 +114,9 @@ async def _check_intent(proposals: list[tuple[RawFinding, SuggestedEdit]],
         if s.intent_preserved >= INTENT_FLOOR:
             kept.append((f, s))
     return kept
+
+
+def _leaks(text: str, confidential: list[str] | None) -> bool:
+    from verytas.security.terms import find_folded, term_pattern
+
+    return any(next(find_folded(term_pattern(term, loose=True), text), None) for term in confidential or [])

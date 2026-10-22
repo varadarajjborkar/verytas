@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 from typing import Annotated
 
@@ -13,8 +14,20 @@ from verytas.api.deps import CurrentUser, Session, can_read, require
 from verytas.checks.base import FactView
 from verytas.checks.claims import relevance
 from verytas.checks.patterns import validate_pattern
-from verytas.models import ConfidentialTerm, Fact, Role, Rule, RuleStatus, User
-from verytas.schemas import FactIn, FactOut, RuleIn, RuleOut, RulePatch, TermIn, TermOut
+from verytas.media import assets as asset_match
+from verytas.media.files import MAX_IMAGE_BYTES, MediaError, decode_b64, open_image, sniff
+from verytas.models import BrandAsset, ConfidentialTerm, Fact, Role, Rule, RuleStatus, User
+from verytas.schemas import (
+    BrandAssetIn,
+    BrandAssetOut,
+    FactIn,
+    FactOut,
+    RuleIn,
+    RuleOut,
+    RulePatch,
+    TermIn,
+    TermOut,
+)
 from verytas.security.audit import append
 
 router = APIRouter(tags=["knowledge"])
@@ -154,3 +167,60 @@ async def create_term(body: TermIn, session: Session, admin: Admin) -> Confident
                  object_type="confidential_term", object_id=term.id, detail={"embargo_until": body.embargo_until})
     await session.commit()
     return term
+
+
+# --- brand assets ------------------------------------------------------------------
+
+MAX_ACTIVE_ASSETS = 50
+
+@router.get("/brand-assets", response_model=list[BrandAssetOut])
+async def list_assets(session: Session, user: CurrentUser) -> list[BrandAsset]:
+    rows = (await session.scalars(
+        select(BrandAsset).where(BrandAsset.workspace_id == user.workspace_id).order_by(BrandAsset.id))).all()
+    return [a for a in rows if can_read(user, a.tier)]
+
+
+@router.post("/brand-assets", response_model=BrandAssetOut, status_code=status.HTTP_201_CREATED)
+async def create_asset(body: BrandAssetIn, session: Session, admin: Admin) -> BrandAsset:
+    """Register official artwork. It becomes ground truth for every review:
+    content is compared against it, and parts it does not show are unapproved."""
+    try:
+        raw = decode_b64(body.data_base64, MAX_IMAGE_BYTES)
+        if not sniff(raw).startswith("image/"):
+            raise MediaError("not an image")
+        img = open_image(raw)
+        why = asset_match.check_registrable(img)
+        if why:
+            raise MediaError(why)
+    except MediaError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"asset image: {exc}") from None
+    # Every active asset is matched against every image of every review.
+    active = await session.scalar(select(func.count()).select_from(BrandAsset).where(
+        BrandAsset.workspace_id == admin.workspace_id, BrandAsset.active))
+    if active >= MAX_ACTIVE_ASSETS:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"{MAX_ACTIVE_ASSETS} active assets is the limit; retire one first")
+    prepared = await asyncio.to_thread(asset_match.prepare, 0, img)
+    asset = BrandAsset(workspace_id=admin.workspace_id, created_by=admin.id, **body.model_dump())
+    session.add(asset)
+    await session.flush()
+    await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}", action="asset.created",
+                 object_type="brand_asset", object_id=asset.id,
+                 detail={"name": body.name, "kind": body.kind, "part": body.part, "tier": body.tier})
+    await session.commit()
+    if asset_match.flat(prepared):
+        asset.warning = ("flat artwork with little texture: it will be found in content only at its own "
+                         "orientation (not rotated or in perspective)")
+    return asset
+
+
+@router.delete("/brand-assets/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def retire_asset(asset_id: int, session: Session, admin: Admin) -> None:
+    asset = await session.get(BrandAsset, asset_id)
+    if asset is None or asset.workspace_id != admin.workspace_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
+    # Retired, not deleted: past reviews cite it.
+    asset.active = False
+    await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}", action="asset.retired",
+                 object_type="brand_asset", object_id=asset.id, detail={})
+    await session.commit()

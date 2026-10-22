@@ -230,12 +230,12 @@ def _approve(client, world, cid, **extra):
 
 
 def test_checks_that_did_not_run_block_approval(client, world, monkeypatch):
-    import verytas.prism.orchestrator as orch
+    import verytas.prism.agents as agents
 
-    def boom(ctx):
+    def boom(ctx, problems=None):
         raise RuntimeError("worker crashed")
 
-    monkeypatch.setattr(orch, "run_deterministic", boom)
+    monkeypatch.setattr(agents, "run_deterministic", boom)
     res = client.post("/contents?wait=true", headers=_auth(world["creator"]),
                       json={"title": "T", "body": "Project Lumen is coming."}).json()
     gated = _approve(client, world, res["content"]["id"])
@@ -311,6 +311,12 @@ def test_superseding_fact_must_start_later(client, world):
 
 
 def test_scorecard_is_honest_about_coverage(client, world):
+    # Legal is covered by built-in rules (AI labels, disclosure placement);
+    # retiring them must show the category as not configured, never as passed.
+    admin = _auth(world["admin"])
+    for code in ("AI-DISCLOSURE", "PRES-FOLD"):
+        assert client.patch(f"/rules/{_rule_id(client, admin, code)}", headers=admin,
+                            json={"status": "retired"}).status_code == 200
     res = client.post("/contents?wait=true", headers=_auth(world["creator"]),
                       json={"title": "T", "body": "Plain words here."}).json()
     review = client.get(f"/reviews/{res['review_id']}", headers=_auth(world["creator"])).json()

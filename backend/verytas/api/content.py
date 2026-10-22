@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from verytas.api.deps import CurrentUser, PrismDep, Session, can_read, require
+from verytas.api.media import build_profile
 from verytas.models import (
     Change,
     Comment,
@@ -18,6 +20,7 @@ from verytas.models import (
     ContentVersion,
     Decision,
     DecisionAction,
+    Dispute,
     Finding,
     Level,
     Review,
@@ -26,8 +29,11 @@ from verytas.models import (
     User,
     WorkflowEvent,
 )
+from verytas.prism import disputes as dispute_engine
 from verytas.prism.orchestrator import finding_payload
 from verytas.schemas import (
+    AiEditIn,
+    AiEditOut,
     CitationOut,
     CommentIn,
     CommentOut,
@@ -36,7 +42,11 @@ from verytas.schemas import (
     ContentOut,
     DecisionIn,
     DecisionOut,
+    DisputeIn,
+    DisputeOut,
     FindingOut,
+    ResubmitIn,
+    ResubmitOut,
     ReviewOut,
     SubmitOut,
     TransitionIn,
@@ -45,6 +55,7 @@ from verytas.schemas import (
 )
 from verytas.security.audit import append
 
+log = logging.getLogger("verytas.api.content")
 router = APIRouter(tags=["content"])
 OVERRIDE_NOTE_MIN = 10
 Writer = Annotated[User, Depends(require(Role.creator, Role.reviewer, Role.approver))]
@@ -73,6 +84,19 @@ async def _content(session, user: User, content_id: int, *, with_versions: bool 
     return content
 
 
+async def _readable_finding(session, user: User, finding_id: int, *options) -> tuple[Finding, Content]:
+    """A finding and its content, with one 404 for missing, another workspace's and above clearance,
+    so finding ids can't be probed across tenants or tiers."""
+    finding = await session.scalar(select(Finding).options(*options).where(Finding.id == finding_id))
+    if finding is not None:
+        review = await session.get(Review, finding.review_id)
+        version = await session.get(ContentVersion, review.version_id)
+        content = await session.get(Content, version.content_id)
+        if content.workspace_id == user.workspace_id and can_read(user, content.tier):
+            return finding, content
+    raise HTTPException(status.HTTP_404_NOT_FOUND, "finding not found")
+
+
 async def _latest_review(session, content_id: int) -> Review | None:
     return await session.scalar(
         select(Review).join(ContentVersion, Review.version_id == ContentVersion.id)
@@ -91,18 +115,44 @@ async def _start_review(session, prism, version: ContentVersion, wait: bool) -> 
     return review.id
 
 
+IRREGULARITY_NOTE_MIN = 15
+
+
+async def _intake(session, user: User, channel: str, body: str, attachments: dict,
+                  notes: dict) -> dict:
+    """Profile the upload; an irregular one needs the creator's reason before it is accepted.
+
+    Not a block: with a reason it goes ahead and is scanned in full, and the
+    irregularity is scored as a finding (orchestrator). Without one, the
+    creator gets the list of what looks off and what was expected.
+    """
+    p = await build_profile(session, user, channel, body, attachments)
+    reason = (notes.get("irregularity") or "").strip()
+    if p.irregularities and len(reason) < IRREGULARITY_NOTE_MIN:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail={
+            "message": f"This upload is unusual for {channel}. Say briefly why it is this way "
+                       f"(creator_notes.irregularity, at least {IRREGULARITY_NOTE_MIN} characters) and it will be "
+                       "checked in full; the irregularity still counts against its score.",
+            "irregularities": p.as_dict()["irregularities"],
+        })
+    return p.as_dict()
+
+
 @router.post("/contents", response_model=SubmitOut, status_code=status.HTTP_201_CREATED)
 async def create_content(body: ContentIn, session: Session, user: Writer, prism: PrismDep,
                          wait: bool = False) -> SubmitOut:
     """Create a draft and start the automated pre-check. `wait=true` returns after the review finishes."""
     if not can_read(user, body.tier):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "you cannot create content above your clearance")
+    attachments = body.attachments.model_dump(exclude_none=True)
+    notes = body.creator_notes.model_dump(exclude_none=True)
+    attachments["profile"] = await _intake(session, user, body.channel, body.body, attachments, notes)
     content = Content(workspace_id=user.workspace_id, title=body.title, channel=body.channel, tier=body.tier,
                       created_by=user.id)
     session.add(content)
     await session.flush()
     version = ContentVersion(content_id=content.id, version_no=1, body=body.body,
-                             attachments=body.attachments.model_dump(exclude_none=True), created_by=user.id)
+                             attachments=attachments, creator_notes=notes, created_by=user.id)
     session.add(version)
     await session.flush()
     await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="content.created",
@@ -112,16 +162,19 @@ async def create_content(body: ContentIn, session: Session, user: Writer, prism:
                      review_id=review_id)
 
 
-async def _new_version(session, user: User, content: Content, body: str, attachments: dict | None) -> ContentVersion:
+async def _new_version(session, user: User, content: Content, body: str, attachments: dict | None,
+                       notes: dict | None = None) -> ContentVersion:
     if content.status in (S.published, S.withdrawn):
         raise HTTPException(status.HTTP_409_CONFLICT,
                             f"content is {content.status.value}; create a new piece of content instead")
     latest = await session.scalar(
         select(ContentVersion).where(ContentVersion.content_id == content.id)
         .order_by(ContentVersion.version_no.desc()).limit(1))
+    attachments = dict(latest.attachments or {}) if attachments is None else dict(attachments)
+    notes = dict(latest.creator_notes or {}) if notes is None else notes
+    attachments["profile"] = await _intake(session, user, content.channel, body, attachments, notes)
     version = ContentVersion(content_id=content.id, version_no=latest.version_no + 1, parent_id=latest.id,
-                             body=body, attachments=latest.attachments if attachments is None else attachments,
-                             created_by=user.id)
+                             body=body, attachments=attachments, creator_notes=notes, created_by=user.id)
     session.add(version)
     try:
         await session.flush()
@@ -143,7 +196,8 @@ async def add_version(content_id: int, body: VersionIn, session: Session, user: 
                       wait: bool = False) -> SubmitOut:
     content = await _content(session, user, content_id)
     attachments = body.attachments.model_dump(exclude_none=True) if body.attachments else None
-    version = await _new_version(session, user, content, body.body, attachments)
+    notes = body.creator_notes.model_dump(exclude_none=True) if body.creator_notes else None
+    version = await _new_version(session, user, content, body.body, attachments, notes)
     await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="version.created",
                  object_type="content", object_id=content.id, detail={"version_no": version.version_no})
     review_id = await _start_review(session, prism, version, wait)
@@ -167,7 +221,9 @@ async def apply_fixes(content_id: int, session: Session, user: Writer, prism: Pr
 
     edits: list[tuple[int, int, str, int]] = []  # (start, end, replacement, finding_id)
     for f in findings:
-        if not f.decisions or f.span_start is None or f.span_end is None:
+        # Only typed text can be patched; a finding inside an image or PDF page
+        # points into that source's text, and its fix is guidance for the creator.
+        if not f.decisions or f.span_start is None or f.span_end is None or f.source != "body":
             continue
         d = f.decisions[-1]
         if d.action is DecisionAction.edited and d.edited_text:
@@ -257,13 +313,7 @@ async def get_review(review_id: int, request: Request, session: Session, user: C
 
 @router.post("/findings/{finding_id}/decision", response_model=DecisionOut, status_code=status.HTTP_201_CREATED)
 async def decide(finding_id: int, body: DecisionIn, session: Session, user: Reviewer) -> Decision:
-    finding = await session.scalar(
-        select(Finding).options(selectinload(Finding.suggestions)).where(Finding.id == finding_id))
-    if finding is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "finding not found")
-    review = await session.get(Review, finding.review_id)
-    version = await session.get(ContentVersion, review.version_id)
-    content = await _content(session, user, version.content_id)
+    finding, content = await _readable_finding(session, user, finding_id, selectinload(Finding.suggestions))
     if body.suggestion_id is not None and body.suggestion_id not in {s.id for s in finding.suggestions}:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "suggestion does not belong to this finding")
     if (finding.level is Level.blocker and body.action is DecisionAction.rejected
@@ -388,3 +438,163 @@ async def list_events(content_id: int, session: Session, user: CurrentUser) -> l
     return [{"from": e.from_status, "to": e.to_status, "actor_id": e.actor_id, "note": e.note,
              "at": e.created_at} for e in rows]
 
+
+
+# --- disputes, resubmission and AI edits ---------------------------------------------------------
+
+DISPUTE_LIMIT = 50
+
+
+async def _finding_in_latest(session, content: Content, finding_id: int) -> Finding:
+    review = await _latest_review(session, content.id)
+    finding = await session.get(Finding, finding_id)
+    if finding is None or review is None or finding.review_id != review.id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            f"finding {finding_id} is not on this content's latest review")
+    return finding
+
+
+async def _file_dispute(session, user: User, content: Content, finding_id: int, claim: str,
+                        language: str | None) -> Dispute:
+    finding = await _finding_in_latest(session, content, finding_id)
+    open_count = await session.scalar(select(func.count()).select_from(Dispute).where(
+        Dispute.content_id == content.id, Dispute.status.in_(("queued", "running"))))
+    if open_count >= DISPUTE_LIMIT:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many disputes waiting on this content")
+    dispute = Dispute(finding_id=finding.id, content_id=content.id, rule_id=finding.rule_id, user_id=user.id,
+                      claim=claim.strip(), language=language)
+    session.add(dispute)
+    await session.flush()
+    await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="dispute.filed",
+                 object_type="dispute", object_id=dispute.id, detail={"finding_id": finding.id})
+    return dispute
+
+
+def _can_dispute(user: User, content: Content) -> None:
+    if user.id != content.created_by and user.role not in (Role.reviewer, Role.approver, Role.brand_admin):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "only the author or a reviewer can dispute a finding")
+
+
+@router.post("/findings/{finding_id}/disputes", response_model=DisputeOut, status_code=status.HTTP_201_CREATED)
+async def dispute_finding(finding_id: int, body: DisputeIn, session: Session, user: CurrentUser,
+                          prism: PrismDep, wait: bool = False) -> Dispute:
+    """'That is not what it means.' Queued and re-evaluated by Prism; the verdict can still be no."""
+    _, content = await _readable_finding(session, user, finding_id)
+    _can_dispute(user, content)
+    dispute = await _file_dispute(session, user, content, finding_id, body.claim, body.language)
+    await session.commit()
+    if wait:
+        await dispute_engine.evaluate(prism, dispute.id)
+        await session.refresh(dispute)
+    else:
+        prism.schedule_job(lambda: dispute_engine.evaluate(prism, dispute.id))
+    return dispute
+
+
+@router.get("/contents/{content_id}/disputes", response_model=list[DisputeOut])
+async def list_disputes(content_id: int, session: Session, user: CurrentUser) -> list[Dispute]:
+    await _content(session, user, content_id)
+    return list((await session.scalars(
+        select(Dispute).where(Dispute.content_id == content_id).order_by(Dispute.id))).all())
+
+
+@router.post("/contents/{content_id}/resubmit", response_model=ResubmitOut, status_code=status.HTTP_201_CREATED)
+async def resubmit(content_id: int, body: ResubmitIn, session: Session, user: Writer, prism: PrismDep,
+                   wait: bool = False) -> ResubmitOut:
+    """The checklist round trip: apply chosen fixes, note what was fixed by hand, dispute what was
+    misread, and run everything again. Disputes are decided before the new review runs, so a reading
+    overturned now is not raised at full weight again."""
+    content = await _content(session, user, content_id)
+    _can_dispute(user, content)
+    review = await _latest_review(session, content.id)
+    if review is None or review.status is not ReviewStatus.done:
+        raise HTTPException(status.HTTP_409_CONFLICT, "no finished review to work from")
+    version = await session.get(ContentVersion, review.version_id)
+    findings = {f.id: f for f in (await session.scalars(
+        select(Finding).options(selectinload(Finding.suggestions)).where(Finding.review_id == review.id))).all()}
+
+    skipped: list[str] = []
+    text = version.body
+    edits: list[tuple[int, int, str, int]] = []
+    if body.body is not None:
+        text = body.body
+        if body.apply:
+            skipped.append("suggested fixes were not applied because the text was replaced")
+    else:
+        for fid in body.apply:
+            f = findings.get(fid)
+            if f is None or not f.suggestions or f.source != "body" or f.span_start is None:
+                skipped.append(f"finding {fid}: no fix that can be applied to the typed text")
+                continue
+            s = f.suggestions[0]
+            at = text.find(s.original, f.span_start, (f.span_end or f.span_start) + len(s.original))
+            if at < 0:
+                skipped.append(f"finding {fid}: the text it fixes has changed")
+                continue
+            edits.append((at, at + len(s.original), s.proposed, fid))
+        edits.sort(key=lambda e: (e[0], e[1]))
+        kept: list[tuple[int, int, str, int]] = []
+        for e in edits:
+            if kept and e[0] < kept[-1][1]:
+                skipped.append(f"finding {e[3]}: overlaps the fix for finding {kept[-1][3]}")
+                continue
+            kept.append(e)
+        for start, end, replacement, _ in reversed(kept):
+            text = text[:start] + replacement + text[end:]
+        edits = kept
+
+    notes = (body.creator_notes.model_dump(exclude_none=True) if body.creator_notes
+             else dict(version.creator_notes or {}))
+    notes["resolved"] = sorted({i for i in body.resolved if i in findings})
+    attachments = body.attachments.model_dump(exclude_none=True) if body.attachments else None
+    filed = [await _file_dispute(session, user, content, d.finding_id, d.claim, d.language) for d in body.disputes]
+    new = await _new_version(session, user, content, text, attachments, notes)
+    if edits:
+        session.add(Change(from_version_id=version.id, to_version_id=new.id,
+                           diff=[{"finding_id": fid, "start": a, "end": b, "after": r} for a, b, r, fid in edits]))
+    await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="content.resubmitted",
+                 object_type="content", object_id=content.id,
+                 detail={"version_no": new.version_no, "applied": len(edits), "resolved": notes["resolved"],
+                         "disputes": [d.id for d in filed]})
+    next_review = Review(version_id=new.id)
+    session.add(next_review)
+    await session.commit()
+    dispute_ids = [d.id for d in filed]
+
+    async def chain() -> None:
+        # The new review runs whatever happens to the disputes: a failed
+        # evaluation must not leave the resubmission queued forever.
+        try:
+            for did in dispute_ids:
+                try:
+                    await dispute_engine.evaluate(prism, did)
+                except Exception:  # noqa: BLE001, evaluate already escalates what it can
+                    log.exception("dispute %s could not be evaluated before resubmit review", did)
+        finally:
+            await prism.run(next_review.id)
+
+    if wait:
+        await chain()
+    else:
+        prism.schedule_job(chain)
+    submit = SubmitOut(content=ContentOut.model_validate(content), version=VersionOut.model_validate(new),
+                       review_id=next_review.id)
+    return ResubmitOut(submit=submit, disputes=dispute_ids, applied=len(edits), skipped=skipped)
+
+
+@router.post("/contents/{content_id}/ai-edit", response_model=AiEditOut)
+async def ai_edit(content_id: int, body: AiEditIn, session: Session, user: Writer, prism: PrismDep) -> AiEditOut:
+    """A proposed rewrite following the creator's instruction and the brand rules. Nothing is saved:
+    the creator reviews it and resubmits, and the full review runs again."""
+    content = await _content(session, user, content_id)
+    review = await _latest_review(session, content.id)
+    version = await session.scalar(select(ContentVersion).options(selectinload(ContentVersion.content))
+                                   .where(ContentVersion.content_id == content.id)
+                                   .order_by(ContentVersion.version_no.desc()).limit(1))
+    titles = []
+    if review is not None:
+        titles = [f"{f.title}: {f.explanation}" for f in (await session.scalars(
+            select(Finding).where(Finding.review_id == review.id, Finding.source == "body"))).all()]
+    result, remaining, model = await dispute_engine.ai_edit(prism, session, content, version, titles,
+                                                            body.instruction)
+    return AiEditOut(body=result.body, changes=result.changes, remaining=remaining, model=model)
