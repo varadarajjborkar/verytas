@@ -15,6 +15,7 @@ import { useToast } from "../Toaster";
 import { Details, Meter, tabKeys } from "../ui";
 import { Activity } from "./Activity";
 import { AgentTree, Sources } from "./AgentTree";
+import { Attachments } from "./Attachments";
 import { Checklist, emptyRow, type RowState, sortFindings } from "./Checklist";
 import type { DecideFn } from "./DecisionControls";
 import { AiEditBox, CoverageTag, findingKey, HighlightedBody } from "./parts";
@@ -391,10 +392,8 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
               active={active} onSelect={setActive} innerRef={textRef} />
           )}
           </div>
-          {coverage?.sources && coverage.sources.length > 1 && !editing && (
-            <p className="mt-6 border-t border-line pt-4 text-xs text-subtle">
-              Also read: {coverage.sources.filter((s) => s.id !== "body").map((s) => s.id).join(", ")}
-            </p>
+          {latest && !editing && docView === "text" && (
+            <Attachments contentId={contentId} version={latest} findings={findings} active={active} onSelect={setActive} />
           )}
         </section>
 

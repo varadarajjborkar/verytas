@@ -13,6 +13,7 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^contents$/],
   ["GET", /^reviews\/\d+$/],
   ["GET", /^contents\/\d+$/],
+  ["GET", /^contents\/\d+\/versions\/\d+\/images\/[A-Za-z0-9_-]{1,40}$/],
   ["POST", /^contents\/\d+\/resubmit$/],
   ["POST", /^contents\/\d+\/ai-edit$/],
   ["GET", /^contents\/\d+\/disputes$/],

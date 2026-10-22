@@ -101,6 +101,8 @@ export const listAssets = () => api<BrandAsset[]>("brand-assets");
 export const createAsset = (asset: Record<string, unknown>) => api<BrandAsset>("brand-assets", json(asset));
 export const retireAsset = (id: number) => api<null>(`brand-assets/${id}`, send("DELETE"));
 export const assetImageUrl = (id: number) => `/api/v/brand-assets/${id}/image`;
+export const versionImageUrl = (contentId: number, versionId: number, imageId: string) =>
+  `/api/v/contents/${contentId}/versions/${versionId}/images/${encodeURIComponent(imageId)}`;
 export const getContent = (id: number) => api<ContentDetail>(`contents/${id}`);
 export const getMe = () => api<Me>("me");
 export const transition = (contentId: number, to: ContentStatus, note?: string, override = false) =>
