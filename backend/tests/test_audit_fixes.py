@@ -18,7 +18,8 @@ def _auditor(client, world):  # noqa: F811
 
 def test_auditors_read_comments_but_cannot_write_them(client, world):  # noqa: F811
     creator = _auth(world["creator"])
-    cid = client.post("/contents?wait=true", headers=creator, json={"title": "T", "body": "Hello."}).json()["content"]["id"]
+    res = client.post("/contents?wait=true", headers=creator, json={"title": "T", "body": "Hello."}).json()
+    cid = res["content"]["id"]
     auditor = _auditor(client, world)
     assert client.post(f"/contents/{cid}/comments", headers=auditor, json={"body": "noted"}).status_code == 403
     assert client.get(f"/contents/{cid}/comments", headers=auditor).status_code == 200
@@ -62,3 +63,28 @@ async def test_repeating_a_dispute_or_decision_counts_once(client, world):  # no
     assert "VOICE-01" not in once
     # One overturned dispute and one false-positive rejection: Beta(3, 1) gives precision 3/6.
     assert repeated["VOICE-01"] == round(0.5 + 0.4 * (0.75 - 0.5), 3)
+
+
+def test_the_audit_log_hides_entries_about_objects_above_the_readers_clearance(client, world):  # noqa: F811
+    admin = _auth(world["admin"])
+    assert client.post("/rules", headers=admin, json={
+        "code": "SECRET-01", "category": "terminology", "kind": "deterministic", "severity": "should",
+        "title": "Codename spellings", "text": "Spell the codename our way.", "tier": "confidential",
+        "pattern": {"type": "preferred_terms", "map": {"lumen": "Lumen"}},
+    }).status_code == 201
+    auditor = _auditor(client, world)
+    assert all(r["code"] != "SECRET-01" for r in client.get("/rules", headers=auditor).json())
+    seen = client.get("/audit", headers=auditor).json()
+    assert seen and all("SECRET-01" not in str(e["detail"]) for e in seen)
+    assert any("SECRET-01" in str(e["detail"]) for e in client.get("/audit", headers=admin).json())
+
+
+def test_unterminated_pdf_streams_are_scanned_in_linear_time():
+    import time
+
+    from verytas.media.files import pdf_active_content
+
+    raw = b"%PDF-1.7\n" + b"stream\nx" * 500_000 + b"/JavaScript"
+    started = time.perf_counter()
+    assert pdf_active_content(raw) == ["JavaScript"]
+    assert time.perf_counter() - started < 1
