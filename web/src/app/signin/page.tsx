@@ -6,8 +6,18 @@ import { SignInForm } from "@/components/SignInForm";
 import { demoAccounts } from "@/lib/demo-accounts";
 
 export const metadata: Metadata = { title: "Sign in" };
-export default async function Page({ searchParams }: PageProps<"/signin">) {
-  // Per request, never prerendered: the demo's account file is rewritten when the data is reset.
+
+export default function Page({ searchParams }: PageProps<"/signin">) {
+  // The shell is static; who can be picked is read per request, inside the boundary.
+  return (
+    <Suspense fallback={<div aria-busy="true" aria-label="Loading" className="mx-auto mt-10 h-96 max-w-3xl animate-pulse rounded-[14px] bg-sunken" />}>
+      <SignIn searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function SignIn({ searchParams }: { searchParams: PageProps<"/signin">["searchParams"] }) {
+  // Never prerendered: the demo's account file is rewritten when the data is reset.
   await connection();
   const demo = demoAccounts();
   if (demo) {
@@ -22,9 +32,7 @@ export default async function Page({ searchParams }: PageProps<"/signin">) {
       <p className="mt-1 text-sm text-muted">
         Paste the API token your workspace admin gave you. What you can see and approve follows your role and clearance.
       </p>
-      <Suspense>
-        <SignInForm />
-      </Suspense>
+      <SignInForm />
     </div>
   );
 }
