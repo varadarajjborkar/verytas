@@ -150,6 +150,33 @@ APPENDED: dict[str, dict[str, tuple[str, str, list[str]]]] = {
     "hype": {
         "brand_forbidden": ("flag", "tone", []),  # filled from the reality's own hype examples
     },
+    # Drift, as the brief puts it: tone that changes partway, and posts that wander off the brand's subject.
+    # Each lands as its own paragraph after an on-brand opening, which is how it happens in real drafts.
+    "tone": {
+        "hostile": ("flag", "tone", ["Honestly, anyone still doing it the old way is an idiot.",
+                                     "If you still don't get it, that's pathetic. Shame on the rest of them."]),
+        "slang": ("flag", "tone", ["ngl this one is lowkey the best bro, gonna sell out lol",
+                                   "omg u have to try this fam, no cap"]),
+        "sarcasm": ("flag", "tone", ["Oh great, another launch. Yeah right, as if anyone asked.",
+                                     "Thanks a lot to everyone who said it couldn't be done. How original."]),
+        "stiff": ("flag", "tone", [("Please be advised that, pursuant to the aforementioned launch, stakeholders "
+                                    "shall be notified going forward."),
+                                   "Kindly be informed that we will leverage synergies henceforth."]),
+        "warm": ("clean", "tone", ["We can't wait to see what you make with it.",
+                                   "Thanks for growing with us, {audience}. Tell us what you think."]),
+    },
+    "topic": {
+        "politics": ("flag", "messaging", ["Also, the election was rigged and the minister must resign.",
+                                           "Side note: the opposition's new manifesto is a disaster for voters."]),
+        "crypto": ("flag", "messaging", [
+            "Unrelated, but put your savings in bitcoin now, crypto is going to the moon.",
+            "Quick stock tip while you're here: the Sensex rally isn't over, buy intraday."]),
+        "betting": ("flag", "messaging", ["Bonus tip: the casino odds this weekend are the best they've been."]),
+        "personal": ("flag", "messaging", [("Anyway, my girlfriend and I had a massive hangover "
+                                            "after the party last night.")]),
+        "on_topic": ("clean", "messaging", [("{product} ships to every city we serve, and support "
+                                             "answers within a day.")]),
+    },
     "emoji": {
         "gesture": ("flag", "messaging", ["To everyone who doubted us \U0001f595",
                                           "Haters gonna hate \U0001f595\U0001f595"]),
