@@ -9,8 +9,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
-    // The creator app's dev build (pnpm dev:creator).
-    ".next-creator/**",
+    // The other apps' build directories (pnpm dev:creator, demo builds).
+    ".next-*/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
