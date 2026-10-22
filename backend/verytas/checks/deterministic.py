@@ -283,7 +283,15 @@ def link_text(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     banned = {b.lower() for b in rule.pattern.get("banned", [])}
     for m in _MD_LINK.finditer(ctx.body):
         if m.group(1).strip().lower() in banned:
-            yield _finding(ctx, rule, m.start(1), m.end(1), f'Vague link text "{m.group(1)}"', rule.text)
+            # Better wording depends on where the link goes and how the sentence
+            # reads, so the whole link (destination included) is quoted, its
+            # sentence goes along as context, and explain-and-fix writes the text.
+            finding = _finding(ctx, rule, m.start(), m.end(), f'Vague link text "{m.group(1)}"', rule.text)
+            unit = _paragraph_for(ctx, m.start())
+            if unit.start <= m.start() and m.end() <= unit.end:
+                finding.context = unit.text
+            finding.needs_explanation = True
+            yield finding
 
 
 @matcher("readability")

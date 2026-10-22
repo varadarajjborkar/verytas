@@ -102,6 +102,9 @@ class RawFinding:
     suggestion: SuggestedEdit | None = None
     model: str | None = None  # set when an AI model produced or scored this finding
     needs_explanation: bool = False  # deterministic findings arrive pre-explained
+    # Surrounding text (containing `quote`) shown to the models that explain, fix
+    # and intent-check this finding. Never highlighted or edited itself.
+    context: str | None = None
     source: str = "body"  # which text the span points into (see Source)
     locator: dict[str, Any] | None = None  # page / image / pixel box for non-body sources
     # Set by the intent and dispute agents: the highest level this finding may
