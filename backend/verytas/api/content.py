@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from verytas.api.deps import CurrentUser, PrismDep, Session, can_read, require
@@ -45,6 +46,7 @@ from verytas.schemas import (
 from verytas.security.audit import append
 
 router = APIRouter(tags=["content"])
+OVERRIDE_NOTE_MIN = 10
 Writer = Annotated[User, Depends(require(Role.creator, Role.reviewer, Role.approver))]
 Reviewer = Annotated[User, Depends(require(Role.creator, Role.reviewer, Role.approver))]
 
@@ -111,6 +113,9 @@ async def create_content(body: ContentIn, session: Session, user: Writer, prism:
 
 
 async def _new_version(session, user: User, content: Content, body: str, attachments: dict | None) -> ContentVersion:
+    if content.status in (S.published, S.withdrawn):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"content is {content.status.value}; create a new piece of content instead")
     latest = await session.scalar(
         select(ContentVersion).where(ContentVersion.content_id == content.id)
         .order_by(ContentVersion.version_no.desc()).limit(1))
@@ -118,7 +123,18 @@ async def _new_version(session, user: User, content: Content, body: str, attachm
                              body=body, attachments=latest.attachments if attachments is None else attachments,
                              created_by=user.id)
     session.add(version)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # Two saves raced for the same version number (double click on apply-fixes).
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "another version was created at the same moment; reload and try again") from None
+    if content.status is S.approved:
+        # The approval covered the previous text. New text needs a new human decision.
+        session.add(WorkflowEvent(content_id=content.id, from_status=S.approved, to_status=S.in_review,
+                                  actor_id=user.id, note=f"version {version.version_no} saved after approval"))
+        content.status = S.in_review
     return version
 
 
@@ -126,8 +142,6 @@ async def _new_version(session, user: User, content: Content, body: str, attachm
 async def add_version(content_id: int, body: VersionIn, session: Session, user: Writer, prism: PrismDep,
                       wait: bool = False) -> SubmitOut:
     content = await _content(session, user, content_id)
-    if content.status in (S.published, S.withdrawn):
-        raise HTTPException(status.HTTP_409_CONFLICT, f"content is {content.status.value}")
     attachments = body.attachments.model_dump(exclude_none=True) if body.attachments else None
     version = await _new_version(session, user, content, body.body, attachments)
     await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="version.created",
@@ -168,14 +182,18 @@ async def apply_fixes(content_id: int, session: Session, user: Writer, prism: Pr
     if not edits:
         raise HTTPException(status.HTTP_409_CONFLICT, "no accepted or edited fixes to apply")
 
-    body, applied, cursor_end = version.body, [], len(version.body) + 1
-    for start, end, replacement, fid in sorted(edits, key=lambda e: e[0], reverse=True):
-        if end > cursor_end:
-            continue  # overlaps an edit already applied further right; keep the first
+    ordered = sorted(edits, key=lambda e: (e[0], e[1]))
+    conflicts = [(a[3], b[3]) for a, b in zip(ordered, ordered[1:], strict=False) if b[0] < a[1]]
+    if conflicts:
+        # Silently picking one would drop a human decision, so make the person choose.
+        pairs = ", ".join(f"#{a} and #{b}" for a, b in conflicts)
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"fixes overlap for findings {pairs}; dismiss one of each pair or edit the text directly")
+    body, applied = version.body, []
+    for start, end, replacement, fid in reversed(ordered):  # right to left keeps earlier offsets valid
         applied.append({"finding_id": fid, "start": start, "end": end, "before": body[start:end],
                         "after": replacement})
         body = body[:start] + replacement + body[end:]
-        cursor_end = start
 
     new = await _new_version(session, user, content, body, None)
     session.add(Change(from_version_id=version.id, to_version_id=new.id, diff=list(reversed(applied))))
@@ -263,17 +281,22 @@ async def decide(finding_id: int, body: DecisionIn, session: Session, user: Revi
     return decision
 
 
-async def _unresolved_blockers(session, content_id: int) -> tuple[Review | None, int]:
+async def _approval_state(session, content_id: int) -> tuple[str | None, int, list[str]]:
+    """(why approval can't even be considered, open blockers, check families that did not run)."""
     review = await _latest_review(session, content_id)
-    if review is None or review.status is not ReviewStatus.done:
-        return review, -1
+    if review is None:
+        return "no automated review has run yet", 0, []
+    if review.status is ReviewStatus.failed:
+        return "the latest automated review failed; save a new version to re-run it", 0, []
+    if review.status is not ReviewStatus.done:
+        return "the latest automated review has not finished", 0, []
     blockers = (await session.scalars(
         select(Finding).options(selectinload(Finding.decisions))
         .where(Finding.review_id == review.id, Finding.level == Level.blocker))).all()
     # A blocker is resolved only by an explicit human dismissal; accepting a
     # fix means a new version (and review) is still to come.
     open_ = [f for f in blockers if not (f.decisions and f.decisions[-1].action is DecisionAction.rejected)]
-    return review, len(open_)
+    return None, len(open_), list((review.coverage or {}).get("not_checked") or [])
 
 
 @router.post("/contents/{content_id}/transition", response_model=ContentOut)
@@ -293,15 +316,24 @@ async def transition(content_id: int, body: TransitionIn, session: Session, user
         if user.role not in allowed | {Role.brand_admin}:
             raise HTTPException(status.HTTP_403_FORBIDDEN, f"{user.role.value} cannot move content to {target.value}")
 
-    overridden = 0
+    overridden, unchecked = 0, []
     if target in (S.approved, S.published):
-        review, open_blockers = await _unresolved_blockers(session, content.id)
-        if open_blockers < 0:
-            raise HTTPException(status.HTTP_409_CONFLICT, "the latest automated review has not finished")
+        pending, open_blockers, unchecked = await _approval_state(session, content.id)
+        if pending:
+            raise HTTPException(status.HTTP_409_CONFLICT, pending)
+        problems = []
         if open_blockers:
-            if not (body.override_blockers and body.note):
-                raise HTTPException(status.HTTP_409_CONFLICT,
-                                    f"{open_blockers} unresolved blocker(s); dismiss them or override with a note")
+            problems.append(f"{open_blockers} unresolved blocker(s)")
+        if unchecked:
+            # A check that did not run is not a pass.
+            problems.append(f"checks that did not run: {', '.join(unchecked)}")
+        if problems:
+            note = (body.note or "").strip()
+            if not (body.override_blockers and len(note) >= OVERRIDE_NOTE_MIN):
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    f"{'; '.join(problems)}. Resolve them, or override with a note of at least "
+                    f"{OVERRIDE_NOTE_MIN} characters explaining why.")
             overridden = open_blockers
 
     session.add(WorkflowEvent(content_id=content.id, from_status=current, to_status=target, actor_id=user.id,
@@ -309,7 +341,8 @@ async def transition(content_id: int, body: TransitionIn, session: Session, user
     content.status = target
     await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="content.transition",
                  object_type="content", object_id=content.id,
-                 detail={"from": current, "to": target, "blockers_overridden": overridden, "note": body.note})
+                 detail={"from": current, "to": target, "blockers_overridden": overridden,
+                         "unchecked_overridden": unchecked, "note": body.note})
     await session.commit()
     return content
 

@@ -221,3 +221,62 @@ async def test_editing_a_finding_level_breaks_its_signature(client, world):
         await s.commit()
     after = client.get(f"/reviews/{res['review_id']}", headers=creator).json()
     assert next(f for f in after["findings"] if f["id"] == leak["id"])["signature_valid"] is False
+
+
+def _approve(client, world, cid, **extra):
+    client.post(f"/contents/{cid}/transition", headers=_auth(world["creator"]), json={"to": "in_review"})
+    return client.post(f"/contents/{cid}/transition", headers=_auth(world["approver"]),
+                       json={"to": "approved", **extra})
+
+
+def test_checks_that_did_not_run_block_approval(client, world, monkeypatch):
+    import verytas.prism.orchestrator as orch
+
+    def boom(ctx):
+        raise RuntimeError("worker crashed")
+
+    monkeypatch.setattr(orch, "run_deterministic", boom)
+    res = client.post("/contents?wait=true", headers=_auth(world["creator"]),
+                      json={"title": "T", "body": "Project Lumen is coming."}).json()
+    gated = _approve(client, world, res["content"]["id"])
+    assert gated.status_code == 409 and "did not run" in gated.json()["detail"]
+    blank = client.post(f"/contents/{res['content']['id']}/transition", headers=_auth(world["approver"]),
+                        json={"to": "approved", "override_blockers": True, "note": "   "})
+    assert blank.status_code == 409
+
+
+def test_new_version_after_approval_needs_reapproval(client, world):
+    creator = _auth(world["creator"])
+    res = client.post("/contents?wait=true", headers=creator, json={"title": "T", "body": "We help teams."}).json()
+    cid = res["content"]["id"]
+    assert _approve(client, world, cid).status_code == 200
+    client.post(f"/contents/{cid}/versions?wait=true", headers=creator, json={"body": "Entirely new text."})
+    assert client.get(f"/contents/{cid}", headers=creator).json()["status"] == "in_review"
+
+
+def test_apply_fixes_refuses_published_content(client, world):
+    creator, approver = _auth(world["creator"]), _auth(world["approver"])
+    res = client.post("/contents?wait=true", headers=creator, json={"title": "T", "body": "Easy sign-in today."}).json()
+    cid = res["content"]["id"]
+    review = client.get(f"/reviews/{res['review_id']}", headers=creator).json()
+    term = next(f for f in review["findings"] if f["suggestions"])
+    client.post(f"/findings/{term['id']}/decision", headers=creator,
+                json={"action": "accepted", "suggestion_id": term["suggestions"][0]["id"]})
+    assert _approve(client, world, cid).status_code == 200
+    assert client.post(f"/contents/{cid}/transition", headers=approver, json={"to": "published"}).status_code == 200
+    assert client.post(f"/contents/{cid}/apply-fixes", headers=creator).status_code == 409
+
+
+def test_overlapping_fixes_are_refused_not_dropped(client, world):
+    creator = _auth(world["creator"])
+    body = "We leverage synergies to unlock paradigm shifts with easy sign-in."
+    res = client.post("/contents?wait=true", headers=creator, json={"title": "T", "body": body}).json()
+    review = client.get(f"/reviews/{res['review_id']}", headers=creator).json()
+    voice = next(f for f in review["findings"] if any("VOICE-01" in c["label"] for c in f["citations"]))
+    term = next(f for f in review["findings"] if any("TERM-01" in c["label"] for c in f["citations"]))
+    client.post(f"/findings/{voice['id']}/decision", headers=creator,
+                json={"action": "edited", "edited_text": "We help teams publish faster with easy sign-in."})
+    client.post(f"/findings/{term['id']}/decision", headers=creator,
+                json={"action": "accepted", "suggestion_id": term["suggestions"][0]["id"]})
+    res = client.post(f"/contents/{res['content']['id']}/apply-fixes", headers=creator)
+    assert res.status_code == 409 and "overlap" in res.json()["detail"]
