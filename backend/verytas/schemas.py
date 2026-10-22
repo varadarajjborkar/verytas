@@ -163,6 +163,11 @@ class TermIn(BaseModel):
         return v
 
 
+class TermPatch(BaseModel):
+    note: str | None = Field(default=None, max_length=300)
+    embargo_until: date | None = None
+
+
 class TermOut(ORM):
     id: int
     term: str

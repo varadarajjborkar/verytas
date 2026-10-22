@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+import base64
+from datetime import UTC, date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from verytas.api.deps import CurrentUser, Session, can_read, require
+from verytas.api.deps import CurrentUser, PrismDep, Session, can_read, require
 from verytas.checks.base import FactView
 from verytas.checks.claims import relevance
 from verytas.checks.patterns import validate_pattern
 from verytas.media import assets as asset_match
+from verytas.media import documents
 from verytas.media.files import MAX_IMAGE_BYTES, MediaError, decode_b64, open_image, sniff
-from verytas.models import BrandAsset, ConfidentialTerm, Fact, Role, Rule, RuleStatus, User
+from verytas.models import BrandAsset, ConfidentialTerm, Fact, MediaBlob, Role, Rule, RuleStatus, User
+from verytas.prism import rulebook
+from verytas.prism.disputes import workspace_redactor
 from verytas.schemas import (
     BrandAssetIn,
     BrandAssetOut,
@@ -27,6 +32,7 @@ from verytas.schemas import (
     RulePatch,
     TermIn,
     TermOut,
+    TermPatch,
 )
 from verytas.security.audit import append
 
@@ -103,6 +109,61 @@ async def update_rule(rule_id: int, body: RulePatch, session: Session, admin: Ad
     return target
 
 
+class ExtractIn(BaseModel):
+    text: str | None = Field(default=None, max_length=200_000)
+    blob_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+    source_ref: str | None = Field(default=None, max_length=300)
+
+
+class ExtractOut(BaseModel):
+    rules: list[RuleIn]
+    notes: list[str]
+    model: str
+
+
+MAX_BOOK_CHARS = 60_000
+
+
+@router.post("/rules/extract", response_model=ExtractOut)
+async def extract_rules(body: ExtractIn, session: Session, admin: Admin, prism: PrismDep) -> ExtractOut:
+    """Proposed draft rules from brand-book prose or an uploaded PDF or Word file. Nothing is saved:
+    the admin keeps what reads right and creates those as drafts."""
+    notes: list[str] = []
+    text = body.text or ""
+    if body.blob_id:
+        blob = await session.get(MediaBlob, body.blob_id)
+        if blob is None or blob.workspace_id != admin.workspace_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "upload not found")
+        reader = {"application/pdf": documents.extract_pdf}.get(blob.media_type)
+        if reader is None and blob.media_type.startswith("application/vnd.openxmlformats"):
+            reader = documents.extract_docx
+        if reader is None:
+            raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "import reads PDF and Word files")
+        try:
+            book = await asyncio.to_thread(reader, blob.data)
+        except MediaError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"couldn't read that file: {exc}") from None
+        text = "\n\n".join(p.text for p in book.pages if p.text.strip())
+        if any(p.scanned for p in book.pages):
+            notes.append("Some pages are scans; only pages with a text layer were read.")
+    if not text.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "nothing to read: paste text or upload a file")
+    if len(text) > MAX_BOOK_CHARS:
+        notes.append(f"Only the first {MAX_BOOK_CHARS // 1000}k characters were read; import the rest separately.")
+        text = text[:MAX_BOOK_CHARS]
+
+    # Brand books mention codenames; they are redacted on the way out like any other model call.
+    _, llm, _, _ = prism.guarded_providers(await workspace_redactor(session, admin.workspace_id))
+    try:
+        found = await llm.run(rulebook.RuleExtractTask(text))
+    except Exception:  # noqa: BLE001, any model failure falls back to the plain reading
+        found = rulebook.RuleExtractTask(text).heuristic()
+        notes.append("The model was unavailable, so a simpler offline reading was used.")
+    taken = set((await session.scalars(select(Rule.code).where(Rule.workspace_id == admin.workspace_id))).all())
+    rules, skipped = rulebook.to_rules(found.rules, taken, body.source_ref)
+    return ExtractOut(rules=rules, notes=notes + skipped, model=llm.name)
+
+
 # --- facts -----------------------------------------------------------------------
 
 @router.get("/facts", response_model=list[FactOut])
@@ -146,6 +207,24 @@ async def create_fact(body: FactIn, session: Session, admin: Admin) -> Fact:
     return fact
 
 
+@router.post("/facts/{fact_id}/retire", response_model=FactOut)
+async def retire_fact(fact_id: int, session: Session, admin: Admin) -> Fact:
+    """Stops a fact backing claims from today. Kept, not deleted: past findings cite it."""
+    fact = await session.get(Fact, fact_id)
+    if fact is None or fact.workspace_id != admin.workspace_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "fact not found")
+    today = datetime.now(UTC).date()
+    if fact.valid_from >= today:
+        # Not open yet: its window can't close before it starts, so it is withdrawn instead.
+        fact.approved = False
+    elif fact.valid_to is None or fact.valid_to > today:
+        fact.valid_to = today
+    await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}", action="fact.retired",
+                 object_type="fact", object_id=fact.id, detail={"valid_to": fact.valid_to})
+    await session.commit()
+    return fact
+
+
 # --- confidential terms ------------------------------------------------------------
 
 @router.get("/confidential-terms", response_model=list[TermOut])
@@ -167,6 +246,37 @@ async def create_term(body: TermIn, session: Session, admin: Admin) -> Confident
                  object_type="confidential_term", object_id=term.id, detail={"embargo_until": body.embargo_until})
     await session.commit()
     return term
+
+
+async def _term(session, admin: User, term_id: int) -> ConfidentialTerm:
+    term = await session.get(ConfidentialTerm, term_id)
+    if term is None or term.workspace_id != admin.workspace_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "term not found")
+    return term
+
+
+@router.patch("/confidential-terms/{term_id}", response_model=TermOut)
+async def update_term(term_id: int, body: TermPatch, session: Session, admin: Admin) -> ConfidentialTerm:
+    """Note and embargo date only; to change the spelling, add the new term and remove the old one."""
+    term = await _term(session, admin, term_id)
+    changes = body.model_dump(exclude_unset=True)
+    for k, v in changes.items():
+        setattr(term, k, v)
+    await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}", action="term.updated",
+                 object_type="confidential_term", object_id=term.id,
+                 detail={"fields": sorted(changes), "embargo_until": term.embargo_until})
+    await session.commit()
+    return term
+
+
+@router.delete("/confidential-terms/{term_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_term(term_id: int, session: Session, admin: Admin) -> None:
+    """The term stops being guarded. The audit entry records the removal, never the term."""
+    term = await _term(session, admin, term_id)
+    await session.delete(term)
+    await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}", action="term.deleted",
+                 object_type="confidential_term", object_id=term_id, detail={})
+    await session.commit()
 
 
 # --- brand assets ------------------------------------------------------------------
@@ -212,6 +322,15 @@ async def create_asset(body: BrandAssetIn, session: Session, admin: Admin) -> Br
         asset.warning = ("flat artwork with little texture: it will be found in content only at its own "
                          "orientation (not rotated or in perspective)")
     return asset
+
+
+@router.get("/brand-assets/{asset_id}/image")
+async def asset_image(asset_id: int, session: Session, user: CurrentUser) -> Response:
+    asset = await session.get(BrandAsset, asset_id)
+    if asset is None or asset.workspace_id != user.workspace_id or not can_read(user, asset.tier):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
+    return Response(base64.b64decode(asset.data_base64), media_type=asset.media_type,
+                    headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"})
 
 
 @router.delete("/brand-assets/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
