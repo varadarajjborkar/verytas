@@ -15,14 +15,21 @@ Built for the Inkloom AI brand-governance challenge. Brief: [`docs/problem-state
 
 ## The console
 
-| Screen | What you do there |
-| --- | --- |
-| **Dashboard** | See review volume, open blockers, the trend over 30 days and the rules that fire most. |
-| **Review** | Start a new review, or reopen any earlier one from the history rail (finished pieces are greyed and struck through). The text is shown with every issue marked in place and a checklist beside it. Edit, apply fixes, dispute and re-check from there; workflow buttons only offer the steps your role may take. |
-| **Guideline health** | Find the rules reviewers override or disagree on most, with advice on what to clarify. |
-| **Ask Verytas** | Ask about your own pieces and the workspace's review data. Answers come as charts and tables. Chats are saved to your account, and you can attach images. The context and your questions are redacted together before they reach the model, and confidential-tier content is left out. |
+The console has two sides, and each account sees only its own: **creators** write and fix their pieces; the **brand team** (reviewers, approvers, auditors and brand admins) decides on them and keeps the library. The API enforces the same split on every call.
 
-Both the main sidebar and each history rail collapse to icons and come back with one click; each browser remembers your choice.
+| Side | Screen | What you do there |
+| --- | --- | --- |
+| Creator | **My work** | See what needs you (drafts and pieces sent back), what is with the brand team, and the team's latest comments and decisions. |
+| Creator | **Review** | Start a review, or reopen one of yours. The text shows every issue in place beside a P1/P2/P3 checklist. Edit, apply fixes, dispute and re-check, then send it for approval. |
+| Brand team | **Dashboard** | Need-to-knows (waiting, must-fix issues in the queue, failed checks, unclear rules), the pipeline drawn as a flow with its send-back loop, the decision queue, and brand-health charts. |
+| Brand team | **Review queue** | Work the queue by stage: waiting, with creator, approved, all. On a piece, confirm, dismiss (with a reason) or escalate each finding, then approve or send it back with a note. |
+| Brand team | **Brand library** | Rules (versioned edits, word-list matchers, drafts to activate), facts with validity dates, confidential terms, official artwork, and brand-book import: paste or upload a PDF or Word file, review the proposed rules, keep what reads right as drafts. |
+| Brand team | **Guideline health** | Find the rules reviewers override or disagree on most, with advice on what to clarify. |
+| Both | **Ask Verytas** | Ask about pieces and review data. Answers come as charts and tables. The context and your questions are redacted together before they reach the model, and confidential-tier content is left out. |
+
+Every open piece shows the same **journey map** to both sides (written, checked, sent for approval, approved, published, with each round of changes), an **activity** feed with threaded comments, and **track changes** between any two versions. Settings has an **AI and data** page that lists every model and service and where it runs.
+
+With sign-in off, Settings offers **View as** to switch between a brand-team and a creator account (`VERYTAS_API_TOKEN` and `VERYTAS_CREATOR_TOKEN`); `python -m verytas.cli issue-token <email>` issues one. Sidebars and history rails collapse to icons, and each browser remembers the choice.
 
 ## Architecture
 
@@ -92,6 +99,66 @@ flowchart TB
 
 **Legend:** blue = clients · purple = API, workflow and learning · green = agents per content type · indigo = context layers · red = security · amber = data · grey = external models · dashed orange = the creator's note, a separate realm · pink = test harness
 
+### How the endpoints fit together
+
+```mermaid
+flowchart LR
+    subgraph Browser["Browser: one side per account"]
+        direction TB
+        CR["Creator<br/>My work, Review, Ask"]:::client
+        MG["Brand team<br/>Dashboard, Review queue,<br/>Library, Guideline health, Ask"]:::client
+    end
+
+    subgraph Web["Next.js server: holds the token"]
+        direction TB
+        PG["Server pages<br/>lib/backend.ts"]:::api
+        PX["/api/v proxy<br/>allowlist, same-site, 150 MB cap"]:::api
+        CH["/api/chat<br/>Ask Verytas stream"]:::api
+        SS["/api/session · /api/persona<br/>sign-in cookie · view as"]:::sec
+    end
+
+    subgraph API["FastAPI: roles checked on every call"]
+        direction TB
+        ADM["admin<br/>/me /users /audit /bootstrap"]:::api
+        KNO["knowledge<br/>/rules /rules/extract /facts<br/>/confidential-terms /brand-assets"]:::data
+        MED["media<br/>/media /contents/precheck"]:::check
+        CON["content<br/>/contents /reviews /findings<br/>transition, comments, timeline,<br/>resubmit, ai-edit, disputes"]:::core
+        INS["insights<br/>/insights/overview, recurring,<br/>guideline-health"]:::api
+        AST["assistant · chats<br/>/assistant/context /chats"]:::api
+    end
+
+    PRISM["Prism<br/>agents per part, judge"]:::core
+    RED["Redaction<br/>text and pixels"]:::sec
+    LLM["Ollama Cloud<br/>gpt-oss, gemma4"]:::ext
+    DB[("SQLite / Postgres<br/>+ hash-chained audit log")]:::data
+
+    CR & MG --> PG & PX & CH
+    CR & MG -.-> SS
+    PG --> ADM & INS
+    PX --> CON & MED & KNO & AST & ADM
+    CH -- "context and chat,<br/>redacted together" --> AST
+    CH --> LLM
+    CON --> PRISM
+    KNO -- "brand-book import" --> RED
+    PRISM --> RED --> LLM
+    ADM & KNO & MED & CON & INS & AST --> DB
+
+    style Browser fill:#f8fafc,stroke:#94a3b8,color:#334155
+    style Web fill:#f8fafc,stroke:#94a3b8,color:#334155
+    style API fill:#f8fafc,stroke:#94a3b8,color:#334155
+
+    classDef client fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef api fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+    classDef core fill:#e0e7ff,stroke:#4f46e5,color:#312e81
+    classDef check fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef sec fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    classDef data fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef ext fill:#f3f4f6,stroke:#6b7280,color:#111827
+```
+
+
+The browser talks only to the Next.js server, which holds the token and forwards an allowlist of routes. The full route table, with who may call each one, is in [`docs/architecture.md`](docs/architecture.md#14-apis-as-built).
+
 ### How a review flows
 
 1. A creator uploads a caption plus any images, documents and video. Before anything is accepted, the intake check compares it with what the channel normally carries (caption length, page count, image size, video length, hidden characters). Anything irregular needs a reason, and still counts against the score.
@@ -112,7 +179,7 @@ On a 216-case campaign, core recall rose from 78% to 96%, false positives on con
 | Path | What |
 | --- | --- |
 | `backend/` | FastAPI service: checks, Prism, workflow, insights, security (Python 3.12+) |
-| `web/` | Next.js 16 on OpenUI: dashboard, review workspace, guideline health, Ask Verytas |
+| `web/` | Next.js 16 on OpenUI: both sides of the console (homes, review, library, guideline health, Ask Verytas) |
 | `blackbox/` | Black-box reality simulator: invents brands, writes posts, images, PDFs and video, grades Verytas |
 | `docs/` | Problem statement, architecture, submission checklist |
 

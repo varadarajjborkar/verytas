@@ -282,26 +282,88 @@ Human decisions always win and are always recorded, so the automation never over
 
 ---
 
-## 14. APIs
+## 14. APIs, as built
 
-REST (FastAPI, OpenAPI docs auto-generated), JSON, cursor pagination, idempotency keys on POSTs.
+The browser never holds an API token. Pages render on the Next.js server, and every browser call goes through one proxy (`/api/v/...`) that forwards only an allowlist of routes, refuses cross-site writes and caps upload size. The FastAPI service checks the caller's role and clearance on every route, so the two sides of the console are enforced by the API, not just hidden in the UI.
 
-| Method & path | Purpose |
-|---|---|
-| `POST /auth/*` | handled by Supabase Auth |
-| `POST /sources` · `GET /sources/{id}` | upload brand material |
-| `GET/POST/PATCH /rules` · `POST /rules/{id}/approve` | rule lifecycle |
-| `GET/POST/PATCH /facts` · `GET /facts/search?q=&at=` | facts, valid-at-date search |
-| `GET/POST /assets` | brand assets |
-| `POST /contents` · `POST /contents/{id}/versions` | submit content or a new version |
-| `POST /contents/{id}/review` → `review_id` | start a review |
-| `GET /reviews/{id}` · `GET /reviews/{id}/stream` (SSE) | results, live streaming of findings as workers finish |
-| `POST /findings/{id}/decision` | accept, reject, edit or escalate with a reason |
-| `POST /contents/{id}/transition` | workflow state change |
-| `GET/POST /contents/{id}/comments` | threaded comments |
-| `GET /insights/recurring` · `GET /insights/guideline-health` | governance insights |
-| `GET /audit?object=` | audit trail (auditor role) |
-| `POST /webhooks/pre-publish` | CMS calls this before publishing; returns pass, warn or block plus a review link |
+```mermaid
+flowchart LR
+    subgraph Browser["Browser: one side per account"]
+        direction TB
+        CR["Creator<br/>My work, Review, Ask"]:::client
+        MG["Brand team<br/>Dashboard, Review queue,<br/>Library, Guideline health, Ask"]:::client
+    end
+
+    subgraph Web["Next.js server: holds the token"]
+        direction TB
+        PG["Server pages<br/>lib/backend.ts"]:::api
+        PX["/api/v proxy<br/>allowlist, same-site, 150 MB cap"]:::api
+        CH["/api/chat<br/>Ask Verytas stream"]:::api
+        SS["/api/session · /api/persona<br/>sign-in cookie · view as"]:::sec
+    end
+
+    subgraph API["FastAPI: roles checked on every call"]
+        direction TB
+        ADM["admin<br/>/me /users /audit /bootstrap"]:::api
+        KNO["knowledge<br/>/rules /rules/extract /facts<br/>/confidential-terms /brand-assets"]:::data
+        MED["media<br/>/media /contents/precheck"]:::check
+        CON["content<br/>/contents /reviews /findings<br/>transition, comments, timeline,<br/>resubmit, ai-edit, disputes"]:::core
+        INS["insights<br/>/insights/overview, recurring,<br/>guideline-health"]:::api
+        AST["assistant · chats<br/>/assistant/context /chats"]:::api
+    end
+
+    PRISM["Prism<br/>agents per part, judge"]:::core
+    RED["Redaction<br/>text and pixels"]:::sec
+    LLM["Ollama Cloud<br/>gpt-oss, gemma4"]:::ext
+    DB[("SQLite / Postgres<br/>+ hash-chained audit log")]:::data
+
+    CR & MG --> PG & PX & CH
+    CR & MG -.-> SS
+    PG --> ADM & INS
+    PX --> CON & MED & KNO & AST & ADM
+    CH -- "context and chat,<br/>redacted together" --> AST
+    CH --> LLM
+    CON --> PRISM
+    KNO -- "brand-book import" --> RED
+    PRISM --> RED --> LLM
+    ADM & KNO & MED & CON & INS & AST --> DB
+
+    style Browser fill:#f8fafc,stroke:#94a3b8,color:#334155
+    style Web fill:#f8fafc,stroke:#94a3b8,color:#334155
+    style API fill:#f8fafc,stroke:#94a3b8,color:#334155
+
+    classDef client fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef api fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+    classDef core fill:#e0e7ff,stroke:#4f46e5,color:#312e81
+    classDef check fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef sec fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    classDef data fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef ext fill:#f3f4f6,stroke:#6b7280,color:#111827
+```
+
+
+**Legend:** blue = the two sides of the console · purple = server routes · indigo = review core · green = media intake · amber = library and storage · red = security · grey = external models
+
+| Area | Routes | Who may call |
+|---|---|---|
+| Identity | `GET /me` · `GET /users` · `POST /users` · `POST /bootstrap` | anyone signed in · anyone · brand admin · first run only |
+| Audit | `GET /audit` · `GET /audit/verify` | auditor, brand admin |
+| Rules | `GET /rules` · `POST /rules` · `PATCH /rules/{id}` (content edits make a new version) | read: anyone, by clearance · write: brand admin |
+| Brand-book import | `POST /rules/extract` (text, PDF or Word in, draft proposals out, nothing saved) | brand admin |
+| Facts | `GET /facts?valid_on=&q=` · `POST /facts` (with `supersedes_id`) · `POST /facts/{id}/retire` | read: anyone · write: brand admin |
+| Confidential terms | `GET/POST /confidential-terms` · `PATCH/DELETE /confidential-terms/{id}` | brand admin only; the audit log never stores a term |
+| Brand artwork | `GET/POST /brand-assets` · `GET /brand-assets/{id}/image` · `DELETE /brand-assets/{id}` (retires) | read: anyone, by clearance · write: brand admin |
+| Intake | `POST /media` · `POST /contents/precheck` | creator, reviewer, approver, brand admin |
+| Content | `POST /contents` · `GET /contents?mine=&state=` · `GET /contents/{id}` · `POST /contents/{id}/resubmit` · `POST /contents/{id}/ai-edit` | writers; reads by clearance |
+| Reviews | `GET /reviews/{id}` (findings, scorecard, agent tree, coverage) | anyone who can read the content |
+| Decisions | `POST /findings/{id}/decision` (confirm, dismiss with reason code, edit, escalate) | creator, reviewer, approver; dismissing a blocker needs an approver |
+| Disputes | `POST /findings/{id}/disputes` · `GET /contents/{id}/disputes` | the content's readers |
+| Workflow | `POST /contents/{id}/transition` (blockers need a noted override) | by role and state, mirrored in the UI's next steps |
+| Collaboration | `GET/POST /contents/{id}/comments` (threaded) · `GET /contents/{id}/timeline` · `GET /contents/{id}/changes` | the content's readers |
+| Insights | `GET /insights/overview` · `/insights/recurring` · `/insights/guideline-health` | reviewer, approver, auditor, brand admin |
+| Ask Verytas | `POST /assistant/context` (context plus the conversation, redacted with one set of placeholders) · `GET/POST/PUT/DELETE /chats` | anyone; confidential tier left out |
+
+`GET /contents/{id}/timeline` is the one record both sides read: each version, its check, every status move, comment and decision, with who did it. The review screen's journey map and activity feed are drawn from it.
 
 ---
 
