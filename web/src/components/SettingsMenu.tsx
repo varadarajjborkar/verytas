@@ -7,6 +7,7 @@ import { useStored, writeStored } from "@/lib/stored";
 import { CloseIcon, SettingsIcon } from "./Icons";
 import { type ThemeChoice, useTheme } from "./Providers";
 import { useToast } from "./Toaster";
+import { useViewer } from "./Viewer";
 
 type Me = { id: number; email: string; name: string; role: string; clearance: string };
 const SOCIAL_KEY = "vt-social-profiles";
@@ -28,7 +29,18 @@ const TABS = [
   { value: "profile", label: "Profile" },
   { value: "social", label: "Socials" },
   { value: "theme", label: "Appearance" },
+  { value: "ai", label: "AI and data" },
 ] as const;
+
+// What reads a post, and where it runs. The brief asks for AI and external services to be
+// disclosed, so the product says it to every user, not just the README.
+const SERVICES = [
+  { name: "Ollama Cloud: gpt-oss 120b and 20b", use: "Reads claims, judges tone and meaning, writes explanations and fixes, answers Ask Verytas, reads brand books", where: "Cloud, when a key is set" },
+  { name: "Ollama Cloud: gemma4 31b", use: "Looks at images and video frames, compares artwork with official assets", where: "Cloud, never for confidential content" },
+  { name: "RapidOCR, faster-whisper, OpenCV, pdfium", use: "Reads text in images, transcribes speech, matches logos, renders PDF pages", where: "On the Verytas server only" },
+  { name: "TypeSafe Jev", use: "Optional second judge for model-judged rules", where: "Cloud, only if configured" },
+  { name: "Rule checks", use: "Banned and preferred terms, casing, codenames, facts and dates", where: "On the Verytas server, no model" },
+];
 type Tab = (typeof TABS)[number]["value"];
 
 /** The settings button, and the settings window it opens over a blurred page. */
@@ -72,6 +84,8 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [edits, setEdits] = useState<Record<string, string>>({});
   const socials = { ...savedSocials, ...edits };
   const { choice, setChoice } = useTheme();
+  const viewer = useViewer();
+  const [switching, setSwitching] = useState(false);
   const toast = useToast();
   const router = useRouter();
   const panel = useRef<HTMLDivElement>(null);
@@ -139,6 +153,16 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function switchSide(side: "manager" | "creator") {
+    setSwitching(true);
+    try {
+      await viewer.switchTo(side);
+    } catch (err) {
+      setSwitching(false);
+      toast({ kind: "error", title: "Couldn't switch", detail: (err as Error).message });
+    }
+  }
+
   async function signOut() {
     await fetch("/api/session", { method: "DELETE" }).catch(() => null);
     onClose();
@@ -165,7 +189,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div role="tablist" aria-label="Settings sections" aria-orientation="vertical"
-          className="mx-5 mt-4 grid grid-cols-3 gap-1 rounded-xl bg-sunken p-1 text-[13px] font-medium md:m-0 md:flex md:w-52 md:shrink-0 md:flex-col md:gap-0.5 md:rounded-none md:border-r md:border-line md:bg-transparent md:p-3"
+          className="mx-5 mt-4 grid grid-cols-4 gap-1 rounded-xl bg-sunken p-1 text-[13px] font-medium md:m-0 md:flex md:w-52 md:shrink-0 md:flex-col md:gap-0.5 md:rounded-none md:border-r md:border-line md:bg-transparent md:p-3"
           onKeyDown={(e) => arrows(e, TABS.map((t) => t.value), tab, setTab)}>
           {TABS.map((t, i) => (
             <button key={t.value} role="tab" type="button" aria-selected={tab === t.value} onClick={() => setTab(t.value)}
@@ -202,8 +226,24 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
                 </dl>
               )}
               <p className="text-xs leading-5 text-muted">
-                {signin ? "Signed in with your own token." : "Using the workspace service account."}
+                {signin ? "Signed in with your own token." : "Using a workspace demo account."}
               </p>
+              {viewer.canSwitch && (
+                <div className="rounded-xl border border-line p-3">
+                  <p className="text-sm font-medium">View as</p>
+                  <p className="mt-0.5 text-xs text-muted">Sign-in is off, so this browser can try either side. Each is a real account with its own permissions.</p>
+                  <div role="radiogroup" aria-label="View as" className="mt-3 inline-grid grid-cols-2 gap-1 rounded-lg bg-sunken p-0.5 text-xs font-medium"
+                    onKeyDown={(e) => arrows(e, ["manager", "creator"] as const, viewer.side, (v) => { if (v !== viewer.side) void switchSide(v); })}>
+                    {([["manager", "Brand team"], ["creator", "Creator"]] as const).map(([v, l]) => (
+                      <button key={v} type="button" role="radio" aria-checked={viewer.side === v} tabIndex={viewer.side === v ? 0 : -1}
+                        disabled={switching} onClick={() => { if (v !== viewer.side) void switchSide(v); }}
+                        className={`rounded-md px-4 py-1.5 transition ${viewer.side === v ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {me && signin && (
                 <button type="button" onClick={signOut} className="vt-btn vt-btn-quiet self-start">Sign out</button>
               )}
@@ -222,6 +262,28 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
               <button type="button" onClick={saveSocials} className="vt-btn vt-btn-primary self-end">Save</button>
+            </div>
+          )}
+
+          {tab === "ai" && (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-muted">
+                What reads your posts, and where it runs. Confidential terms are removed from text and blacked out in images before
+                anything reaches a cloud model, and confidential content never leaves the server as pixels.
+              </p>
+              <ul className="overflow-hidden rounded-xl border border-line">
+                {SERVICES.map((sv) => (
+                  <li key={sv.name} className="border-b border-line px-4 py-3 last:border-0">
+                    <p className="text-sm font-medium">{sv.name}</p>
+                    <p className="mt-0.5 text-xs text-muted">{sv.use}</p>
+                    <p className="mt-1 text-[11px] text-subtle">{sv.where}</p>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted">
+                Every model-judged finding names the model that made it. Without keys, model checks fall back to an offline reading
+                and are marked degraded, never passed.
+              </p>
             </div>
           )}
 
