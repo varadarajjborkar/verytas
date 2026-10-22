@@ -38,3 +38,6 @@ cred*.txt
 blackbox/.runs/
 .keys-demo/
 .keys-*/
+
+# Demo sign-in accounts with their tokens (written by seed-showcase)
+demo-accounts*.json
