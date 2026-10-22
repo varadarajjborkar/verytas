@@ -17,6 +17,7 @@ from verytas.models import (
     Escalation,
     Fact,
     Finding,
+    Person,
     Review,
     Role,
     Rule,
@@ -113,6 +114,7 @@ _TIER_OF = {
     "rule": lambda ids: select(Rule.id, Rule.tier).where(Rule.id.in_(ids)),
     "fact": lambda ids: select(Fact.id, Fact.tier).where(Fact.id.in_(ids)),
     "brand_asset": lambda ids: select(BrandAsset.id, BrandAsset.tier).where(BrandAsset.id.in_(ids)),
+    "person": lambda ids: select(Person.id, Person.tier).where(Person.id.in_(ids)),
     "content": lambda ids: select(Content.id, Content.tier).where(Content.id.in_(ids)),
     "event": lambda ids: select(BrandEvent.id, BrandEvent.tier).where(BrandEvent.id.in_(ids)),
     "dispute": lambda ids: select(Dispute.id, Content.tier).join(Content, Content.id == Dispute.content_id)

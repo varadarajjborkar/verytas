@@ -479,6 +479,65 @@ class AuditOut(ORM):
     hash: str
 
 
+class PersonIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    aliases: list[str] = Field(default_factory=list, max_length=10)
+    kind: Literal["celebrity", "ambassador", "creator", "staff", "other"]
+    channels: list[str] = Field(default_factory=list, max_length=20, description="Empty means every channel")
+    event_ids: list[int] = Field(default_factory=list, max_length=20, description="Empty means every campaign")
+    valid_from: date
+    valid_to: date | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+    tier: Tier = Tier.internal
+
+    @model_validator(mode="after")
+    def _window(self) -> PersonIn:
+        if self.valid_to is not None and self.valid_to <= self.valid_from:
+            raise ValueError("valid_to must be after valid_from")
+        return self
+
+
+class PersonPatch(BaseModel):
+    aliases: list[str] | None = Field(default=None, max_length=10)
+    channels: list[str] | None = Field(default=None, max_length=20)
+    event_ids: list[int] | None = Field(default=None, max_length=20)
+    valid_to: date | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+    active: bool | None = None
+
+
+class ReferenceIn(BaseModel):
+    media_type: Literal["image/png", "image/jpeg", "image/webp"] = "image/jpeg"
+    data_base64: str = Field(min_length=16, max_length=8_000_000)
+    source: Literal["upload", "web"] = "upload"
+    source_url: str | None = Field(default=None, max_length=500, pattern=r"^https://")
+
+
+class ReferenceOut(ORM):
+    id: int
+    media_type: str
+    source: str
+    source_url: str | None
+    created_at: datetime
+
+
+class ApprovedPersonOut(ORM):
+    id: int
+    name: str
+    aliases: list[str]
+    kind: str
+    user_id: int | None
+    channels: list[str]
+    event_ids: list[int]
+    valid_from: date
+    valid_to: date | None
+    notes: str | None
+    tier: Tier
+    active: bool
+    created_at: datetime
+    references: list[ReferenceOut] = []
+
+
 class BrandAssetIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     kind: Literal["logo", "mascot", "other"]

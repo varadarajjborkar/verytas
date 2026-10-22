@@ -407,6 +407,53 @@ class AuditEntry(Base):
     hash: Mapped[str] = mapped_column(String(64), unique=True)
 
 
+class Person(Base):
+    """Someone whose face may appear in the brand's content, and on what terms: the company's own record.
+
+    The visual checks only identify a face; this record decides whether it may be there. A celebrity or
+    ambassador is allowed for the channels and campaigns their agreement covers (empty means any) and
+    between its dates. A creator registers themselves, so their own face in their own posts is fine.
+    """
+
+    __tablename__ = "people"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    aliases: Mapped[list[str]] = mapped_column(JSON, default=list)
+    kind: Mapped[str] = mapped_column(String(20))  # celebrity | ambassador | creator | staff | other
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # a creator's own record
+    channels: Mapped[list[str]] = mapped_column(JSON, default=list)
+    event_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    valid_from: Mapped[date] = mapped_column(Date)
+    valid_to: Mapped[date | None] = mapped_column(Date)
+    notes: Mapped[str | None] = mapped_column(Text)
+    tier: Mapped[Tier] = mapped_column(_enum(Tier), default=Tier.internal)
+    active: Mapped[bool] = mapped_column(default=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    references: Mapped[list[PersonReference]] = relationship(
+        back_populates="person", cascade="all, delete-orphan", order_by="PersonReference.id")
+
+
+class PersonReference(Base):
+    """A photo a face is compared against, and where it came from: uploaded by the brand or the person,
+    or found on the web (the address is kept, so a match can be traced to its source)."""
+
+    __tablename__ = "person_references"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id"), index=True)
+    media_type: Mapped[str] = mapped_column(String(40))
+    data_base64: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(20))  # upload | web
+    source_url: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    person: Mapped[Person] = relationship(back_populates="references")
+
+
 class BrandAsset(Base):
     """An official visual asset: the ground truth content is compared against.
 
