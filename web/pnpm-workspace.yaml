@@ -3,3 +3,7 @@ allowBuilds:
   '@openuidev/lang-core': false
   sharp: false
   unrs-resolver: false
+
+overrides:
+  # GHSA-238p-pmpm-9mq7, reached through the chat UI's math rendering.
+  katex: '>=0.18.2'
