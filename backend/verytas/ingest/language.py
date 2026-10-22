@@ -29,12 +29,13 @@ _SCRIPTS: tuple[tuple[str, str, int, int], ...] = (
 # The commonest short words of each Latin-script language. "hi-Latn" is Hindi typed in Latin letters.
 _COMMON_TEXT: dict[str, str] = {
     "en": "the and is are was to of in for with on this that you your our it be at from by we not have has will"
-          " can an or but so just if all they he she what who how now about more",
+          " can an or but so just if all they he she what who how now about more a as do i my me us",
     "hi-Latn": "hai hain ka ki ke ko se mein me aur bhi kya ye yeh wo woh ho hum aap tum nahi nahin karo kar karna"
                " raha rahe tha thi apna apni sab abhi bas toh to ek liye",
     # Tamil typed in Latin letters ("da" and "di" left out: Portuguese and Italian use them too).
     "ta-Latn": "indha enna illa semma romba nalla naan vaa irukku pannu sollu inga anga epdi seri",
-    "es": "el la los las de que y en un una es por con para del al lo como más pero sus su muy",
+    "es": "el la los las de que y en un una es por con para del al lo como más pero sus su muy a o hoy nuestro"
+          " nuestra tu tus este esta también ya",
     "fr": "le la les de des et en un une est pour que qui dans du au avec sur pas plus nous vous ce",
     "de": "der die das und ist nicht mit den dem ein eine zu auf für von sie wir ich es im auch",
     "pt": "o a os as de que e em um uma é para com não do da dos das por mais seu sua você",

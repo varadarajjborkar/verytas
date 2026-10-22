@@ -30,7 +30,7 @@ def test_a_tone_that_turns_partway_is_named_and_quoted():
     [f] = _run(tone_shift, TONE, body, profile)
     assert f.title == "Tone turns hostile partway through"
     assert f.quote == "idiots and losers" and f.unit_id == "p2"
-    assert "4 published pieces" in f.explanation
+    assert "4 approved or published pieces" in f.explanation and "'idiots', 'losers'" in f.explanation
 
 
 def test_each_tone_dimension_and_the_calm_controls():
@@ -71,7 +71,7 @@ def test_drifting_into_a_domain_the_brand_never_covers():
             "Also, the election was rigged and the minister must resign.")
     [f] = _run(topic_drift, TOPIC, body, profile)
     assert f.title == "Drifts off topic into politics" and f.quote.startswith("election")
-    assert "never politics" in f.explanation
+    assert "covers politics" in f.explanation and "'election'" in f.explanation
     [whole] = _run(topic_drift, TOPIC, "Bitcoin is going to the moon, buy crypto now.", profile)
     assert whole.title == "Off the brand's topics: trading tips"
 
@@ -94,8 +94,10 @@ def test_a_brand_whose_business_is_the_domain_is_not_off_topic():
 
 def test_tone_hits_count_shouted_punctuation():
     # Two runs of "!!", and every sentence shouting on top.
-    assert tone_hits("Now!!! Today!!")["hyped"] == ["!!", "!!", "!", "!"]
-    assert tone_hits("Join today. It starts Monday!")["hyped"] == []
+    assert tone_hits("Now!!! Today!!")["hyped"] == ["!!!", "!", "!!", "!"]
+    # One exclamation in two sentences is enthusiasm, not hype: below the three hits that make the dimension.
+    assert len(tone_hits("Join today. It starts Monday!")["hyped"]) < 3
+    assert len(tone_hits("The cheapest courses! We have 2 million learners. Hurry, ends soon!!! #Sale")["hyped"]) >= 3
 
 
 def test_reviews_flag_drift_and_the_brand_team_sees_each_creators_line(client, world):
@@ -219,3 +221,68 @@ def test_english_only_checks_stay_quiet_on_other_languages_and_the_review_says_s
     assert not [f for f in review["findings"] if f["title"].startswith("Reading grade")]
     assert review["coverage"]["language"]["code"] == "es"
     assert any(n.startswith("Written in Spanish") for n in review["coverage"]["notes"])
+
+
+# --- errcheck gen 11 regressions ----------------------------------------------------------------------
+
+def test_ordinary_copy_in_any_language_is_not_a_tone_or_a_topic():
+    profile = build_profile([])  # a new workspace: nothing learned, the strictest case
+    calm = [
+        "Thanks a lot for joining! It feels as if the year flew by.",
+        "Damn good coffee and garbage collection, explained. Take out the trash, then study.",
+        "No dumb questions here. April fools aside, the value is ridiculous.",
+        "Ya disponible. Disfruta sus beneficios con nuestro curso.",
+        "Separe o lixo e a basura; o burro da fazenda e Johnny Depp.",
+        "Vote for your favourite course. Voting closes Friday.",
+        "La elección perfecta para aprender Python.",
+        "We're betting big on mentors. A family affair, dating back to 1998.",
+    ]
+    for body in calm:
+        assert _run(tone_shift, TONE, body, profile) == [], body
+        assert _run(topic_drift, TOPIC, body, profile) == [], body
+
+
+def test_quotes_are_whole_words_at_the_right_offsets():
+    profile = build_profile([])
+    # A short trigger never matches inside another word ("u" in "us"), and the quote runs first to last trigger.
+    [f] = _run(tone_shift, TONE, "Join us today.\n\nomg ur gonna love it", profile)
+    assert f.quote == "omg ur gonna"
+    # Dotted capital I lowercases to two characters; offsets must not shift.
+    body = "İstanbul learners welcome.\n\nAnyone who skips this is an idiot."
+    [f] = _run(tone_shift, TONE, body, profile)
+    assert body[f.span_start:f.span_end] == f.quote == "idiot"
+    # NFD input (decomposed accents) matches like NFC and quotes what was typed.
+    import unicodedata
+    nfd = unicodedata.normalize("NFD", "Nuestro curso.\n\nQuien no lo entienda es estúpido.")
+    [f] = _run(tone_shift, TONE, nfd, profile)
+    assert nfd[f.span_start:f.span_end] == f.quote and unicodedata.normalize("NFC", f.quote) == "estúpido"
+    # The danda ends a Devanagari word.
+    assert domains_in("यह चुनाव। अगला") == {"politics": ["चुनाव"]}
+    # Plural "-ies" words meet their lexicon entry, and explanations quote the writer's words, not stems.
+    [g] = _run(topic_drift, TOPIC, "Our course starts Monday.\n\nCelebrity gossip and Bollywood scandals!", profile)
+    assert "'gossip'" in g.explanation and "scandals" in g.explanation
+
+
+def test_english_is_not_mistaken_for_portuguese_or_hinglish():
+    from verytas.ingest.language import detect
+
+    for text in ["As a learner, do as much as you can: a little a day adds up to a lot.",
+                 "Send it to me and I will do it as soon as I can.",
+                 "Do you want a mentor? Ask us, as we do this every day."]:
+        assert detect(text).code == "en", text
+    assert detect("Hoy empieza nuestro curso, a las siete.").code == "es"
+
+
+def test_a_creators_own_rejection_does_not_clean_their_record(client, world):
+    creator, reviewer = _auth(world["creator"]), _auth(world["reviewer"])
+    made = client.post("/contents?wait=true", headers=creator, json={
+        "title": "Rant", "channel": "linkedin",
+        "body": "Our SQL course starts Monday.\n\nAnyone still on spreadsheets is an idiot, honestly."}).json()
+    tone = next(f for f in client.get(f"/reviews/{made['review_id']}", headers=creator).json()["findings"]
+                if f["title"] == "Tone turns hostile partway through")
+    assert client.post(f"/findings/{tone['id']}/decision", headers=creator,
+                       json={"action": "rejected", "reason_code": "false_positive",
+                             "reason_text": "It's fine"}).status_code in (200, 201)
+    me = client.get("/me", headers=creator).json()
+    [point] = client.get(f"/insights/creators/{me['id']}", headers=reviewer).json()["points"]
+    assert point["distance"] > 0 and point["drift"] == ["tone"]

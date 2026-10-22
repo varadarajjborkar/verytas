@@ -48,8 +48,11 @@ _OUTCOME = {
 }
 
 
-def _dismissed(f: Finding) -> bool:
-    latest = max(f.decisions, key=lambda d: (d.created_at, d.id), default=None)
+def _dismissed(f: Finding, staff: set[int]) -> bool:
+    """The brand team's latest word on the finding is that it was wrong. A creator may reject their own
+    non-blocking findings, but that is their view, not a ruling, and it doesn't clean their record."""
+    ruled = [d for d in f.decisions if d.actor_id in staff]
+    latest = max(ruled, key=lambda d: (d.created_at, d.id), default=None)
     return latest is not None and latest.action is DecisionAction.rejected
 
 
@@ -77,8 +80,8 @@ async def creators(session: AsyncSession, viewer: User) -> list[dict]:
         .where(Content.workspace_id == viewer.workspace_id, Content.tier.in_(tiers))
         .group_by(Content.created_by, Content.status))).all()
     escalations = dict((await session.execute(
-        select(Escalation.raised_by, func.count()).where(Escalation.workspace_id == viewer.workspace_id,
-                                                         Escalation.status == "open")
+        select(Escalation.raised_by, func.count()).join(Content, Escalation.content_id == Content.id)
+        .where(Escalation.workspace_id == viewer.workspace_id, Escalation.status == "open", Content.tier.in_(tiers))
         .group_by(Escalation.raised_by))).all())
     out = []
     for p in people:
@@ -110,16 +113,19 @@ async def trajectory(session: AsyncSession, viewer: User, creator: User) -> dict
         select(Escalation.finding_id).where(Escalation.workspace_id == viewer.workspace_id,
                                             Escalation.raised_by == creator.id, Escalation.status == "cleared"))).all())
     events = {e.id: e.name for e in (await session.scalars(
-        select(BrandEvent).where(BrandEvent.workspace_id == viewer.workspace_id))).all()}
-    open_esc = (await session.scalar(select(func.count()).select_from(Escalation).where(
-        Escalation.raised_by == creator.id, Escalation.status == "open"))) or 0
+        select(BrandEvent).where(BrandEvent.workspace_id == viewer.workspace_id, BrandEvent.tier.in_(tiers)))).all()}
+    open_esc = (await session.scalar(
+        select(func.count()).select_from(Escalation).join(Content, Escalation.content_id == Content.id)
+        .where(Escalation.raised_by == creator.id, Escalation.status == "open", Content.tier.in_(tiers)))) or 0
+    staff = set((await session.scalars(select(User.id).where(User.workspace_id == viewer.workspace_id,
+                                                             User.role != Role.creator))).all())
 
     points, categories = [], Counter()
     for c in contents:
         review = first.get(c.id)
         if review is None:
             continue  # never reviewed: nothing was measured yet
-        issues = [f for f in review.findings if not _dismissed(f) and f.id not in cleared]
+        issues = [f for f in review.findings if not _dismissed(f, staff) and f.id not in cleared]
         categories.update(f.category for f in issues)
         drift = sorted({f.category for f in issues if f.rule and f.rule.code in DRIFT_RULES})
         points.append({

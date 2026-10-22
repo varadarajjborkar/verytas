@@ -21,7 +21,7 @@ from typing import Any
 
 import cv2
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -423,27 +423,38 @@ class Prism:
                 GuardedLLM(vision, self._vision_breaker, self._provider_slots), notes + vision_notes)
 
 
+# Profiles by (workspace, tier, the approved versions they came from, the topic texts): an unchanged brand
+# costs one id query per review, and any approval, edit or new fact makes a new key.
+_PROFILES: OrderedDict[tuple, BrandProfile] = OrderedDict()
+_PROFILE_SOURCES = 150
+
+
 async def _brand_profile(session: AsyncSession, content: Content, rules: list[Rule], facts: list[Fact],
                          events: list[BrandEvent]) -> BrandProfile:
     """The brand's own voice and topics (checks/voice.py), learned from what it has approved or published.
     Same tier ceiling as facts: a public post is never measured against confidential work."""
     tiers = [t for t in Tier if t.rank <= content.tier.rank]
-    rows = (await session.execute(
-        select(ContentVersion.content_id, ContentVersion.version_no, ContentVersion.body)
-        .join(Content, ContentVersion.content_id == Content.id)
-        .where(Content.workspace_id == content.workspace_id, Content.id != content.id, Content.tier.in_(tiers),
+    latest = func.max(ContentVersion.id)
+    ids = tuple((await session.scalars(
+        select(latest).join(Content, ContentVersion.content_id == Content.id)
+        .where(Content.workspace_id == content.workspace_id, Content.tier.in_(tiers),
                Content.status.in_((ContentStatus.approved, ContentStatus.published)))
-        .order_by(Content.created_at.desc()).limit(800))).all()
-    latest: dict[int, tuple[int, str]] = {}
-    for cid, no, body in rows:
-        if cid not in latest or no > latest[cid][0]:
-            latest[cid] = (no, body)
-    voice = [body for _, body in list(latest.values())[:150]]
-    # Rule examples widen the topics but don't count as published voice: the explanation says "N published pieces".
+        .group_by(ContentVersion.content_id).order_by(latest.desc()).limit(_PROFILE_SOURCES))).all())
+    # Rule examples widen the topics but don't count as approved work: the explanation says "N pieces".
     topics = [ex for r in rules if r.category in ("tone", "messaging") for ex in (r.good_examples or [])]
     topics += [f.statement for f in facts] + [f"{e.name}. {e.summary} {e.guidance}" for e in events
-                                             if e.status == "active" and e.tier.rank <= content.tier.rank]
-    return build_profile(voice, topics)
+                                              if e.status == "active" and e.tier.rank <= content.tier.rank]
+    key = (content.workspace_id, content.tier.rank, ids, hash(tuple(topics)))
+    if (hit := _PROFILES.get(key)) is not None:
+        _PROFILES.move_to_end(key)
+        return hit
+    bodies = list((await session.scalars(select(ContentVersion.body).where(ContentVersion.id.in_(ids)))).all()
+                  ) if ids else []
+    profile = await asyncio.to_thread(build_profile, bodies, topics)
+    _PROFILES[key] = profile
+    while len(_PROFILES) > 32:
+        _PROFILES.popitem(last=False)
+    return profile
 
 
 def _language_notes(language: Language) -> list[str]:
