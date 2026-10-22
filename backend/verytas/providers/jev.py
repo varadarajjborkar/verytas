@@ -76,7 +76,13 @@ class JevJudge:
                 last_error = f"{type(exc).__name__}: {exc}"
             else:
                 if res.status_code == 200:
-                    return res.json()
+                    try:
+                        data = res.json()
+                    except ValueError as exc:
+                        raise ProviderUnavailable(f"Jev returned a non-JSON body: {res.text[:200]}") from exc
+                    if not isinstance(data, dict):
+                        raise ProviderUnavailable("Jev returned JSON that is not an object")
+                    return data
                 if res.status_code not in _RETRYABLE:
                     # 401/403/422 won't get better on retry. Surface the detail
                     # (validation errors name the bad field) without the key.
