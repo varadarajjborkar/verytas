@@ -1,9 +1,13 @@
 "use client";
 
-import { Button, Callout, TextArea } from "@openuidev/react-ui";
-import { useMemo, useRef, useState } from "react";
-import type { CategoryScore, Finding, Level, ReviewResult } from "@/lib/types";
-import { LevelPill, Meter, Panel, SourceBadge } from "./ui";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { aiEdit, ApiError, listDisputes, resubmit, submit, waitForReview } from "@/lib/review-client";
+import type { CategoryScore, Dispute, Finding, Level, Review, Source } from "@/lib/types";
+import { AgentTree, Sources } from "./review/AgentTree";
+import { Checklist, emptyRow, type RowState, sortFindings } from "./review/Checklist";
+import { attachmentsPayload, channelOf, Composer, type Draft, emptyDraft } from "./review/Composer";
+import { useToast } from "./Toaster";
+import { Meter, Panel, SourceBadge } from "./ui";
 
 const LEVEL_ORDER: Level[] = ["blocker", "warning", "advisory"];
 // How each coverage status reads on the scorecard. Anything other than "checked" is never shown as a pass.
@@ -12,181 +16,320 @@ const COVERAGE_LABEL: Record<string, { text: string; tone: string }> = {
   not_configured: { text: "No rules yet", tone: "text-muted" },
   degraded: { text: "Heuristic only", tone: "text-[var(--vt-warning)]" },
 };
-const CHANNELS = ["general", "blog", "linkedin", "x", "instagram", "email", "press"] as const;
-const REASONS = [
-  ["false_positive", "Not actually a problem"],
-  ["not_applicable", "Rule doesn't apply here"],
-  ["guideline_unclear", "The guideline is unclear"],
-  ["intentional", "Intentional, approved exception"],
-] as const;
 
-type DecisionState = { action: "accepted" | "rejected"; pending: boolean; error?: string };
+type Phase = "idle" | "submitting" | "reviewing" | "done" | "failed";
 
 export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
-  const [title, setTitle] = useState("Launch announcement");
-  const [channel, setChannel] = useState<(typeof CHANNELS)[number]>("linkedin");
-  const [body, setBody] = useState(initialBody);
-  const [result, setResult] = useState<ReviewResult | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState<Draft>(() => emptyDraft(initialBody));
+  const [demo, setDemo] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [contentId, setContentId] = useState<number | null>(null);
+  const [review, setReview] = useState<Review | null>(null);
+  const [body, setBody] = useState("");
+  const [source, setSource] = useState<Source>("live");
+  const [round, setRound] = useState(0);
+  const [rows, setRows] = useState<Record<number, RowState>>({});
+  const [disputes, setDisputes] = useState<Dispute[]>([]);
+  // Findings from earlier rounds, so a dispute (filed against an old finding id)
+  // can be shown on the matching finding of the new round.
+  const [past, setPast] = useState<Record<number, { title: string; key: string }>>({});
   const [active, setActive] = useState<number | null>(null);
-  const [decisions, setDecisions] = useState<Record<number, DecisionState>>({});
-  const cardRefs = useRef(new Map<number, HTMLElement>());
+  const [notice, setNotice] = useState<string | null>(null);
+  const textRef = useRef<HTMLElement | null>(null);
+  const toast = useToast();
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
+  // Live or demo: ask the proxy once, so uploads aren't offered when they can't work.
+  useEffect(() => {
+    fetch("/api/v/brand-assets").then((r) => setDemo(r.status === 503)).catch(() => setDemo(true));
+  }, []);
+
+  async function track(reviewId: number, versionBody: string) {
+    setPhase("reviewing");
+    setElapsed(0);
+    const done = await waitForReview(reviewId, setElapsed);
+    setReview(done);
+    setBody(versionBody);
+    setRows({});
+    setPhase(done.status === "done" ? "done" : "failed");
+    if (done.status === "failed") {
+      setError(done.error ?? "The review failed.");
+      toast({ kind: "error", title: "The review failed", detail: done.error ?? "Save a new version to run it again." });
+    } else {
+      const s = done.summary;
+      const total = done.findings.length;
+      toast({ kind: s.blockers ? "warning" : "success", title: total ? `Review done: ${total} item${total === 1 ? "" : "s"} to look at` : "Review done: nothing flagged",
+        detail: total ? `${s.blockers ?? 0} must fix · ${s.warnings ?? 0} should fix · ${s.advisories ?? 0} to consider` : undefined });
+      if (done.coverage?.escalations?.length) toast({ kind: "warning", title: "Escalated to the social media manager",
+        detail: done.coverage.escalations[0].reason });
+    }
+  }
+
+  async function run() {
+    setError(null);
+    setNotice(null);
+    setPhase("submitting");
+    let submitted = false;
+    try {
+      if (demo) {
+        const res = await fetch("/api/review", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: draft.title, channel: "linkedin", body: draft.body }) });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? "The demo review failed.");
+        setReview(json.review);
+        setBody(json.body);
+        setSource("demo");
+        setPhase("done");
+        return;
+      }
+      const out = await submit({
+        title: draft.title, channel: channelOf(draft), tier: draft.tier, body: draft.body,
+        attachments: attachmentsPayload(draft),
+        creator_notes: {
+          intent: draft.intent.trim() || null, language: draft.language.trim() || null,
+          ai_used: draft.aiUsed || null, irregularity: draft.irregularityReason.trim() || null,
+        },
+      });
+      submitted = true;
+      setContentId(out.content.id);
+      setSource("live");
+      setRound(1);
+      setDisputes([]);
+      await track(out.review_id, out.version.body);
+    } catch (err) {
+      setPhase("failed");
+      const message = err instanceof ApiError ? err.message : (err as Error).message;
+      setError(message);
+      // After a successful submit the content is saved; only following the review failed.
+      toast({ kind: "error", title: submitted ? "Lost track of the review" : "Couldn't start the review",
+        detail: submitted ? `${message}. The draft is saved; reload to see the result.` : message });
+    }
+  }
+
+  async function sendBack(newBody?: string) {
+    if (!review || !contentId) return;
+    const findings = review.findings;
+    const payload = {
+      body: newBody ?? null,
+      apply: findings.filter((f) => rows[f.id]?.apply).map((f) => f.id),
+      resolved: findings.filter((f) => rows[f.id]?.done).map((f) => f.id),
+      disputes: findings.filter((f) => (rows[f.id]?.dispute ?? "").trim().length >= 10)
+        .map((f) => ({ finding_id: f.id, claim: rows[f.id].dispute.trim(), language: rows[f.id].language.trim() || null })),
+    };
+    setError(null);
+    setPhase("submitting");
+    let sent = false;
+    try {
+      setPast((p) => ({ ...p, ...Object.fromEntries(findings.map((f) => [f.id, { title: f.title, key: findingKey(f) }])) }));
+      const out = await resubmit(contentId, payload);
+      sent = true;
+      setRound((r) => r + 1);
+      setNotice(["New version saved", out.applied ? `${out.applied} fix${out.applied === 1 ? "" : "es"} applied` : "",
+        payload.disputes.length ? `${payload.disputes.length} dispute${payload.disputes.length === 1 ? "" : "s"} sent for re-evaluation` : "",
+        ...out.skipped].filter(Boolean).join(" · "));
+      if (newBody != null) setDraft((d) => ({ ...d, body: newBody }));
+      toast({ kind: "success", title: "Resubmitted", detail: out.applied ? `${out.applied} fix${out.applied === 1 ? "" : "es"} applied; re-checking now` : "Re-checking now" });
+      await track(out.submit.review_id, out.submit.version.body);
+      const decided = await listDisputes(contentId);
+      setDisputes(decided);
+      const mine = decided.filter((d) => payload.disputes.some((p) => p.finding_id === d.finding_id));
+      if (mine.length) toast({ kind: "info", title: `${mine.length} dispute${mine.length === 1 ? "" : "s"} re-evaluated`,
+        detail: mine.map((d) => d.status).join(", ") });
+    } catch (err) {
+      setPhase("failed");
+      setError((err as Error).message);
+      toast({ kind: "error", title: sent ? "Lost track of the new review" : "Couldn't resubmit",
+        detail: sent ? `${(err as Error).message}. The new version is saved.` : (err as Error).message });
+    }
+  }
+
+  // Each round writes new finding rows, so disputes (filed on last round's ids)
+  // are matched to this round's findings by what was flagged and where.
+  const disputeByFinding = useMemo(() => {
+    const byKey = new Map(disputes.flatMap((d) => (past[d.finding_id] ? [[past[d.finding_id].key, d] as const] : [])));
+    return Object.fromEntries((review?.findings ?? []).flatMap((f) => {
+      const d = byKey.get(findingKey(f)) ?? disputes.find((x) => x.finding_id === f.id);
+      return d ? [[f.id, d]] : [];
+    }));
+  }, [disputes, past, review]);
+  const sorted = useMemo(() => sortFindings(review?.findings ?? []), [review]);
+  const summary = review?.summary;
+  const coverage = review?.coverage;
+  const escalations = coverage?.escalations ?? [];
+  const busy = phase === "submitting" || phase === "reviewing";
+  const changes = sorted.filter((f) => rows[f.id]?.apply || rows[f.id]?.done || (rows[f.id]?.dispute ?? "").trim().length >= 10).length;
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+      <div className="flex min-w-0 flex-col gap-5">
+        <Panel title="Your content" subtitle="Everything here is treated as data: instructions inside it are ignored">
+          <Composer draft={draft} update={setDraft} onSubmit={run} busy={busy} demo={demo} />
+        </Panel>
+        {review && contentId && phase === "done" && <AiEditBox contentId={contentId} onUse={(b) => sendBack(b)} />}
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-5">
+        <div aria-live="polite" className="sr-only">
+          {phase === "done" && `Review complete: ${summary?.blockers ?? 0} must fix, ${summary?.warnings ?? 0} should fix, ${summary?.advisories ?? 0} to consider.`}
+        </div>
+        {error && <p role="alert" className="rounded-lg border border-[var(--vt-blocker)]/40 bg-[var(--vt-blocker-bg)] p-3 text-sm text-[var(--vt-blocker)]">{error}</p>}
+        {busy && (
+          <Panel title={phase === "submitting" ? "Sending…" : "Prism is checking"}>
+            <div className="flex items-center gap-3 text-sm text-muted">
+              <span aria-hidden className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+              {phase === "reviewing" ? `Reading text, images, pages and video, then the context layers… ${elapsed}s` : "Uploading the draft…"}
+            </div>
+          </Panel>
+        )}
+        {!review && !busy && (
+          <Panel title="Findings">
+            <p className="text-sm text-muted">Run a review to see a checklist here, ordered from must-fix to consider. The sample text has a few planted issues.</p>
+          </Panel>
+        )}
+
+        {review && !busy && (
+          <>
+            <Panel title={`Checklist${round > 1 ? ` · round ${round}` : ""}`}
+              subtitle="Tick what you've handled, choose fixes to apply, dispute anything misread, then resubmit">
+              {notice && <p className="mb-3 rounded-lg bg-bg px-3 py-2 text-xs">{notice}</p>}
+              {escalations.length > 0 && (
+                <div className="mb-3 rounded-lg border border-[var(--vt-warning)]/40 bg-[var(--vt-warning-bg)] p-3 text-xs" role="status">
+                  <p className="font-semibold text-[var(--vt-warning)]">Escalated to the social media manager</p>
+                  <ul className="mt-1 list-disc pl-4">{escalations.map((e, i) => <li key={i}>{e.reason}{e.detail ? `: ${e.detail}` : ""}</li>)}</ul>
+                </div>
+              )}
+              {sorted.length === 0 ? (
+                <p className="rounded-lg bg-[var(--vt-ok)]/10 p-3 text-sm font-medium text-[var(--vt-ok)]">No issues found. Every check that ran passed.</p>
+              ) : (
+                <Checklist findings={sorted} rows={rows} disputes={disputeByFinding} active={active}
+                  onSelect={(id) => { setActive(id); }}
+                  onRow={(id, patch) => setRows((r) => ({ ...r, [id]: { ...(r[id] ?? emptyRow()), ...patch } }))} />
+              )}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button type="button" disabled={source === "demo" || !contentId || busy} onClick={() => sendBack()}
+                  className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-ink shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
+                  Resubmit and re-check
+                </button>
+                <span className="text-xs text-muted">{changes ? `${changes} item${changes === 1 ? "" : "s"} to send` : "Nothing selected yet; resubmitting re-runs every check"}</span>
+                <span className="ml-auto"><SourceBadge source={source} /></span>
+              </div>
+            </Panel>
+
+            {disputes.length > 0 && (
+              <Panel title="Re-evaluations" subtitle="What Prism decided about each dispute">
+                <ul className="flex flex-col gap-2">
+                  {disputes.map((d) => (
+                    <li key={d.id} className="rounded-lg border border-line p-3 text-xs">
+                      <p className="font-medium">{past[d.finding_id]?.title ?? `Finding ${d.finding_id}`}</p>
+                      <p className="mt-1 text-muted">“{d.claim}”</p>
+                      <p className="mt-1"><span className="font-semibold capitalize">{d.status}</span>{d.verdict?.reason ? `: ${d.verdict.reason}` : ""}</p>
+                      {d.verdict?.layers && (
+                        <p className="mt-1 text-muted">Reader likelihood by layer: {d.verdict.layers.map((l) => `${l.layer} ${l.p == null ? "n/a" : Math.round(l.p * 100) + "%"}`).join(" · ")}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </Panel>
+            )}
+
+            <Panel title="Flagged text" subtitle="Highlights in your caption; select one to open it in the checklist">
+              <HighlightedBody body={body} findings={sorted.filter((f) => (f.source ?? "body") === "body")} active={active}
+                onSelect={setActive} innerRef={textRef} />
+            </Panel>
+
+            {coverage?.agents && coverage.agents.length > 0 && (
+              <Panel title="How Prism checked it" subtitle="Each agent was spawned for a part of your content; nested agents were spawned by their parent">
+                <AgentTree agents={coverage.agents} />
+              </Panel>
+            )}
+            {coverage?.sources && coverage.sources.length > 1 && (
+              <Panel title="Text Prism found" subtitle="Typed text, document text layers, text read from images, scans and video">
+                <Sources sources={coverage.sources} />
+              </Panel>
+            )}
+            {summary?.categories && (
+              <Panel title="Scorecard" subtitle={`Headline score ${Math.round((summary.overall ?? 0) * 100)}%: the weakest checked category`}>
+                <ul className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                  {Object.entries(summary.categories).map(([name, c]) => (
+                    <li key={name}>
+                      <div className="mb-1 flex justify-between text-xs">
+                        <span className="font-medium capitalize">{name}</span>
+                        <CoverageTag category={c} />
+                      </div>
+                      {c.checked && c.score != null && (
+                        <Meter value={c.score} label={`${name} score`} tone={c.blockers ? "danger" : c.score >= 0.9 ? "ok" : "accent"} />
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {coverage && (
+                  <p className="mt-4 border-t border-line pt-3 text-xs leading-5 text-muted">
+                    AI disclosure: judged by <code>{coverage.models?.judge}</code>, written by <code>{coverage.models?.llm}</code>
+                    {coverage.models?.vision && <>, images seen by <code>{coverage.models.vision}</code></>}. {coverage.redactions ?? 0} confidential
+                    or personal item{coverage.redactions === 1 ? "" : "s"} redacted before anything left Verytas.
+                    {coverage.not_checked && coverage.not_checked.length > 0 && ` Not checked this time: ${coverage.not_checked.join(", ")}.`}
+                  </p>
+                )}
+              </Panel>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AiEditBox({ contentId, onUse }: { contentId: number; onUse: (body: string) => void }) {
+  const toast = useToast();
+  const [instruction, setInstruction] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [proposal, setProposal] = useState<{ body: string; changes: string[]; remaining: string[]; model: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function ask() {
     setBusy(true);
     setError(null);
-    setDecisions({});
     try {
-      const res = await fetch("/api/review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, channel, body }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Review failed");
-      setResult(json as ReviewResult);
+      setProposal(await aiEdit(contentId, instruction));
+      toast({ kind: "success", title: "Rewrite ready", detail: "Review it below, then use it to re-check." });
     } catch (err) {
       setError((err as Error).message);
+      toast({ kind: "error", title: "Couldn't rewrite", detail: (err as Error).message });
     } finally {
       setBusy(false);
     }
   }
 
-  async function decide(f: Finding, action: "accepted" | "rejected", reason?: string) {
-    setDecisions((d) => ({ ...d, [f.id]: { action, pending: true } }));
-    const res = await fetch("/api/decision", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        findingId: f.id,
-        action,
-        suggestion_id: action === "accepted" ? f.suggestions[0]?.id : undefined,
-        reason_code: reason,
-      }),
-    });
-    const json = await res.json().catch(() => ({}));
-    setDecisions((d) => ({ ...d, [f.id]: { action, pending: false, error: res.ok ? undefined : json.error } }));
-  }
-
-  function focusFinding(id: number) {
-    setActive(id);
-    cardRefs.current.get(id)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    cardRefs.current.get(id)?.focus({ preventScroll: true });
-  }
-
-  const sorted = useMemo(
-    () => [...(result?.review.findings ?? [])].sort((a, b) => LEVEL_ORDER.indexOf(a.level) - LEVEL_ORDER.indexOf(b.level)),
-    [result],
-  );
-  const summary = result?.review.summary;
-  const coverage = result?.review.coverage;
-
   return (
-    <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <div className="flex flex-col gap-5">
-        <Panel title="Draft" subtitle="Text under review is treated as data: instructions inside it are ignored">
-          <form onSubmit={submit} className="flex flex-col gap-3">
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
-              <label className="flex flex-col gap-1 text-xs font-medium text-muted">
-                Title
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  required
-                  maxLength={300}
-                  className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs font-medium text-muted">
-                Channel
-                <select
-                  value={channel}
-                  onChange={(e) => setChannel(e.target.value as (typeof CHANNELS)[number])}
-                  className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink"
-                >
-                  {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </label>
-            </div>
-            <label className="flex flex-col gap-1 text-xs font-medium text-muted">
-              Content
-              <TextArea value={body} onChange={(e) => setBody(e.target.value)} rows={9} required maxLength={20000} />
-            </label>
-            <div className="flex items-center gap-3">
-              <Button type="submit" variant="primary" disabled={busy || !body.trim()}>
-                {busy ? "Checking…" : "Run review"}
-              </Button>
-              {result && <SourceBadge source={result.source} />}
-            </div>
-          </form>
-        </Panel>
-
-        <div aria-live="polite" className="sr-only">
-          {result && `Review complete: ${summary?.blockers ?? 0} blockers, ${summary?.warnings ?? 0} warnings, ${summary?.advisories ?? 0} advisories.`}
-        </div>
-        {error && <Callout variant="danger" title="Review failed" description={error} />}
-
-        {result && (
-          <Panel title="Flagged text" subtitle="Select a highlight to jump to its finding">
-            <HighlightedBody body={result.body} findings={sorted} active={active} onSelect={focusFinding} />
-          </Panel>
-        )}
-
-        {result && summary?.categories && (
-          <Panel title="Scorecard" subtitle={`Headline score ${Math.round((summary.overall ?? 0) * 100)}%: the weakest checked category`}>
-            <ul className="grid gap-3 sm:grid-cols-2">
-              {Object.entries(summary.categories).map(([name, c]) => (
-                <li key={name}>
-                  <div className="mb-1 flex justify-between text-xs">
-                    <span className="font-medium capitalize">{name}</span>
-                    <CoverageTag category={c} />
-                  </div>
-                  {c.checked && c.score != null && (
-                    <Meter value={c.score} label={`${name} score`} tone={c.blockers ? "danger" : c.score >= 0.9 ? "ok" : "accent"} />
-                  )}
-                </li>
-              ))}
-            </ul>
-            {coverage && (
-              <p className="mt-4 border-t border-line pt-3 text-xs text-muted">
-                AI disclosure: judged by <code>{coverage.models?.judge}</code>, explanations by{" "}
-                <code>{coverage.models?.llm}</code>. {coverage.redactions ?? 0} confidential or personal
-                item{coverage.redactions === 1 ? "" : "s"} redacted before any text left Verytas.
-                {coverage.not_checked && coverage.not_checked.length > 0 &&
-                  ` Not checked this time: ${coverage.not_checked.join(", ")}.`}
-              </p>
-            )}
-          </Panel>
-        )}
-      </div>
-
+    <Panel title="Edit with AI" subtitle="Describe the change you want. Brand rules always win over the instruction.">
       <div className="flex flex-col gap-3">
-        {!result && !busy && (
-          <Panel title="Findings">
-            <p className="text-sm text-muted">Run a review to see findings here. The sample draft above has a few planted issues.</p>
-          </Panel>
+        <textarea value={instruction} onChange={(e) => setInstruction(e.target.value)} maxLength={2000}
+          placeholder="e.g. Make it warmer, drop the competitor jab and keep the sale details"
+          className="min-h-20 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:border-accent focus:outline-none" />
+        <button type="button" disabled={busy || instruction.trim().length < 3} onClick={ask}
+          className="self-start rounded-lg border border-accent px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/5 disabled:opacity-50">
+          {busy ? "Rewriting…" : "Suggest a rewrite"}
+        </button>
+        {error && <p role="alert" className="text-xs text-[var(--vt-blocker)]">{error}</p>}
+        {proposal && (
+          <div className="flex flex-col gap-2 rounded-lg border border-line bg-bg p-3">
+            <p className="whitespace-pre-wrap text-sm leading-6">{proposal.body}</p>
+            {proposal.changes.length > 0 && <ul className="list-disc pl-4 text-xs text-muted">{proposal.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>}
+            {proposal.remaining.length > 0 && (
+              <p className="text-xs text-[var(--vt-warning)]">Instant checks still find: {proposal.remaining.join("; ")}</p>
+            )}
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={() => onUse(proposal.body)}
+                className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-ink hover:brightness-110">
+                Use this version and re-check
+              </button>
+              <span className="text-[11px] text-muted">by {proposal.model}</span>
+            </div>
+          </div>
         )}
-        {busy && <Panel title="Findings"><p className="text-sm text-muted">Checking terminology, claims, tone, accessibility and confidentiality…</p></Panel>}
-        {result && sorted.length === 0 && (
-          <Callout variant="success" title="No issues found" description="Every check that ran passed." />
-        )}
-        {sorted.map((f) => (
-          <FindingCard
-            key={f.id}
-            finding={f}
-            active={active === f.id}
-            decision={decisions[f.id]}
-            onDecide={(action, reason) => decide(f, action, reason)}
-            refCallback={(el) => {
-              if (el) cardRefs.current.set(f.id, el);
-              else cardRefs.current.delete(f.id);
-            }}
-          />
-        ))}
       </div>
-    </div>
+    </Panel>
   );
 }
 
@@ -196,13 +339,35 @@ function CoverageTag({ category: c }: { category: CategoryScore }) {
   return <span className={`font-semibold ${label.tone}`}>{label.text}</span>;
 }
 
-function HighlightedBody({ body, findings, active, onSelect }: {
+/** Maps a code point offset to a UTF-16 index in `text`. */
+function utf16Index(text: string): (cp: number) => number {
+  const starts: number[] = [];
+  let i = 0;
+  for (const ch of text) {
+    starts.push(i);
+    i += ch.length;
+  }
+  starts.push(i);
+  return (cp) => starts[Math.min(Math.max(cp, 0), starts.length - 1)];
+}
+
+function findingKey(f: Finding): string {
+  return `${f.category}|${f.source ?? "body"}|${f.quote ?? f.title}`;
+}
+
+function HighlightedBody({ body, findings, active, onSelect, innerRef }: {
   body: string;
   findings: Finding[];
   active: number | null;
   onSelect: (id: number) => void;
+  innerRef: React.RefObject<HTMLElement | null>;
 }) {
-  // Overlapping spans keep the most severe finding; the others still appear in the list.
+  // The API counts characters in code points; JS strings index UTF-16 units,
+  // so every emoji before a span would shift it by one. Convert first.
+  const at = utf16Index(body);
+  findings = findings.map((f) => f.span_start == null || f.span_end == null ? f
+    : { ...f, span_start: at(f.span_start), span_end: at(f.span_end) });
+  // Overlapping spans keep the most severe finding; the others still appear in the checklist.
   const spans = findings
     .filter((f) => f.span_start != null && f.span_end != null && f.span_end > f.span_start)
     .sort((a, b) => a.span_start! - b.span_start! || LEVEL_ORDER.indexOf(a.level) - LEVEL_ORDER.indexOf(b.level));
@@ -212,119 +377,14 @@ function HighlightedBody({ body, findings, active, onSelect }: {
     if (f.span_start! < cursor) continue;
     if (f.span_start! > cursor) parts.push(body.slice(cursor, f.span_start!));
     parts.push(
-      <mark
-        key={f.id}
-        data-level={f.level}
-        data-active={active === f.id}
-        tabIndex={0}
-        role="button"
-        aria-label={`${f.level}: ${f.title}`}
-        onClick={() => onSelect(f.id)}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onSelect(f.id))}
-      >
+      <mark key={f.id} data-level={f.level} data-active={active === f.id} tabIndex={0} role="button"
+        aria-label={`${f.level}: ${f.title}`} onClick={() => onSelect(f.id)}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onSelect(f.id))}>
         {body.slice(f.span_start!, f.span_end!)}
       </mark>,
     );
     cursor = f.span_end!;
   }
   parts.push(body.slice(cursor));
-  return <p className="whitespace-pre-wrap text-sm leading-7">{parts}</p>;
-}
-
-function FindingCard({ finding: f, active, decision, onDecide, refCallback }: {
-  finding: Finding;
-  active: boolean;
-  decision?: DecisionState;
-  onDecide: (action: "accepted" | "rejected", reason?: string) => void;
-  refCallback: (el: HTMLElement | null) => void;
-}) {
-  const [reason, setReason] = useState<string>("");
-  const [rejecting, setRejecting] = useState(false);
-  const s = f.suggestions[0];
-
-  return (
-    <article
-      ref={refCallback}
-      tabIndex={-1}
-      aria-labelledby={`finding-${f.id}`}
-      className={`rounded-xl border bg-surface p-4 transition-shadow ${active ? "border-accent shadow-md" : "border-line"}`}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <LevelPill level={f.level} />
-        <span className="text-xs capitalize text-muted">{f.category}</span>
-        <span className="text-xs text-muted">· confidence {Math.round(f.confidence * 100)}%</span>
-        {f.signature_valid && (
-          <span className="ml-auto text-xs text-[var(--vt-ok)]" title="Signed by the agent that produced it; any edit would break the signature">
-            ✓ signed
-          </span>
-        )}
-      </div>
-      <h3 id={`finding-${f.id}`} className="mt-2 text-sm font-semibold">{f.title}</h3>
-      <p className="mt-1 text-sm text-muted">{f.explanation}</p>
-
-      {f.citations.length > 0 && (
-        <ul className="mt-3 flex flex-col gap-1">
-          {f.citations.map((c) => (
-            <li key={`${c.kind}-${c.id}`} className="text-xs">
-              <span className="mr-1 rounded bg-bg px-1.5 py-0.5 font-medium uppercase text-muted">{c.kind}</span>
-              {c.label}
-              {c.source && <span className="text-muted"> · {c.source}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {s && (
-        <div className="mt-3 rounded-lg bg-bg p-3 text-sm">
-          <p className="text-xs font-medium text-muted">Suggested minimal edit</p>
-          <p className="mt-1">
-            <del className="text-[var(--vt-blocker)]">{s.original}</del>
-          </p>
-          <p>
-            <ins className="text-[var(--vt-ok)] no-underline">{s.proposed}</ins>
-          </p>
-          {s.intent_preserved != null && (
-            <p className="mt-1 text-xs text-muted">Meaning preserved: {Math.round(s.intent_preserved * 100)}% likely</p>
-          )}
-        </div>
-      )}
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {decision && !decision.pending && !decision.error ? (
-          <p className="text-xs font-medium">
-            {decision.action === "accepted" ? "✓ Fix accepted, it will be applied in the next version" : "Dismissed with a reason"}
-          </p>
-        ) : rejecting ? (
-          <>
-            <label className="sr-only" htmlFor={`reason-${f.id}`}>Why are you dismissing this?</label>
-            <select
-              id={`reason-${f.id}`}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="rounded-lg border border-line bg-surface px-2 py-1.5 text-xs"
-            >
-              <option value="">Why dismiss it?</option>
-              {REASONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-            <Button size="small" variant="secondary" disabled={!reason || decision?.pending} onClick={() => onDecide("rejected", reason)}>
-              Dismiss
-            </Button>
-            <Button size="small" variant="tertiary" onClick={() => setRejecting(false)}>Cancel</Button>
-          </>
-        ) : (
-          <>
-            {s && (
-              <Button size="small" variant="primary" disabled={decision?.pending} onClick={() => onDecide("accepted")}>
-                Accept fix
-              </Button>
-            )}
-            <Button size="small" variant="secondary" disabled={decision?.pending} onClick={() => setRejecting(true)}>
-              Dismiss
-            </Button>
-          </>
-        )}
-        {decision?.error && <p role="alert" className="text-xs text-[var(--vt-blocker)]">{decision.error}</p>}
-      </div>
-    </article>
-  );
+  return <p ref={innerRef as React.RefObject<HTMLParagraphElement>} className="whitespace-pre-wrap text-sm leading-7">{parts}</p>;
 }

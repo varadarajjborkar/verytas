@@ -1,14 +1,14 @@
 import "server-only";
 
 import { demoBody, demoHealth, demoOverview, demoRecurring, demoReview } from "./demo-data";
+import { sessionToken } from "./session";
 import type { Overview, Recurring, Review, ReviewResult, RuleHealth, Sourced } from "./types";
 
 // The browser never talks to the API directly: these helpers run on the server
-// with a service token, so the token never reaches client bundles.
+// as the signed-in person (lib/session.ts), whose token never reaches page scripts.
 const API_URL = process.env.VERYTAS_API_URL;
-const API_TOKEN = process.env.VERYTAS_API_TOKEN;
 
-export const backendConfigured = Boolean(API_URL && API_TOKEN);
+export const backendConfigured = Boolean(API_URL);
 
 class BackendError extends Error {
   constructor(public status: number, message: string) {
@@ -17,10 +17,12 @@ class BackendError extends Error {
 }
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = await sessionToken();
+  if (!token) throw new BackendError(401, `${path}: not signed in`);
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${API_TOKEN}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       ...init.headers,
     },
@@ -63,9 +65,19 @@ export async function submitForReview(input: { title: string; channel: string; b
   return { review, body: submitted.version.body, source: "live" };
 }
 
-export async function recordDecision(findingId: number, body: Record<string, unknown>): Promise<unknown> {
-  if (!backendConfigured) return { demo: true };
-  return call(`/findings/${findingId}/decision`, { method: "POST", body: JSON.stringify(body) });
+/** Raw pass-through for the browser proxy (app/api/v). Status and body are relayed unchanged. */
+export async function forward(method: string, path: string, body: ReadableStream<Uint8Array> | undefined,
+  contentType: string | null, token: string): Promise<Response> {
+  return fetch(`${API_URL}${path}`, {
+    method,
+    body,
+    // Streamed through rather than buffered: an upload can be 150 MB.
+    ...(body ? { duplex: "half" } : {}),
+    headers: { Authorization: `Bearer ${token}`, ...(contentType ? { "Content-Type": contentType } : {}) },
+    cache: "no-store",
+    // Reviews with video or many pages take a while; the client polls rather than waiting here.
+    signal: AbortSignal.timeout(180_000),
+  });
 }
 
 export { BackendError };
