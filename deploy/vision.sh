@@ -25,6 +25,8 @@ SAM2="git+https://github.com/facebookresearch/sam2@2b90b9f5ceec907a1c18123530e92
 # trusted on first use.
 GITHUB_KEY="github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
 BOOT=/usr/local/sbin/verytas-vision-boot
+# The AWS CLI comes from a snap, and systemd units don't have /snap/bin on their PATH.
+export PATH="$PATH:/snap/bin"
 log() { echo "$(date -u +%FT%TZ) vision: $*"; }
 
 safety_net() {
@@ -32,14 +34,17 @@ safety_net() {
   mkdir -p "$ROOT/state"
   cat > /usr/local/sbin/verytas-vision-idle <<'EOF'
 #!/bin/sh
-# Stop the instance when the worker has had no request for 20 minutes, or never had one in 30 since boot.
+# Stop the instance when the worker has had no request for 20 minutes. Never while the boot update is
+# installing, unless it has run for 90 minutes: a hung install must not keep the instance up for good.
 up=$(cut -d. -f1 /proc/uptime)
+state=$(systemctl show -p ActiveState --value verytas-vision-update.service)
+[ "$state" = activating ] && [ "$up" -lt 5400 ] && exit 0
 last=/srv/vision/state/last_used
 if [ -f "$last" ]; then
   idle=$(( $(date +%s) - $(stat -c %Y "$last") ))
   [ "$up" -gt 900 ] && [ "$idle" -gt 1200 ] && exec shutdown -h now "vision worker idle"
 else
-  [ "$up" -gt 1800 ] && exec shutdown -h now "vision worker never used"
+  [ "$up" -gt 3600 ] && exec shutdown -h now "vision worker never used"
 fi
 exit 0
 EOF
@@ -68,7 +73,10 @@ install_once() {
   [ -f "$ROOT/.installed" ] && return
   log "first boot: packages and user"
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -q && apt-get install -yq python3.12-venv git curl
+  # One command per line: under set -e, a failure on the left of && would be ignored.
+  apt-get update -q
+  apt-get install -yq python3.12-venv git curl
+  snap wait system seed.loaded
   snap list aws-cli >/dev/null 2>&1 || snap install aws-cli --classic
   id vision >/dev/null 2>&1 || useradd --system --home "$ROOT" --shell /usr/sbin/nologin vision
   mkdir -p "$ROOT"/{etc,models,cache,state}
@@ -81,15 +89,15 @@ secrets() {
   local imds region token
   imds=$(curl -sf -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
   region=$(curl -sf -H "X-aws-ec2-metadata-token: $imds" http://169.254.169.254/latest/meta-data/placement/region)
-  umask 077
-  aws ssm get-parameter --region "$region" --with-decryption --name /verytas/vision/deploy_key \
-    --query Parameter.Value --output text > "$ROOT/etc/deploy_key.new"
+  # Private modes for these two files only: a umask set here would also make the code and venv root-only.
+  (umask 077 && aws ssm get-parameter --region "$region" --with-decryption --name /verytas/vision/deploy_key \
+    --query Parameter.Value --output text > "$ROOT/etc/deploy_key.new")
   mv "$ROOT/etc/deploy_key.new" "$ROOT/etc/deploy_key"  # root only: the worker never needs it
   token=$(aws ssm get-parameter --region "$region" --with-decryption --name /verytas/vision/token \
     --query Parameter.Value --output text)
   [ -n "$token" ] || { log "empty token from SSM"; exit 1; }
-  printf 'VERYTAS_VISION_TOKEN=%s\nVERYTAS_VISION_MODELS_DIR=%s/models\nVERYTAS_VISION_STATE=%s/state\nHF_HOME=%s/cache\n' \
-    "$token" "$ROOT" "$ROOT" "$ROOT" > "$ROOT/etc/worker.env"
+  (umask 077 && printf 'VERYTAS_VISION_TOKEN=%s\nVERYTAS_VISION_MODELS_DIR=%s/models\nVERYTAS_VISION_STATE=%s/state\nHF_HOME=%s/cache\n' \
+    "$token" "$ROOT" "$ROOT" "$ROOT" > "$ROOT/etc/worker.env")
   chown root:vision "$ROOT/etc/worker.env" && chmod 640 "$ROOT/etc/worker.env"
 }
 
@@ -99,7 +107,8 @@ update() {
     rm -rf "$ROOT/app"
     git clone -q --depth 1 --branch "$BRANCH" "$REPO_URL" "$ROOT/app"
   else
-    git -C "$ROOT/app" fetch -q --depth 1 origin "$BRANCH" && git -C "$ROOT/app" reset -q --hard FETCH_HEAD
+    git -C "$ROOT/app" fetch -q --depth 1 origin "$BRANCH"
+    git -C "$ROOT/app" reset -q --hard FETCH_HEAD
   fi
   local lock="$ROOT/app/backend/requirements-vision.lock" stamp="$ROOT/venv/.lock.sha256"
   if [ ! -f "$stamp" ] || ! sha256sum --status -c "$stamp" 2>/dev/null; then
@@ -145,7 +154,7 @@ EOF
   cat > /etc/systemd/system/verytas-vision-update.service <<EOF
 [Unit]
 Description=Fetch live and update the vision worker
-After=network-online.target
+After=network-online.target snapd.seeded.service
 Wants=network-online.target
 [Service]
 Type=oneshot

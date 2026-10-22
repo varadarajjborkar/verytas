@@ -285,3 +285,51 @@ def test_the_worker_reports_loading_until_its_models_are_in(monkeypatch, tmp_pat
         assert c.get("/health").status_code == 200
         c.post("/characters", json={"scenes": [_b64()]}, headers={"X-Vision-Token": "s3cret"})
     assert (tmp_path / "last_used").exists()
+
+
+def test_a_worker_whose_models_fail_says_so_and_the_wake_stops_waiting(monkeypatch, tmp_path):
+    class Broken(FakeChain):
+        def __init__(self, models_dir, device="cpu"):
+            raise RuntimeError("checkpoint missing")
+
+    monkeypatch.setattr(worker, "Chain", Broken)
+    app = worker.create_app(tmp_path, token="s3cret", state_dir=tmp_path, preload=True)
+    with TestClient(app) as c:
+        import time as _t
+
+        _t.sleep(0.2)
+        res = c.get("/health")
+        assert res.status_code == 500 and res.json()["status"] == "failed"
+
+    from verytas.vision import wake
+
+    async def started(self, client):
+        return True
+
+    w = wake.Waker("i-0abc", "http://10.0.0.5:8100/health", timeout_s=60)
+    monkeypatch.setattr(wake.Waker, "_failed", started)
+    wake_mod, _ = _fake_aws(monkeypatch, start_answers=[(200, "<ok/>")], healthy_after=10**9)
+    with pytest.raises(httpx.HTTPError, match="could not load its models"):
+        asyncio.run(w())
+
+
+def test_unreadable_metadata_credentials_are_a_wake_failure(monkeypatch):
+    from verytas.vision import wake
+
+    def handler(request):
+        url = str(request.url)
+        if url.endswith("/api/token"):
+            return httpx.Response(200, text="t")
+        if url.endswith("/security-credentials/"):
+            return httpx.Response(200, text="verytas-api")
+        return httpx.Response(200, text="<html>not json</html>")
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(wake.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+
+    async def go():
+        async with wake.httpx.AsyncClient() as c:
+            await wake.instance_credentials(c)
+
+    with pytest.raises(httpx.HTTPError):
+        asyncio.run(go())

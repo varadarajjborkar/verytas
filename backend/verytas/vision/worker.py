@@ -90,6 +90,7 @@ def create_app(models_dir: Path, token: str | None, state_dir: Path | None = Non
         with loading:
             if state["chain"] is None:
                 state["chain"] = Chain(models_dir)
+                state["error"] = None
         return state["chain"]  # type: ignore[return-value]
 
     def touch() -> None:
@@ -98,6 +99,8 @@ def create_app(models_dir: Path, token: str | None, state_dir: Path | None = Non
             (state_dir / "last_used").touch()
 
     if preload:
+        touch()  # the idle clock starts when the worker does, not at some request before the last stop
+
         def load() -> None:
             try:
                 chain()
@@ -126,8 +129,9 @@ def create_app(models_dir: Path, token: str | None, state_dir: Path | None = Non
         ready = state["chain"] is not None or not preload  # lazily loaded: ready to serve from the start
         body = {"status": "ok" if ready else "loading", "models_loaded": state["chain"] is not None,
                 "idle_s": round(time.time() - state["last_used"])}  # type: ignore[operator]
-        if state["error"]:
-            body |= {"status": "failed", "error": state["error"]}
+        if state["error"] and not ready:
+            # The models failed to load: say so at once (500), so a wake stops waiting instead of timing out.
+            return JSONResponse(body | {"status": "failed", "error": state["error"]}, status_code=500)
         # Ready only with models in memory, so a wake that sees 200 can send work at once.
         return body if ready else JSONResponse(body, status_code=503)
 

@@ -15,6 +15,7 @@ import asyncio
 import datetime as dt
 import hashlib
 import hmac
+import json
 import time
 from dataclasses import dataclass
 from urllib.parse import quote
@@ -44,7 +45,11 @@ async def instance_credentials(client: httpx.AsyncClient) -> tuple[Credentials, 
     h = {"X-aws-ec2-metadata-token": token}
     # No role attached answers 404 here, which reads as "can't wake", not a crash.
     role = (await text(await client.get(f"{IMDS}/latest/meta-data/iam/security-credentials/", headers=h))).split()[0]
-    creds = (await client.get(f"{IMDS}/latest/meta-data/iam/security-credentials/{role}", headers=h)).json()
+    try:
+        creds = json.loads(await text(await client.get(f"{IMDS}/latest/meta-data/iam/security-credentials/{role}",
+                                                       headers=h)))
+    except ValueError as exc:
+        raise httpx.HTTPError("instance metadata gave unreadable credentials") from exc
     region = await text(await client.get(f"{IMDS}/latest/meta-data/placement/region", headers=h))
     try:
         return Credentials(creds["AccessKeyId"], creds["SecretAccessKey"], creds.get("Token")), region
@@ -118,8 +123,17 @@ class Waker:
                     # Still stopping from its last idle stop: it can be started once it has stopped.
                 elif await self._healthy(client):
                     return
+                elif await self._failed(client):
+                    raise httpx.HTTPError("the vision worker started but could not load its models")
                 await asyncio.sleep(5)
         raise httpx.TimeoutException(f"the vision worker did not wake within {self.timeout_s:.0f} s")
+
+    async def _failed(self, client: httpx.AsyncClient) -> bool:
+        try:
+            res = await client.get(self.health_url, timeout=3)
+            return res.status_code == 500 and res.json().get("status") == "failed"
+        except (httpx.HTTPError, ValueError):
+            return False
 
     async def _healthy(self, client: httpx.AsyncClient) -> bool:
         try:
