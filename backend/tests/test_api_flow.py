@@ -311,10 +311,10 @@ def test_superseding_fact_must_start_later(client, world):
 
 
 def test_scorecard_is_honest_about_coverage(client, world):
-    # Legal is covered by built-in rules (AI labels, disclosure placement);
+    # Legal is covered by built-in rules (AI labels, disclosure placement, likeness);
     # retiring them must show the category as not configured, never as passed.
     admin = _auth(world["admin"])
-    for code in ("AI-DISCLOSURE", "PRES-FOLD"):
+    for code in ("AI-DISCLOSURE", "PRES-FOLD", "LIKENESS-UNLICENSED", "LIKENESS-UNKNOWN"):
         assert client.patch(f"/rules/{_rule_id(client, admin, code)}", headers=admin,
                             json={"status": "retired"}).status_code == 200
     res = client.post("/contents?wait=true", headers=_auth(world["creator"]),
