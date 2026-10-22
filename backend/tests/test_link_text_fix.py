@@ -171,3 +171,25 @@ async def test_link_finding_is_still_model_free():
     await explain_and_fix(findings, {r.code: r for r in ctx.rules}, EditorLLM(), AgreeingJudge())
     link = _link_finding(findings)
     assert link.model is None and link.confidence == 1.0
+
+
+async def test_a_rewrite_of_an_unsupported_claim_is_never_offered_or_judged():
+    # Rewording can't back a claim ("40 learners" -> "many learners" is the same claim, vaguer), so a
+    # model that proposes one anyway gets no fix and costs no intent-judge call; its explanation stays.
+    from verytas.checks.base import RawFinding
+
+    claim = RawFinding(unit_id="u", category="claims", title="Unsupported figure", explanation="x", confidence=0.9,
+                       checker="claims", rule_code="CLAIM-UNSUPPORTED", quote="She mentors 40 learners a week.",
+                       needs_explanation=True)
+
+    class Rewriter:
+        name = "stub/llm"
+
+        async def run(self, task):
+            return FixList(fixes=[Fix(key=key, explanation="No approved fact backs 40.", original="40",
+                                      proposed="many") for key, _, _ in task.items])
+
+    judge = AgreeingJudge()
+    await explain_and_fix([claim], {}, Rewriter(), judge)
+    assert claim.suggestion is None and claim.explanation == "No approved fact backs 40."
+    assert judge.states == []

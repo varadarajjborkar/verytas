@@ -111,6 +111,8 @@ async def explain_and_fix(findings: list[RawFinding], rules: dict[str, RuleView]
                 f.explanation = fix.explanation.strip()
             f.needs_explanation = False
             original, proposed = fix.original.strip(), fix.proposed.strip()
+            if f.rule_code == "CLAIM-UNSUPPORTED":
+                continue  # rewording can't back a claim; a rewrite would be dropped later, after a judge call
             if not original or not proposed or original == proposed or original not in (f.quote or ""):
                 continue  # no fix, or the model edited text that isn't there
             before, after = _in_sentence(f, original, proposed)
