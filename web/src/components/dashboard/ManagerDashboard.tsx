@@ -85,17 +85,41 @@ export function ManagerDashboard({ overview, recurring, health }: { overview: Ov
   if (editing) {
     return <Arrange layout={layout} onSave={(items) => writeStored(key, items ? JSON.stringify({ v: 1, items }) : null)} onDone={() => setEditing(false)} />;
   }
+  const panel = (item: Item, order: number) => (
+    <div key={item.id} style={{ order }} className="min-w-0"
+      onPointerDown={onHoldStart} onPointerMove={(e) => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 3) cancelHold(); }}
+      onPointerUp={cancelHold} onPointerCancel={cancelHold} onPointerLeave={cancelHold}>
+      <WidgetPanel id={item.id} d={d} />
+    </div>
+  );
+  // Half-width widgets alternate between two columns that stack independently, so a short widget
+  // never leaves a hole beside a tall one. Below xl the columns dissolve (display: contents) and
+  // `order` restores the saved sequence in the single column.
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-2">
-      {layout.map((item) => (
-        <div key={item.id} className={`min-w-0 ${item.size === "full" ? "xl:col-span-2" : ""}`}
-          onPointerDown={onHoldStart} onPointerMove={(e) => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 3) cancelHold(); }}
-          onPointerUp={cancelHold} onPointerCancel={cancelHold} onPointerLeave={cancelHold}>
-          <WidgetPanel id={item.id} d={d} />
+    <div className="grid gap-5">
+      {runs(layout).map((run, n) => run.full ? panel(run.full, 0) : (
+        <div key={`run-${n}`} className="grid gap-5 xl:grid-cols-2">
+          {[0, 1].map((side) => (
+            <div key={side} className="contents xl:flex xl:flex-col xl:gap-5">
+              {run.halves.map((item, i) => i % 2 === side ? panel(item, i) : null)}
+            </div>
+          ))}
         </div>
       ))}
     </div>
   );
+}
+
+/** The layout cut at each full-width widget: runs of halves between them. */
+function runs(layout: Item[]): ({ full: Item; halves?: never } | { full?: never; halves: Item[] })[] {
+  const out: ({ full: Item; halves?: never } | { full?: never; halves: Item[] })[] = [];
+  for (const item of layout) {
+    const last = out.at(-1);
+    if (item.size === "full") out.push({ full: item });
+    else if (last?.halves) last.halves.push(item);
+    else out.push({ halves: [item] });
+  }
+  return out;
 }
 
 type Drag = { id: string; pointer: number; mouse: boolean; start: string; grabX: number; grabY: number; x: number; y: number;

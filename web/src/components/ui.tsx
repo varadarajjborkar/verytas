@@ -101,34 +101,54 @@ export function Meter({ value, label, tone = "accent" }: { value: number; label:
 
 /**
  * Stacked daily bars that always fit their card. The charting library pages its
- * x-axis by width, which hid the most recent days on narrow screens.
+ * x-axis by width, which hid the most recent days on narrow screens. Bars are capped
+ * in width so a short range doesn't turn into slabs, segments are split by a 2px gap,
+ * and the whole column is the hover target, with the day's breakdown in a tooltip.
  */
 export function TrendBars({ data, series }: {
   data: { label: string; values: number[] }[];
   series: { name: string; colour: string }[];
 }) {
-  const max = Math.max(1, ...data.map((d) => d.values.reduce((a, b) => a + b, 0)));
+  const totals = data.map((d) => d.values.reduce((a, b) => a + b, 0));
+  const max = Math.max(1, ...totals);
+  // One reference line at a round number near the top (9, 20, 300) gives the bars a scale without a grid.
+  const magnitude = 10 ** Math.floor(Math.log10(max));
+  const ref = Math.floor(max / magnitude) * magnitude;
   return (
     <div className="flex h-full flex-col">
-      <div className="flex min-h-0 flex-1 items-end gap-1.5 border-b border-line pb-px" role="img"
-        aria-label={`Daily findings: ${data.map((d) => `${d.label} ${d.values.reduce((a, b) => a + b, 0)}`).join(", ")}`}>
-        {data.map((d) => {
-          const total = d.values.reduce((a, b) => a + b, 0);
-          return (
-            <div key={d.label} className="group relative flex h-full min-w-0 flex-1 flex-col justify-end" title={`${d.label}: ${total}`}>
-              <div className="flex w-full flex-col-reverse overflow-hidden rounded-[4px] opacity-90 transition-opacity group-hover:opacity-100"
-                style={{ height: `${(total / max) * 92}%` }}>
-                {d.values.map((v, i) => v > 0 && (
-                  <div key={i} style={{ height: `${(v / total) * 100}%`, background: series[i].colour }} />
-                ))}
+      <div className="relative min-h-0 flex-1" role="img"
+        aria-label={`Daily findings: ${data.map((d, i) => `${d.label} ${totals[i]}`).join(", ")}`}>
+        <div aria-hidden className="absolute inset-x-0 border-t border-dashed border-line" style={{ bottom: `${(ref / max) * 92}%` }}>
+          <span className="absolute -top-2.5 left-0 bg-surface pr-1.5 text-[11px] tabular-nums text-subtle">{ref}</span>
+        </div>
+        <div className="absolute inset-0 flex items-end gap-1.5 border-b border-line-strong">
+          {data.map((d, i) => (
+            <div key={d.label} className="group relative flex h-full min-w-0 flex-1 justify-center">
+              <div className="vt-grow flex h-full w-full max-w-7 flex-col justify-end" style={{ "--vt-i": i } as React.CSSProperties}>
+                <div className="flex w-full flex-col-reverse gap-[2px] transition-opacity group-hover:opacity-100 [@media(hover:hover)]:opacity-85"
+                  style={{ height: `${(totals[i] / max) * 92}%` }}>
+                  {d.values.map((v, k) => v > 0 && (
+                    <div key={k} className="rounded-[2px] last:rounded-t-[4px]" style={{ flexGrow: v, background: series[k].colour }} />
+                  ))}
+                </div>
               </div>
+              {totals[i] > 0 && (
+                <div aria-hidden className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-line bg-raised px-2.5 py-1.5 text-xs shadow-[var(--vt-shadow-pop)] group-hover:block">
+                  <p className="font-semibold">{d.label} · {totals[i]}</p>
+                  {d.values.map((v, k) => v > 0 && (
+                    <p key={k} className="flex items-center gap-1.5 text-muted">
+                      <span className="h-2 w-2 rounded-full" style={{ background: series[k].colour }} />{series[k].name} {v}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
       <div className="mt-1.5 flex gap-1.5">
         {data.map((d, i) => (
-          <span key={d.label} className="min-w-0 flex-1 truncate text-center text-[10px] text-subtle">
+          <span key={d.label} className="min-w-0 flex-1 truncate text-center text-[11px] tabular-nums text-subtle">
             {/* Every other day, counted back from today so the latest is always labelled. */}
             {(data.length - 1 - i) % 2 === 0 ? d.label : ""}
           </span>
@@ -157,7 +177,7 @@ export function HBars({ data, colour = "var(--vt-accent)" }: { data: { label: st
             <span className="tabular-nums text-muted">{d.value}</span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-sunken">
-            <div className="h-full rounded-full" style={{ width: `${(d.value / max) * 100}%`, background: colour }} />
+            <div className="vt-grow-x h-full rounded-full" style={{ width: `${(d.value / max) * 100}%`, background: colour }} />
           </div>
         </li>
       ))}

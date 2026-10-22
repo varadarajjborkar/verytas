@@ -5,7 +5,7 @@ import { ArrowRightIcon, RefreshIcon } from "../Icons";
 const STAGES = [
   { key: "draft", label: "Draft", hint: "Being written", colour: "#8a93a3", queue: "creator" },
   { key: "in_review", label: "In review", hint: "Waiting for you", colour: "#3d8bf2", queue: "waiting" },
-  { key: "approved", label: "Approved", hint: "Ready to go out", colour: "#4fb487", queue: "approved" },
+  { key: "approved", label: "Approved", hint: "Ready to post", colour: "#4fb487", queue: "approved" },
   { key: "published", label: "Published", hint: "Live", colour: "#22b8a6", queue: "approved" },
 ] as const;
 

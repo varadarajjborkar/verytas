@@ -256,7 +256,7 @@ export const WIDGETS: Record<string, WidgetDef> = {
   trend: {
     title: "Findings, last 14 days", blurb: "Blockers, warnings and advisories per day.", size: "full",
     render: (d) => (
-      <div className="h-56">
+      <div className="h-48">
         <TrendBars data={d.overview.trend.slice(-14).map((t) => ({ label: t.day.slice(5), values: [t.blocker, t.warning, t.advisory] }))}
           series={[{ name: "Blockers", colour: LEVEL_PALETTE[0] }, { name: "Warnings", colour: LEVEL_PALETTE[1] }, { name: "Advisories", colour: LEVEL_PALETTE[2] }]} />
       </div>
@@ -322,8 +322,10 @@ export const WIDGETS: Record<string, WidgetDef> = {
 };
 
 export const DEFAULT_LAYOUT: { id: string; size: Size }[] = [
-  { id: "knows", size: "full" }, { id: "queue", size: "half" }, { id: "flow", size: "half" },
-  { id: "creators", size: "half" }, { id: "escalations", size: "half" }, { id: "trend", size: "full" },
+  // Halves alternate between the two columns, so neighbours are paired by height: decisions beside
+  // creators, the flow beside the asks.
+  { id: "knows", size: "full" }, { id: "queue", size: "half" }, { id: "creators", size: "half" },
+  { id: "flow", size: "half" }, { id: "escalations", size: "half" }, { id: "trend", size: "full" },
   { id: "sources", size: "half" }, { id: "rules", size: "half" },
 ];
 
