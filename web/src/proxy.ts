@@ -5,6 +5,8 @@ import { NextResponse, type NextRequest } from "next/server";
 // itself on every call, so a forged cookie gets no further than a 401.
 const SESSION_COOKIE = "vt_session";
 const backendConfigured = Boolean(process.env.VERYTAS_API_URL);
+// Off until VERYTAS_REQUIRE_SIGNIN=1 (see lib/session.ts).
+const signinRequired = process.env.VERYTAS_REQUIRE_SIGNIN === "1";
 const devAutologin = process.env.NODE_ENV !== "production" && process.env.VERYTAS_DEV_AUTOLOGIN === "1";
 
 export function proxy(request: NextRequest) {
@@ -19,7 +21,7 @@ export function proxy(request: NextRequest) {
     }
   }
   // Demo mode has no accounts to sign in to; there is nothing behind the gate.
-  if (!backendConfigured || devAutologin || request.cookies.get(SESSION_COOKIE)?.value) {
+  if (!signinRequired || !backendConfigured || devAutologin || request.cookies.get(SESSION_COOKIE)?.value) {
     return NextResponse.next();
   }
   if (api) return NextResponse.json({ error: "Sign in first." }, { status: 401 });

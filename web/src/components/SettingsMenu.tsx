@@ -30,6 +30,7 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
   const [tab, setTab] = useState<Tab>("profile");
   const [me, setMe] = useState<Me | null>(null);
   const [meError, setMeError] = useState<string | null>(null);
+  const [signin, setSignin] = useState<boolean | null>(null);
   const saved = useStored(SOCIAL_KEY);
   const savedSocials = useMemo<Record<string, string>>(() => {
     try {
@@ -47,6 +48,11 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
   const panel = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const id = useId();
+
+  useEffect(() => {
+    if (!open || signin !== null) return;
+    fetch("/api/session").then((r) => r.json()).then((j) => setSignin(Boolean(j.required))).catch(() => setSignin(false));
+  }, [open, signin]);
 
   useEffect(() => {
     if (!open || me) return;
@@ -133,9 +139,11 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
                 <p className="text-xs text-muted">{meError ?? "Loading…"}</p>
               )}
               <p className="border-t border-line pt-2 text-[11px] text-muted">
-                You are signed in with your own token. Your role decides whether you can approve, dismiss blockers or edit rules.
+                {signin
+                  ? "You are signed in with your own token. Your role decides whether you can approve, dismiss blockers or edit rules."
+                  : "This console uses the workspace's service account. Roles decide who can approve, dismiss blockers or edit rules."}
               </p>
-              {me && (
+              {me && signin && (
                 <button type="button" onClick={signOut}
                   className="self-start rounded-lg border border-line px-2.5 py-1 text-xs font-medium text-muted hover:text-ink">
                   Sign out
