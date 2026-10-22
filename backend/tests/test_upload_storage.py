@@ -121,3 +121,24 @@ def test_a_refusal_clears_abandoned_uploads_first(make):
     # The first upload was never used and is two days old, so it makes room instead of a refusal.
     assert _upload(c, t["creator"], _noise_png(2)).status_code == 201
     assert len(_ids(c)) == 1
+
+
+def test_uploads_arriving_together_cannot_overshoot_the_quota_together(make):
+    # errcheck 232: on a database that lets two transactions read before either commits (Postgres), every
+    # concurrent upload could pass the same check. SQLite already serialises them (BEGIN IMMEDIATE), so
+    # here this pins the behaviour; the workspace lock is what keeps it true elsewhere.
+    import asyncio
+
+    import httpx
+
+    c, t = make(upload_quota_user_mb=1)
+    files = [_noise_png(i) for i in range(3)]
+
+    async def burst():
+        transport = httpx.ASGITransport(app=c.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            return await asyncio.gather(*(ac.post("/media", headers=_auth(t["creator"]),
+                                                  files={"file": ("art.png", raw, "image/png")}) for raw in files))
+
+    codes = sorted(r.status_code for r in c.portal.call(burst))
+    assert codes == [201, 413, 413]

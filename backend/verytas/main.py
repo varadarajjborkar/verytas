@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -47,8 +48,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await backfill_system_rule_tiers(session)
             await backfill_system_rules(session)
         sweep = asyncio.create_task(storage.sweep_forever(db.sessionmaker, settings.orphan_upload_ttl_h))
-        yield
-        sweep.cancel()
+        try:
+            yield
+        finally:
+            # Stopped and finished before the database closes under it.
+            sweep.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await sweep
         await prism.drain()
         await db.dispose()
 

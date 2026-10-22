@@ -22,7 +22,7 @@ from sqlalchemy import select
 from verytas.api.deps import Session, require
 from verytas.media import profile as prof
 from verytas.media.files import UNSUPPORTED_IMAGES, MediaError, decode_b64, limit_for, pdf_active_content, sniff
-from verytas.media.storage import blob_ids, over_quota, reclaim_orphans, usage
+from verytas.media.storage import blob_ids, over_quota, reclaim_orphans, usage, workspace_lock
 from verytas.models import MediaBlob, Role, User
 from verytas.schemas import MediaOut, PrecheckIn
 
@@ -54,18 +54,19 @@ async def upload(request: Request, session: Session, user: Writer, file: Annotat
                             f"{kind} files are limited to {limit_for(kind) // 1024 // 1024} MB")
     settings = request.app.state.settings
     limits = {"user_mb": settings.upload_quota_user_mb, "workspace_mb": settings.upload_quota_workspace_mb}
-    if over_quota(await usage(session, user.workspace_id, user.id), len(raw), **limits):
-        # Abandoned uploads may be what fills it: clear this workspace's before refusing.
-        await reclaim_orphans(session, older_than=timedelta(hours=settings.orphan_upload_ttl_h),
-                              workspace_id=user.workspace_id)
-        if reason := over_quota(await usage(session, user.workspace_id, user.id), len(raw), **limits):
-            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, reason)
     digest = hashlib.sha256(raw).hexdigest()
-    blob = MediaBlob(id=uuid.uuid4().hex, workspace_id=user.workspace_id, media_type=kind,
-                     name=(file.filename or "")[:200] or None, size=len(raw), sha256=digest, data=raw,
-                     created_by=user.id)
-    session.add(blob)
-    await session.commit()
+    async with workspace_lock(user.workspace_id):
+        if over_quota(await usage(session, user.workspace_id, user.id), len(raw), **limits):
+            # Abandoned uploads may be what fills it: clear this workspace's before refusing.
+            await reclaim_orphans(session, older_than=timedelta(hours=settings.orphan_upload_ttl_h),
+                                  workspace_id=user.workspace_id)
+            if reason := over_quota(await usage(session, user.workspace_id, user.id), len(raw), **limits):
+                raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, reason)
+        blob = MediaBlob(id=uuid.uuid4().hex, workspace_id=user.workspace_id, media_type=kind,
+                         name=(file.filename or "")[:200] or None, size=len(raw), sha256=digest, data=raw,
+                         created_by=user.id)
+        session.add(blob)
+        await session.commit()
     # The upload is stored by now; its metrics are a courtesy, so a file that is slow to read gets none
     # rather than holding the request (the review that reads it in full has its own deadline).
     try:
@@ -114,7 +115,9 @@ async def load_blobs(session, workspace_id: int, ids: set[str]) -> dict[str, Med
     missing = ids - set(found)
     if missing:
         # Another workspace's id reads as missing too: no cross-tenant probing.
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"unknown media id(s): {sorted(missing)}")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            f"unknown media id(s): {sorted(missing)}. Uploads not sent for review within a day "
+                            "are cleared; upload the file again.")
     return found
 
 

@@ -6,8 +6,14 @@ account can't take a whole workspace's share, and one per workspace, which bound
 that no version references after `orphan_upload_ttl_h` hours (an abandoned draft, a brand book read
 by the rule importer) is deleted by a sweep that runs hourly and before a quota refusal.
 
-The quota is checked before the insert, so two uploads racing past the line can overshoot it by at most
-one file (150 MB at most); SQLite serialises writers anyway.
+Check and insert run under a lock per workspace, so uploads arriving together can't each pass the check
+and overshoot the quota together. SQLite already serialises them (each write transaction begins
+IMMEDIATE); on Postgres two transactions can read before either commits, and the lock is what holds.
+The lock is in-process: the API runs as one process (deploy/systemd/verytas-api.service), and more
+would need a database lock instead.
+
+The sweep and a submission are not serialised: a submission that attaches an upload in the same moment
+the sweep deletes it (only possible after a day unused) fails with a 422 that says to upload again.
 """
 
 from __future__ import annotations
@@ -25,6 +31,12 @@ from verytas.models import Content, ContentVersion, MediaBlob, utcnow
 
 log = logging.getLogger(__name__)
 _MB = 1024 * 1024
+_LOCKS: dict[int, asyncio.Lock] = {}
+
+
+def workspace_lock(workspace_id: int) -> asyncio.Lock:
+    """Held from the quota check to the commit of the new upload."""
+    return _LOCKS.setdefault(workspace_id, asyncio.Lock())
 
 
 def blob_ids(attachments: dict[str, Any] | None) -> set[str]:
@@ -87,8 +99,10 @@ async def reclaim_orphans(session: AsyncSession, *, older_than: timedelta,
 
 async def sweep_forever(sessionmaker: async_sessionmaker[AsyncSession], ttl_h: float,
                         every_s: float = 3600) -> None:
-    """The hourly sweep the API runs in the background. A failed pass is logged and retried next hour."""
+    """The hourly sweep the API runs in the background. A failed pass is logged and retried next hour.
+    The first pass waits a minute, so it never competes with startup."""
     while True:
+        await asyncio.sleep(min(60.0, every_s))
         try:
             async with sessionmaker() as session:
                 n = await reclaim_orphans(session, older_than=timedelta(hours=ttl_h))
@@ -96,4 +110,4 @@ async def sweep_forever(sessionmaker: async_sessionmaker[AsyncSession], ttl_h: f
                 log.info("reclaimed %d unused upload(s)", n)
         except Exception:  # noqa: BLE001, a storage sweep must never take the API down
             log.exception("upload sweep failed")
-        await asyncio.sleep(every_s)
+        await asyncio.sleep(max(0.0, every_s - 60.0))
