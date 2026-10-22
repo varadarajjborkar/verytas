@@ -86,7 +86,12 @@ class OllamaLLM:
                 last = f"{type(exc).__name__}: {exc}"
             else:
                 if res.status_code == 200:
-                    data = res.json()
+                    try:
+                        data = res.json()
+                    except ValueError as exc:
+                        raise ProviderUnavailable(f"Ollama returned a non-JSON body: {res.text[:200]}") from exc
+                    if not isinstance(data, dict):
+                        raise ProviderUnavailable("Ollama returned JSON that is not an object")
                     if data.get("error"):
                         raise ProviderUnavailable(f"Ollama error: {data['error'][:300]}")
                     return data
