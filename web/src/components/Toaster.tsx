@@ -3,7 +3,8 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 // Small notices that slide up from the bottom of the window: uploads finished,
-// reviews done, anything that failed. They leave on their own (errors linger
+// reviews done, anything that failed. One at a time: a new notice replaces the
+// current one, which fades out in place. They leave on their own (errors linger
 // a little longer, and a hovered notice waits), or at once with the close button.
 
 type Kind = "success" | "error" | "info" | "warning";
@@ -11,7 +12,6 @@ type Toast = { id: number; kind: Kind; title: string; detail?: string; duration:
 type ToastInput = { kind?: Kind; title: string; detail?: string; duration?: number };
 
 const DURATION: Record<Kind, number> = { success: 4000, info: 5000, warning: 7000, error: 8000 };
-const MAX_VISIBLE = 4;
 const LEAVE_MS = 220;
 
 const ToastContext = createContext<(t: ToastInput) => void>(() => {});
@@ -62,9 +62,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const id = next.current++;
     const kind = input.kind ?? "info";
     const duration = input.duration ?? DURATION[kind];
-    setToasts((all) => [...all.slice(-(MAX_VISIBLE - 1)), { id, kind, title: input.title, detail: input.detail, duration }]);
+    setToasts((all) => {
+      // The notice on screen gives way; it fades out under the new one.
+      for (const t of all) if (!t.leaving) dismiss(t.id);
+      return [...all, { id, kind, title: input.title, detail: input.detail, duration }];
+    });
     return { id, duration };
-  }, []);
+  }, [dismiss]);
 
   const timers = useRef<Timers | null>(null);
   const clock = () => (timers.current ??= new Timers(dismiss));
@@ -79,7 +83,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 px-4 pb-4 sm:pb-5">
+      {/* Every notice sits in the same grid cell, so an outgoing one fades in
+          place instead of pushing the new one around. */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 grid justify-items-center px-4 pb-4 sm:pb-5">
         {toasts.map((t) => (
           <ToastCard key={t.id} toast={t} onClose={() => dismiss(t.id)} onEnter={() => clock().pause(t.id)} onLeave={() => clock().resume(t.id)} />
         ))}
@@ -107,16 +113,17 @@ function ToastCard({ toast: t, onClose, onEnter, onLeave }: {
       onMouseLeave={onLeave}
       onFocus={onEnter}
       onBlur={onLeave}
-      className={`vt-toast pointer-events-auto relative w-full max-w-[22rem] overflow-hidden rounded-xl border border-line bg-surface/95 shadow-[0_8px_30px_rgba(0,0,0,0.12)] backdrop-blur ${t.leaving ? "vt-toast-out" : "vt-toast-in"}`}
+      title={t.detail ? `${t.title}: ${t.detail}` : t.title}
+      className={`vt-toast pointer-events-auto relative col-start-1 row-start-1 self-end w-[6.4rem] max-w-full overflow-hidden rounded-lg border border-line bg-surface/95 shadow-[0_6px_20px_rgba(0,0,0,0.12)] backdrop-blur ${t.leaving ? "vt-toast-out" : "vt-toast-in"}`}
     >
-      <div className="flex items-start gap-2.5 py-2.5 pl-3 pr-1.5">
-        <span aria-hidden className={`mt-[5px] h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-medium leading-5"><span className="sr-only">{s.label}: </span>{t.title}</p>
-          {t.detail && <p className="truncate text-xs leading-4 text-muted" title={t.detail}>{t.detail}</p>}
-        </div>
+      <div className="flex h-[30px] items-center gap-1.5 pl-2 pr-0.5">
+        <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${s.dot}`} />
+        <p className="min-w-0 flex-1 truncate text-[11px] font-medium leading-4">
+          <span className="sr-only">{s.label}: </span>{t.title}
+          {t.detail && <span className="sr-only">. {t.detail}</span>}
+        </p>
         <button type="button" onClick={onClose} aria-label="Dismiss notification"
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-base leading-none text-muted transition hover:bg-bg hover:text-ink">
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-sm leading-none text-muted transition hover:bg-bg hover:text-ink">
           ×
         </button>
       </div>

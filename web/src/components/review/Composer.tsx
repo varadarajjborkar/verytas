@@ -63,6 +63,21 @@ const KIND_OF = (type: string): Attachment["kind"] | null =>
 
 const field = "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted/70 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20";
 
+/** A native select with its own chevron: the browser's arrow sits against the
+ * right border and drifts between engines, so it is hidden and drawn inset. */
+function Select({ value, onChange, children }: { value: string; onChange: (v: string) => void; children: React.ReactNode }) {
+  return (
+    <span className="relative block">
+      <select className={`${field} cursor-pointer appearance-none pr-9`} value={value} onChange={(e) => onChange(e.target.value)}>
+        {children}
+      </select>
+      <svg aria-hidden viewBox="0 0 16 16" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted">
+        <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
+}
+
 export function Composer({ draft, update, onSubmit, busy, demo }: {
   draft: Draft;
   /** Functional updates, so uploads finishing out of order can't overwrite each other. */
@@ -138,16 +153,16 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,9rem)]">
         <label className="flex flex-col gap-1 text-xs font-medium text-muted">
           Where it will be posted
-          <select className={field} value={draft.channel} onChange={(e) => set({ channel: e.target.value })}>
+          <Select value={draft.channel} onChange={(v) => set({ channel: v })}>
             {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-muted">
           Audience
-          <select className={field} value={draft.tier} onChange={(e) => set({ tier: e.target.value as Draft["tier"] })}>
+          <Select value={draft.tier} onChange={(v) => set({ tier: v as Draft["tier"] })}>
             <option value="public">Public</option>
             <option value="internal">Internal</option>
-          </select>
+          </Select>
         </label>
       </div>
       {draft.channel === "other" && (
