@@ -18,7 +18,10 @@ BRANCH=live
 exec 9>"$ROOT/.autodeploy.lock"
 flock -n 9 || exit 0
 
-export HOME=$ROOT NEXT_TELEMETRY_DISABLED=1 CI=1
+# Build tools cache under their own home. The running services may write $ROOT/.cache (model downloads),
+# and this script runs with no confinement, so a cache it executes from must be one they cannot write.
+export HOME=$ROOT/build NEXT_TELEMETRY_DISABLED=1 CI=1
+mkdir -p "$HOME"
 export GIT_SSH_COMMAND="ssh -i $ROOT/etc/deploy_key -o IdentitiesOnly=yes -o UserKnownHostsFile=$ROOT/etc/github_known_hosts -o StrictHostKeyChecking=yes"
 log() { echo "$(date -u +%FT%TZ) $*"; }
 
