@@ -47,3 +47,26 @@ def test_content_list_carries_the_latest_review_and_filters_to_mine(client, worl
     assert row["version_count"] == 1 and row["updated_at"]
     assert row["latest_review"]["status"] == "done" and row["latest_review"]["blockers"] >= 1
     assert {r["title"] for r in client.get("/contents", headers=creator).json()} == {"Launch post", "Theirs"}
+
+
+def test_assistant_context_redacts_codenames_and_skips_confidential_content(client, world):
+    creator, admin = _auth(world["creator"]), _auth(world["admin"])
+    body = {"channel": "linkedin", "body": "Psst, Project Lumen lands next month. Verytas is trusted by 1,000+ teams."}
+    post = client.post("/contents?wait=true", headers=creator, json={**body, "title": "Spring launch post"})
+    memo = client.post("/contents?wait=true", headers=admin,
+                       json={**body, "title": "Board memo", "tier": "confidential"})
+    assert post.status_code == memo.status_code == 201, memo.text
+
+    ctx = client.get("/assistant/context", headers=admin, params={"q": "how is my spring launch doing?"}).json()
+    text = str(ctx)
+    assert "Lumen" not in text, "a codename reached the hosted model's context"
+    assert "Board memo" not in text, "confidential-tier content must stay out"
+    assert [d["title"] for d in ctx["content_details"]][:1] == ["Spring launch post"]
+    detail = ctx["content_details"][0]
+    assert detail["versions"][0]["blockers"] >= 1 and detail["open_issues"]
+    assert "overview" in ctx and "reach" in ctx["note"]
+
+
+def test_assistant_context_keeps_workspace_analytics_to_analysts(client, world):
+    ctx = client.get("/assistant/context", headers=_auth(world["creator"])).json()
+    assert "overview" not in ctx and "analytics" in ctx
