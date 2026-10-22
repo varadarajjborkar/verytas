@@ -53,6 +53,10 @@ def _matches(f: dict[str, Any], p: Plant) -> bool:
     if p.attachment:
         where = f"{f.get('unit_id') or ''} {f.get('source') or ''}"
         return p.attachment in where or p.attachment in (f.get("quote") or "")
+    # An attachment finding's span indexes that attachment's text, so it can
+    # land on a body plant's offsets by coincidence.
+    if (f.get("source") or "body") != "body":
+        return False
     if _overlaps(f, p.start, p.end):
         return True
     return f.get("span_start") is None and bool(p.text) and p.text in (f.get("quote") or "")
