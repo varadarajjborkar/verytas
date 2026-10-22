@@ -196,3 +196,36 @@ def test_leetspeak_and_glued_terms_are_caught_but_real_numbers_are_not():
 def test_spaced_terms_with_hyphens_or_after_a_lone_article(term, body, quote):
     r = rule("TERM-08", {"type": "banned_terms", "terms": [term]})
     assert [f.quote for f in run_deterministic(make_ctx(body, [r]))] == [quote]
+
+
+def test_underscore_letter_spacing_is_still_closed_up():
+    r = rule("TERM-09", {"type": "banned_terms", "terms": ["synergy"]})
+    assert [f.quote for f in run_deterministic(make_ctx("pure s_y_n_e_r_g_y here", [r]))] == ["s_y_n_e_r_g_y"]
+
+
+def test_a_stray_letter_before_a_spaced_term_does_not_hide_it():
+    r = rule("TERM-10", {"type": "banned_terms", "terms": ["synergy"]})
+    assert [f.quote for f in run_deterministic(make_ctx("so x s y n e r g y", [r]))] == ["s y n e r g y"]
+
+
+@pytest.mark.parametrize(("wrong", "right", "written", "proposed"), [
+    ("box", "crate", "boxes", "crates"),
+    ("tax", "levy", "taxes", "levies"),
+    ("glass", "cup", "glasses", "cups"),
+    ("cup", "glass", "cups", "glasses"),
+])
+def test_plural_fixes_are_inflected_for_the_replacement(wrong, right, written, proposed):
+    r = rule("TERM-11", {"type": "preferred_terms", "map": {wrong: right}})
+    [f] = run_deterministic(make_ctx(f"Two {written} please", [r]))
+    assert f.quote == written and f.suggestion.proposed == proposed
+
+
+@pytest.mark.parametrize(("term", "prose"), [
+    ("Project 3", "the project e-mail"),
+    ("Apollo 11", "Apollo ii was a film"),
+    ("3x", "ex colleagues"),
+])
+def test_terms_with_digits_do_not_match_plain_letters(term, prose):
+    terms = [TermView(1, term, date(2099, 1, 1))]
+    found = run_deterministic(make_ctx(prose, system_rule_views(), terms=terms))
+    assert not any(f.rule_code == "CONF-LEAK" for f in found)

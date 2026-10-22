@@ -27,7 +27,7 @@ from verytas.checks.color import (
     rgb_to_lab,
 )
 from verytas.checks.readability import flesch_kincaid_grade, words
-from verytas.security.terms import _NEVER, find_folded, fold, leet_digits, term_pattern
+from verytas.security.terms import _NEVER, find_folded, fold, term_pattern
 
 CHECKER = "deterministic"
 log = logging.getLogger("verytas.checks")
@@ -72,13 +72,22 @@ def _term_regex(term: str, plural: bool = False, joined: bool = False) -> re.Pat
         return _NEVER
     # `joined` takes any spacing between the term's words ("gamechanger",
     # "#insanedeals"); `plural` takes a simple plural, captured as "tail" so a
-    # suggested fix can keep it.
-    if joined:
-        body = r"[\s_\-]*".join(leet_digits(re.escape(w)) for w in re.split(r"[\s_\-]+", core) if w)
-    else:
-        body = leet_digits(re.escape(core))
+    # suggested fix can be inflected to match.
+    words = [w for w in re.split(r"[\s_\-]+", core) if w] if joined else [core]
+    body = r"[\s_\-]*".join(re.escape(w) for w in words)
     tail = r"(?P<tail>e?s)?" if plural and core[-1:].isalpha() else ""
     return re.compile(rf"(?<![\w-]){body}{tail}(?![\w-])", re.IGNORECASE)
+
+
+def _plural(word: str) -> str:
+    """A regular English plural, for carrying "boxes" over to "crates"."""
+    if not word[-1:].isalpha():
+        return word
+    if re.search(r"(?:s|x|z|ch|sh)$", word, re.IGNORECASE):
+        return word + "es"
+    if re.search(r"[^aeiou]y$", word, re.IGNORECASE):
+        return word[:-1] + "ies"
+    return word + "s"
 
 
 def _preferred_regex(wrong: str, right: str) -> re.Pattern[str]:
@@ -142,8 +151,8 @@ def preferred_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
         for start, end, folded in find_folded(pattern, ctx.body):
             original = ctx.body[start:end]
             m = pattern.fullmatch(folded)
-            tail = (m.groupdict().get("tail") or "") if m and right[-1:].isalpha() else ""
-            proposed = _match_case(folded, right + tail)
+            plural = bool(m and m.groupdict().get("tail"))
+            proposed = _match_case(folded, _plural(right) if plural else right)
             yield _finding(
                 ctx, rule, start, end, f'Use "{right}" instead of "{original}"', rule.text,
                 SuggestedEdit(original, proposed, f"House style ({rule.code}) prefers '{right}'."),
