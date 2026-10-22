@@ -20,6 +20,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -229,6 +230,11 @@ class ContentVersion(Base):
     body: Mapped[str] = mapped_column(Text)
     # Non-text parts of the bundle: images (as asset refs + alt text), colours, links.
     attachments: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # What the creator says about the content: intended meaning, why an
+    # irregular upload is the way it is, whether AI was used. Kept apart from
+    # the content on purpose: no check ever reads it. Prism consults it only
+    # after findings exist, and never as evidence on its own (prism/intent.py).
+    creator_notes: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -262,7 +268,16 @@ class Finding(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     review_id: Mapped[int] = mapped_column(ForeignKey("reviews.id"), index=True)
-    unit_id: Mapped[str] = mapped_column(String(40))
+    # Nested sources make long ids: "doc:brochure:p3:img2:ocr/p1.s2".
+    unit_id: Mapped[str] = mapped_column(String(200))
+    # Where the flagged text lives: "body" for the typed draft, otherwise a
+    # derived source (PDF text layer, OCR of an image or a scanned page).
+    # Spans are offsets into that source's text, not into the body.
+    source: Mapped[str] = mapped_column(String(160), default="body")
+    # Page, image and pixel box for non-body findings, so the UI can point at them.
+    locator: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    # How the creator's notes or an earlier dispute bear on this finding.
+    assessment: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     category: Mapped[str] = mapped_column(String(40))
     level: Mapped[Level] = mapped_column(_enum(Level))
     title: Mapped[str] = mapped_column(String(300))
@@ -372,3 +387,73 @@ class AuditEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     prev_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64), unique=True)
+
+
+class BrandAsset(Base):
+    """An official visual asset: the ground truth content is compared against.
+
+    `part` says what the image shows. A mascot registered only as a face means
+    the brand has never approved a body for it, so a post that attaches one is
+    an unapproved extension, not a creative choice.
+    """
+
+    __tablename__ = "brand_assets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(20))  # logo | mascot | other
+    part: Mapped[str] = mapped_column(String(20), default="full")  # full | face | head | body | wordmark | icon
+    # Exact spelling of any text in the artwork. Logo generators garble
+    # lettering, so OCR'd text near a matched logo is checked against this.
+    wordmark: Mapped[str | None] = mapped_column(String(120))
+    media_type: Mapped[str] = mapped_column(String(40))
+    data_base64: Mapped[str] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    tier: Mapped[Tier] = mapped_column(_enum(Tier), default=Tier.public)
+    active: Mapped[bool] = mapped_column(default=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MediaBlob(Base):
+    """An uploaded file, stored once and referenced from versions by id.
+
+    Videos are too large to travel inside JSON, so every file can go through
+    POST /media first. The type is sniffed from the bytes at upload.
+    """
+
+    __tablename__ = "media_blobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    media_type: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str | None] = mapped_column(String(200))
+    size: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Dispute(Base):
+    """A creator's "this isn't what it means", queued for re-evaluation.
+
+    The claim is untrusted: Prism re-reads the content at growing context
+    without it, and only overturns when an independent reading agrees. Hard
+    rules (leaks, approved facts, exact terms) are never overturned by a claim.
+    """
+
+    __tablename__ = "disputes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    finding_id: Mapped[int] = mapped_column(ForeignKey("findings.id"), index=True)
+    content_id: Mapped[int] = mapped_column(ForeignKey("contents.id"), index=True)
+    rule_id: Mapped[int | None] = mapped_column(ForeignKey("rules.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    claim: Mapped[str] = mapped_column(Text)
+    language: Mapped[str | None] = mapped_column(String(60))
+    status: Mapped[str] = mapped_column(String(20), default="queued")  # queued|running|upheld|overturned|escalated
+    verdict: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

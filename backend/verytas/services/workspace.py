@@ -37,6 +37,28 @@ async def create_workspace(session: AsyncSession, *, name: str, admin_email: str
     return ws, admin, token
 
 
+async def backfill_system_rules(session: AsyncSession) -> int:
+    """Add built-in rules introduced after a workspace was created (asset,
+    context and media checks), so older workspaces get the same coverage."""
+    from sqlalchemy import select
+
+    added = 0
+    for ws_id in (await session.scalars(select(Workspace.id))).all():
+        have = set((await session.scalars(
+            select(Rule.code).where(Rule.workspace_id == ws_id, Rule.system.is_(True)))).all())
+        for spec in SYSTEM_RULES:
+            if spec["code"] in have:
+                continue
+            session.add(Rule(
+                workspace_id=ws_id, code=spec["code"], category=spec["category"], kind=RuleKind(spec["kind"]),
+                severity=Severity(spec["severity"]), title=spec["title"], text=spec["text"], pattern=spec["pattern"],
+                status=RuleStatus.active, system=True, source_ref="Verytas built-in", tier=Tier.public,
+            ))
+            added += 1
+    await session.commit()
+    return added
+
+
 async def backfill_system_rule_tiers(session: AsyncSession) -> int:
     """Workspaces created before built-in rules were seeded as public still have
     them at "internal", where the tier ceiling skips them on public content.

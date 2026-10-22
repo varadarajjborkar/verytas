@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from verytas.checks.patterns import validate_pattern
 from verytas.models import (
@@ -140,6 +140,17 @@ class TermIn(BaseModel):
     note: str | None = None
     embargo_until: date | None = None
 
+    @field_validator("term")
+    @classmethod
+    def _matchable(cls, v: str) -> str:
+        from verytas.security.terms import fold
+
+        # Matching runs on folded text; a term with no letters or digits left
+        # after folding (dashes, emoji, invisible characters) can never match.
+        if sum(ch.isalnum() for ch in fold(v, "drop")[0]) < 2:
+            raise ValueError("a confidential term needs at least two letters or digits")
+        return v
+
 
 class TermOut(ORM):
     id: int
@@ -154,8 +165,9 @@ class ImageIn(BaseModel):
     id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,40}$")
     alt: str | None = None
     decorative: bool = False
-    media_type: Literal["image/png", "image/jpeg", "image/webp"] = "image/png"
+    media_type: Literal["image/png", "image/jpeg", "image/webp", "image/gif"] = "image/png"
     data_base64: str | None = Field(default=None, max_length=8_000_000)
+    blob_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
 
 
 class ColorPairIn(BaseModel):
@@ -165,22 +177,79 @@ class ColorPairIn(BaseModel):
     large: bool = False
 
 
+class DocumentIn(BaseModel):
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,40}$")
+    name: str | None = Field(default=None, max_length=200)
+    media_type: Literal[
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ] = "application/pdf"
+    # About 20 MB of file once decoded. Real type is checked from the bytes.
+    data_base64: str | None = Field(default=None, max_length=28_000_000)
+    blob_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+
+    @model_validator(mode="after")
+    def has_payload(self) -> DocumentIn:
+        if not (self.data_base64 or self.blob_id):
+            raise ValueError("a document needs data_base64 or a blob_id from POST /media")
+        return self
+
+
+class VideoIn(BaseModel):
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,40}$")
+    name: str | None = Field(default=None, max_length=200)
+    blob_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
 class AttachmentsIn(BaseModel):
-    images: list[ImageIn] = []
+    images: list[ImageIn] = Field(default=[], max_length=20)
     colors: list[ColorPairIn] = []
+    documents: list[DocumentIn] = Field(default=[], max_length=5)
+    videos: list[VideoIn] = Field(default=[], max_length=3)
+
+
+class CreatorNotesIn(BaseModel):
+    """The creator's own account of the content. Optional, untrusted, and never read by
+    the checks: Prism weighs it only after findings exist (prism/intent.py)."""
+
+    intent: str | None = Field(default=None, max_length=2000,
+                               description="What the content means to say, especially if it could be misread")
+    irregularity: str | None = Field(default=None, max_length=2000,
+                                     description="Why the upload is unusually large or long, if it is")
+    ai_used: bool | None = Field(default=None, description="Was generative AI used to make any part of it?")
+    language: str | None = Field(default=None, max_length=60,
+                                 description="Language or dialect the audience reads it in, e.g. Hinglish")
 
 
 class ContentIn(BaseModel):
     title: str = Field(min_length=1, max_length=300)
-    channel: str = Field(default="general", max_length=60)
+    # Free text on purpose: "Other" in the UI lets creators name any app.
+    channel: str = Field(default="general", min_length=1, max_length=60)
     tier: Tier = Tier.internal
     body: str = Field(min_length=1, max_length=100_000)
     attachments: AttachmentsIn = AttachmentsIn()
+    creator_notes: CreatorNotesIn = CreatorNotesIn()
 
 
 class VersionIn(BaseModel):
     body: str = Field(min_length=1, max_length=100_000)
     attachments: AttachmentsIn | None = None
+    creator_notes: CreatorNotesIn | None = None
+
+
+class PrecheckIn(BaseModel):
+    channel: str = Field(default="general", min_length=1, max_length=60)
+    body: str = Field(default="", max_length=100_000)
+    attachments: AttachmentsIn = AttachmentsIn()
+
+
+class MediaOut(BaseModel):
+    id: str
+    media_type: str
+    name: str | None
+    bytes: int
+    sha256: str
+    metrics: dict[str, Any] = {}
 
 
 class VersionOut(ORM):
@@ -246,6 +315,9 @@ class FindingOut(ORM):
     confidence: float
     checker: str
     model: str | None
+    source: str = "body"
+    locator: dict[str, Any] | None = None
+    assessment: dict[str, Any] | None = None
     citations: list[CitationOut] = []
     suggestions: list[SuggestionOut] = []
     decisions: list[DecisionOut] = []
@@ -322,3 +394,83 @@ class AuditOut(ORM):
     detail: dict[str, Any]
     created_at: datetime
     hash: str
+
+
+class BrandAssetIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    kind: Literal["logo", "mascot", "other"]
+    part: Literal["full", "face", "head", "body", "wordmark", "icon"] = "full"
+    media_type: Literal["image/png", "image/jpeg", "image/webp"] = "image/png"
+    data_base64: str = Field(min_length=16, max_length=8_000_000)
+    wordmark: str | None = Field(default=None, max_length=120, description="Exact spelling of text in the artwork")
+    notes: str | None = Field(default=None, max_length=2000)
+    tier: Tier = Tier.public
+
+
+class BrandAssetOut(ORM):
+    id: int
+    name: str
+    kind: str
+    part: str
+    wordmark: str | None
+    media_type: str
+    notes: str | None
+    tier: Tier
+    active: bool
+    created_at: datetime
+    # Set on registration only: how the artwork will be matched, when that is weaker than usual.
+    warning: str | None = None
+
+
+class DisputeIn(BaseModel):
+    claim: str = Field(min_length=10, max_length=2000,
+                       description="Why this is not what the finding says, e.g. what the phrase means in context")
+    language: str | None = Field(default=None, max_length=60)
+
+
+class DisputeOut(ORM):
+    id: int
+    finding_id: int
+    content_id: int
+    status: str
+    claim: str
+    language: str | None
+    verdict: dict[str, Any]
+    created_at: datetime
+    decided_at: datetime | None
+
+
+class ResubmitIn(BaseModel):
+    """One round trip from the checklist: apply chosen fixes, record what was done by hand,
+    dispute what was misread, optionally replace the text, and run everything again."""
+
+    body: str | None = Field(default=None, min_length=1, max_length=100_000)
+    apply: list[int] = Field(default=[], max_length=200, description="Finding ids whose suggested fix to apply")
+    resolved: list[int] = Field(default=[], max_length=200, description="Finding ids the creator fixed by hand")
+    disputes: list[DisputeItem] = Field(default=[], max_length=50)
+    creator_notes: CreatorNotesIn | None = None
+    attachments: AttachmentsIn | None = None
+
+
+class DisputeItem(BaseModel):
+    finding_id: int
+    claim: str = Field(min_length=10, max_length=2000)
+    language: str | None = Field(default=None, max_length=60)
+
+
+class ResubmitOut(BaseModel):
+    submit: SubmitOut
+    disputes: list[int]
+    applied: int
+    skipped: list[str]
+
+
+class AiEditIn(BaseModel):
+    instruction: str = Field(min_length=3, max_length=2000)
+
+
+class AiEditOut(BaseModel):
+    body: str
+    changes: list[str]
+    remaining: list[str]
+    model: str

@@ -50,3 +50,23 @@ def build_providers(settings: Settings, meter: UsageMeter) -> tuple[JudgeProvide
         llm = OfflineLLM()
         notes.append("OLLAMA_API_KEY not set: claim extraction and rewrites use offline heuristics")
     return judge, llm, notes
+
+
+def build_vision(settings: Settings, meter: UsageMeter) -> tuple[LLMProvider, list[str]]:
+    """The model that looks at images. Same interface as the text LLM, so it is
+    guarded, budgeted and redacted the same way."""
+    if settings.llm_mode == "offline":
+        return OfflineLLM(), ["offline mode: images are read by local OCR only"]
+    if settings.llm_backend == "claude":
+        from verytas.providers.claude import ClaudeLLM
+
+        return ClaudeLLM(model=settings.claude_model, fast_model=settings.claude_model,
+                         fallbacks=settings.claude_fallbacks, meter=meter), []
+    if settings.ollama_api_key is not None:
+        from verytas.providers.ollama import OllamaLLM
+
+        vision = OllamaLLM(settings.ollama_api_key.get_secret_value(), model=settings.ollama_vision_model,
+                           fast_model=settings.ollama_vision_model, base_url=settings.ollama_base_url, meter=meter)
+        vision.name = f"ollama/{settings.ollama_vision_model}"
+        return vision, []
+    return OfflineLLM(), ["no OLLAMA_API_KEY: images are read by local OCR only, without scene or asset review"]

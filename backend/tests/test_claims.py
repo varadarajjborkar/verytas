@@ -150,3 +150,18 @@ def test_rank_is_not_a_quantity():
     from verytas.checks.claims import parse_numbers
 
     assert [n.value for n in parse_numbers("The #1 tool, used by 800 teams")] == [800]
+
+
+def test_a_true_figure_worded_unlike_the_fact_library_is_supported():
+    # Black-box finding: "churn rate is 9%" against the fact "9% monthly churn"
+    # came back "unsupported" because the words after the number didn't match.
+    from datetime import date
+
+    from tests.helpers import make_ctx
+    from verytas.checks.base import FactView
+    from verytas.checks.claims import _verify_numbers, parse_numbers
+
+    fact = FactView(1, "9% monthly churn rate", 9, "%", "monthly churn rate", "Metrics", date(2026, 1, 1), None)
+    quote = "Our current churn rate is 9%, a number we keep pushing down."
+    [res] = _verify_numbers(quote, parse_numbers(quote), [], make_ctx(quote, facts=[fact]))
+    assert res.verdict == "supported" and res.fact is fact
