@@ -9,14 +9,16 @@ import { cookies } from "next/headers";
 export const SESSION_COOKIE = "vt_session";
 export const SESSION_MAX_AGE_S = 12 * 60 * 60;
 
-// Local development only: an explicit opt-in that signs every visitor in as
-// the service account. Ignored in production builds.
-const DEV_TOKEN =
-  process.env.NODE_ENV !== "production" && process.env.VERYTAS_DEV_AUTOLOGIN === "1"
+// Sign-in is off until VERYTAS_REQUIRE_SIGNIN=1. While off, every visitor
+// acts as the service account (VERYTAS_API_TOKEN): fine on a laptop, not on a
+// shared host. While on, the service token is used only with the explicit
+// local-development opt-in, never in a production build.
+export const signinRequired = process.env.VERYTAS_REQUIRE_SIGNIN === "1";
+const DEV_TOKEN = !signinRequired
+  ? process.env.VERYTAS_API_TOKEN
+  : process.env.NODE_ENV !== "production" && process.env.VERYTAS_DEV_AUTOLOGIN === "1"
     ? process.env.VERYTAS_API_TOKEN
     : undefined;
-
-export const devAutologin = Boolean(DEV_TOKEN);
 
 export async function sessionToken(): Promise<string | null> {
   const jar = await cookies();

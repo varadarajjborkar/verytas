@@ -1,9 +1,14 @@
 import { cookies } from "next/headers";
 import { z } from "zod/v4";
-import { SESSION_COOKIE, cookieOptions } from "@/lib/session";
+import { SESSION_COOKIE, cookieOptions, signinRequired } from "@/lib/session";
 
 const API_URL = process.env.VERYTAS_API_URL;
 const Input = z.object({ token: z.string().trim().min(16).max(512).regex(/^[\w.\-~+/=]+$/) });
+
+/** Whether this console asks people to sign in (the settings menu shows sign-out only then). */
+export async function GET() {
+  return Response.json({ required: signinRequired });
+}
 
 /** Sign in: the token is checked against the API before it is stored. */
 export async function POST(request: Request) {
