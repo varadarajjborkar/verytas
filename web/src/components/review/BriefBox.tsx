@@ -29,39 +29,64 @@ export function BriefBox({ text, audio, required, onText, onAudio }: {
   const recorder = useRef<MediaRecorder | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const started = useRef(0);
+  const starting = useRef(false);
+  const mounted = useRef(true);
 
-  useEffect(() => () => {
-    if (timer.current) clearInterval(timer.current);
-    recorder.current?.stream.getTracks().forEach((t) => t.stop());
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      // Leaving the form drops a recording in progress: nothing is uploaded and the microphone is freed.
+      mounted.current = false;
+      if (timer.current) clearInterval(timer.current);
+      recorder.current?.stream.getTracks().forEach((t) => t.stop());
+    };
   }, []);
+  // The playback address of a voice note is released when it is replaced or the form goes away.
+  useEffect(() => () => { if (audio) URL.revokeObjectURL(audio.url); }, [audio]);
 
   async function start() {
+    if (starting.current || recorder.current?.state === "recording") return;  // a double click
     setError(null);
+    if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices) {
+      setError("This browser can't record here. Type the brief instead.");
+      return;
+    }
+    starting.current = true;
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
       setError("The browser didn't allow the microphone. Type the brief instead, or allow it and try again.");
       return;
+    } finally {
+      starting.current = false;
     }
     // Chrome and Firefox record WebM, Safari MP4; the API reads both.
     const mimeType = ["audio/webm", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported(t));
-    const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    let rec: MediaRecorder;
+    try {
+      rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    } catch {
+      stream.getTracks().forEach((t) => t.stop());
+      setError("This browser can't record here. Type the brief instead.");
+      return;
+    }
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
     rec.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop());
+      if (!mounted.current) return;
       const length = Math.round((Date.now() - started.current) / 1000);
       const type = rec.mimeType || "audio/webm";
       const file = new File(chunks, `brief.${type.includes("mp4") ? "m4a" : "webm"}`, { type });
       setBusy(true);
       try {
         const media = await upload(file);
-        onAudio({ id: media.id, seconds: length, url: URL.createObjectURL(file) });
+        if (mounted.current) onAudio({ id: media.id, seconds: length, url: URL.createObjectURL(file) });
       } catch (err) {
-        setError(`Couldn't upload the voice note: ${(err as Error).message}`);
+        if (mounted.current) setError(`Couldn't upload the voice note: ${(err as Error).message}`);
       } finally {
-        setBusy(false);
+        if (mounted.current) setBusy(false);
       }
     };
     recorder.current = rec;

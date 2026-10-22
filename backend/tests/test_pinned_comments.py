@@ -49,4 +49,5 @@ def test_pins_must_point_at_something_real(client, world, monkeypatch):  # noqa:
     assert post(version_id=vid, media_id="missing", box=[0, 0, 0.5, 0.5]) == 422
     assert post(version_id=vid, media_id="reel", box=[0.5, 0.5, 0.2, 0.9]) == 422  # x1 before x0
     assert post(media_id="reel", time_start=1.0) == 422  # no version to pin to
+    assert post(media_id="reel") == 422  # errcheck 246: a media id alone names no version
     assert post(version_id=vid, media_id="reel", time_start=3.0, time_end=1.0) == 422

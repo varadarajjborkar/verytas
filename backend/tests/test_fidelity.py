@@ -78,3 +78,22 @@ def test_vectorised_ciede2000_matches_the_reference_implementation():
 def test_colour_names_read_plainly():
     assert [colour_name(c) for c in [(26, 95, 209), (240, 130, 40), (23, 34, 59), (250, 250, 250), (200, 40, 40)]] \
         == ["blue", "orange", "dark navy", "white", "red"]
+
+
+def test_opaque_artwork_keeps_its_own_white_features():
+    # errcheck 244: on a white page, eye whites were taken for background and a faithful copy then read
+    # as "white, a colour the artwork doesn't use".
+    flat = Image.new("RGB", (400, 400), "white")
+    flat.paste(_kit(), (0, 0), _kit())
+    official = official_reference(flat)
+    assert official[1][150, 150]  # an eye white is inside the character
+    assert compare(official, _cut(_kit())).faithful
+
+
+def test_an_empty_or_vanishing_cut_out_is_refused_plainly():
+    from verytas.media.fidelity import compare as cmp
+
+    official = official_reference(_kit())
+    blank = (np.zeros((50, 50, 3), np.uint8), np.zeros((50, 50), bool))
+    with pytest.raises(ValueError, match="too small"):
+        cmp(official, blank)

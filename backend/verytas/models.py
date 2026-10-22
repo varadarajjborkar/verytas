@@ -416,6 +416,8 @@ class Person(Base):
     """
 
     __tablename__ = "people"
+    # One record per creator; brand-recorded people have no user and don't collide.
+    __table_args__ = (UniqueConstraint("workspace_id", "user_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
@@ -449,6 +451,8 @@ class PersonReference(Base):
     data_base64: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(20))  # upload | web
     source_url: Mapped[str | None] = mapped_column(String(500))
+    # Only approved photos identify anyone: the brand team adds approved ones, a creator's own wait.
+    approved: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     person: Mapped[Person] = relationship(back_populates="references")

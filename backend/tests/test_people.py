@@ -64,3 +64,22 @@ def test_an_agreement_cannot_end_before_it_starts(client, world):  # noqa: F811
     res = client.post("/people", headers=_auth(world["admin"]), json={
         "name": "X", "kind": "ambassador", "valid_from": "2026-05-01", "valid_to": "2026-04-01"})
     assert res.status_code == 422
+
+
+def test_nulling_a_list_or_switch_is_refused_and_the_list_still_reads(client, world):  # noqa: F811
+    # errcheck 241: a null saved here made every later GET /people a 500.
+    admin = _auth(world["admin"])
+    p = client.post("/people", headers=admin, json={"name": "X", "kind": "ambassador", "valid_from": "2026-01-01"})
+    for field in ("aliases", "channels", "event_ids", "active"):
+        assert client.patch(f"/people/{p.json()['id']}", headers=admin, json={field: None}).status_code == 422
+    assert client.patch(f"/people/{p.json()['id']}", headers=admin, json={"valid_to": None}).status_code == 200
+    assert client.get("/people", headers=admin).status_code == 200
+
+
+def test_agreement_notes_are_for_the_brand_team(client, world):  # noqa: F811
+    client.post("/people", headers=_auth(world["admin"]), json={
+        "name": "Riya Sen", "kind": "celebrity", "valid_from": "2026-01-01", "notes": "Fee 40 lakh", "tier": "public"})
+    seen = {p["name"]: p for p in client.get("/people", headers=_auth(world["creator"])).json()}
+    assert seen["Riya Sen"]["notes"] is None
+    admin_seen = {p["name"]: p for p in client.get("/people", headers=_auth(world["admin"])).json()}
+    assert admin_seen["Riya Sen"]["notes"] == "Fee 40 lakh"

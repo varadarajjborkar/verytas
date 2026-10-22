@@ -87,3 +87,24 @@ def test_phone_audio_formats_are_recognised():
     assert sniff(_voice_note()) == "audio/wav"
     assert sniff(b"OggS" + b"\x00" * 20) == "audio/ogg"
     assert sniff(b"ID3" + b"\x00" * 20) == "audio/mpeg"
+
+
+def test_utf16_text_is_not_taken_for_audio():
+    # errcheck 247: FF FE (a UTF-16 byte order mark) passed the loose MPEG frame check.
+    assert sniff("hello".encode("utf-16")) == "unknown"
+    assert sniff(bytes([0xFF, 0xFB, 0x90, 0x64]) + b"\x00" * 20) == "audio/mpeg"
+
+
+def test_a_revision_keeps_its_brief(client, world, monkeypatch):  # noqa: F811
+    # errcheck 250: a revision that sent creator_notes without the brief was refused for lacking one.
+    from verytas.media import video
+
+    monkeypatch.setattr(video, "transcribe", lambda pcm, model: ([], "en", 0.0))
+    h = _auth(world["creator"])
+    res = client.post("/contents?wait=true", headers=h, json={
+        "title": "Reel", "channel": "instagram", "tier": "public", "body": "New reel",
+        "attachments": {"videos": [{"id": "reel", "blob_id": _clip(client, world["creator"])}]},
+        "creator_notes": {"brief": "Kit waves, then the waitlist caption appears."}}).json()
+    again = client.post(f"/contents/{res['content']['id']}/versions?wait=true", headers=h, json={
+        "body": "New reel, shorter", "creator_notes": {"intent": "same reel"}})
+    assert again.status_code == 201, again.text

@@ -101,14 +101,16 @@ def colour_name(rgb: RGB) -> str:
 def _normalised(rgb: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Crop to the mask and scale its longer side to SIDE, so two cut-outs compare at one size."""
     ys, xs = np.nonzero(mask)
-    if len(ys) == 0:
-        raise ValueError("empty mask")
+    if len(ys) < 16:
+        raise ValueError("the cut-out is empty or too small to compare")
     y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
     rgb, mask = rgb[y0:y1, x0:x1], mask[y0:y1, x0:x1]
     scale = SIDE / max(rgb.shape[:2])
     size = (max(1, round(rgb.shape[1] * scale)), max(1, round(rgb.shape[0] * scale)))
-    return (cv2.resize(rgb, size, interpolation=cv2.INTER_AREA),
-            cv2.resize(mask.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST).astype(bool))
+    small = cv2.resize(mask.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST).astype(bool)
+    if not small.any():  # a sliver that vanishes when scaled
+        raise ValueError("the cut-out is empty or too small to compare")
+    return cv2.resize(rgb, size, interpolation=cv2.INTER_AREA), small
 
 
 def _lab(rgb: np.ndarray) -> np.ndarray:
@@ -211,7 +213,13 @@ def official_reference(img: Image.Image) -> tuple[np.ndarray, np.ndarray]:
     rgba = np.asarray(img.convert("RGBA"))
     mask = rgba[..., 3] > 127
     if mask.all():
-        mask = (rgba[..., :3].astype(int).sum(axis=2) < 735)
+        # Opaque artwork: the background is the near-white that reaches the border. White inside the
+        # character (eyes, highlights) is part of it and stays in.
+        light = (rgba[..., :3].astype(int).min(axis=2) >= 245).astype(np.uint8)
+        n, labels = cv2.connectedComponents(light, connectivity=4)
+        edge = set(np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))) - {0}
+        background = np.isin(labels, list(edge)) & (light == 1)
+        mask = ~background
     return rgba[..., :3], mask
 
 

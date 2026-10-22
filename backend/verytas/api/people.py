@@ -14,12 +14,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from verytas.api.deps import CurrentUser, Session, can_read, require
 from verytas.media.files import MAX_IMAGE_BYTES, MediaError, decode_b64, open_image, sniff
 from verytas.models import Person, PersonReference, Role, Tier, User
-from verytas.schemas import ApprovedPersonOut, PersonIn, PersonPatch, ReferenceIn, ReferenceOut
+from verytas.schemas import ApprovedPersonOut, PersonIn, PersonPatch, ReferenceApproval, ReferenceIn, ReferenceOut
 from verytas.security.audit import append
 
 router = APIRouter(tags=["people"])
@@ -37,14 +38,24 @@ async def _person(session, user: User, person_id: int) -> Person:
 
 
 @router.get("/people", response_model=list[ApprovedPersonOut])
-async def list_people(session: Session, user: CurrentUser) -> list[Person]:
+async def list_people(session: Session, user: CurrentUser) -> list[ApprovedPersonOut]:
     rows = (await session.scalars(select(Person).options(selectinload(Person.references))
                                   .where(Person.workspace_id == user.workspace_id).order_by(Person.name))).all()
-    return [p for p in rows if can_read(user, p.tier)]
+    return [_shown(p, user) for p in rows if can_read(user, p.tier)]
+
+
+def _shown(person: Person, user: User) -> ApprovedPersonOut:
+    """Agreement notes (fees, terms) are the brand team's; everyone else sees who and when."""
+    out = ApprovedPersonOut.model_validate(person)
+    return out if user.role is Role.brand_admin else out.model_copy(update={"notes": None})
 
 
 @router.post("/people", response_model=ApprovedPersonOut, status_code=status.HTTP_201_CREATED)
 async def create_person(body: PersonIn, session: Session, admin: Admin) -> Person:
+    if body.user_id is not None:
+        linked = await session.get(User, body.user_id)
+        if linked is None or linked.workspace_id != admin.workspace_id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "no such user in this workspace")
     person = Person(workspace_id=admin.workspace_id, created_by=admin.id, **body.model_dump())
     session.add(person)
     await session.flush()
@@ -65,7 +76,13 @@ async def register_myself(session: Session, user: Creator) -> Person:
     person = Person(workspace_id=user.workspace_id, created_by=user.id, user_id=user.id, name=user.name,
                     kind="creator", valid_from=date.today(), tier=Tier.internal)
     session.add(person)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:  # two registrations at once: the other one won
+        await session.rollback()
+        existing = await session.scalar(select(Person).where(Person.workspace_id == user.workspace_id,
+                                                             Person.user_id == user.id))
+        return await _person(session, user, existing.id)
     await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="person.created",
                  object_type="person", object_id=person.id, detail={"kind": "creator", "self": True})
     await session.commit()
@@ -76,6 +93,10 @@ async def register_myself(session: Session, user: Creator) -> Person:
 async def update_person(person_id: int, body: PersonPatch, session: Session, admin: Admin) -> Person:
     person = await _person(session, admin, person_id)
     changes = body.model_dump(exclude_unset=True)
+    # A list or a switch can be emptied or turned off, never nulled: a null would break every read.
+    nulled = sorted(k for k in ("aliases", "channels", "event_ids", "active") if k in changes and changes[k] is None)
+    if nulled:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"{', '.join(nulled)} can't be null")
     for key, value in changes.items():
         setattr(person, key, value)
     if person.valid_to is not None and person.valid_to <= person.valid_from:
@@ -101,12 +122,30 @@ async def add_reference(person_id: int, body: ReferenceIn, session: Session, use
         open_image(raw)
     except MediaError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"reference photo: {exc}") from None
+    # A photo is only trusted to identify someone once the brand team has seen it: a creator could
+    # otherwise register a celebrity's face as their own and have it cleared in their posts.
     ref = PersonReference(person_id=person.id, media_type=sniff(raw), data_base64=body.data_base64,
-                          source=body.source, source_url=body.source_url)
+                          source=body.source, source_url=body.source_url, approved=user.role is Role.brand_admin)
     session.add(ref)
     await session.flush()
     await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="person.reference_added",
                  object_type="person", object_id=person.id, detail={"source": body.source})
+    await session.commit()
+    return ref
+
+
+@router.patch("/people/{person_id}/references/{ref_id}", response_model=ReferenceOut)
+async def approve_reference(person_id: int, ref_id: int, body: ReferenceApproval, session: Session,
+                            admin: Admin) -> PersonReference:
+    """The brand team confirms a photo shows who the record says, so it may be used to identify them."""
+    person = await _person(session, admin, person_id)
+    ref = next((r for r in person.references if r.id == ref_id), None)
+    if ref is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "photo not found")
+    ref.approved = body.approved
+    await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}",
+                 action="person.reference_approved" if body.approved else "person.reference_unapproved",
+                 object_type="person", object_id=person.id, detail={"reference": ref.id})
     await session.commit()
     return ref
 

@@ -442,8 +442,10 @@ class CommentIn(BaseModel):
 
     @model_validator(mode="after")
     def _pin(self) -> CommentIn:
-        if (self.time_start is not None or self.box is not None) and (self.media_id is None or self.version_id is None):
-            raise ValueError("a moment or an area is pinned to a media_id of a version_id")
+        if (self.time_start is not None or self.box is not None) and self.media_id is None:
+            raise ValueError("a moment or an area is pinned to a media_id")
+        if self.media_id is not None and self.version_id is None:
+            raise ValueError("a media_id belongs to a version_id")
         if self.time_end is not None and (self.time_start is None or self.time_end < self.time_start):
             raise ValueError("time_end needs a time_start before it")
         if self.box is not None:
@@ -489,6 +491,7 @@ class PersonIn(BaseModel):
     valid_to: date | None = None
     notes: str | None = Field(default=None, max_length=2000)
     tier: Tier = Tier.internal
+    user_id: int | None = Field(default=None, description="The workspace user this record is, for a creator")
 
     @model_validator(mode="after")
     def _window(self) -> PersonIn:
@@ -513,11 +516,16 @@ class ReferenceIn(BaseModel):
     source_url: str | None = Field(default=None, max_length=500, pattern=r"^https://")
 
 
+class ReferenceApproval(BaseModel):
+    approved: bool
+
+
 class ReferenceOut(ORM):
     id: int
     media_type: str
     source: str
     source_url: str | None
+    approved: bool = True
     created_at: datetime
 
 

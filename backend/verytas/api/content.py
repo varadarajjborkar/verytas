@@ -138,7 +138,7 @@ BRIEF_MIN = 20
 
 
 async def _intake(session, user: User, channel: str, body: str, attachments: dict,
-                  notes: dict) -> dict:
+                  notes: dict, *, brief_required: bool = True) -> dict:
     """Profile the upload; an irregular one needs the creator's reason before it is accepted.
 
     Not a block: with a reason it goes ahead and is scanned in full, and the
@@ -147,7 +147,7 @@ async def _intake(session, user: User, channel: str, body: str, attachments: dic
     """
     # A video is checked frame by frame; the creator's own account of what is in it tells the review what
     # to look for and gives it claims to verify, so a video doesn't go in without one.
-    if attachments.get("videos") and len((notes.get("brief") or "").strip()) < BRIEF_MIN \
+    if brief_required and attachments.get("videos") and len((notes.get("brief") or "").strip()) < BRIEF_MIN \
             and not notes.get("brief_audio_blob_id"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail={
             "code": "brief_required",
@@ -207,8 +207,16 @@ async def _new_version(session, user: User, content: Content, body: str, attachm
         select(ContentVersion).where(ContentVersion.content_id == content.id)
         .order_by(ContentVersion.version_no.desc()).limit(1))
     attachments = dict(latest.attachments or {}) if attachments is None else dict(attachments)
-    notes = dict(latest.creator_notes or {}) if notes is None else notes
-    attachments["profile"] = await _intake(session, user, content.channel, body, attachments, notes)
+    notes = dict(latest.creator_notes or {}) if notes is None else dict(notes)
+    # A revision keeps the brief it was given unless it says otherwise, and a video already in the
+    # previous version (made before briefs were asked for) isn't held back for lacking one.
+    for key in ("brief", "brief_audio_blob_id"):
+        if not notes.get(key) and (latest.creator_notes or {}).get(key):
+            notes[key] = latest.creator_notes[key]
+    same_videos = {v.get("blob_id") for v in attachments.get("videos", [])} \
+        <= {v.get("blob_id") for v in (latest.attachments or {}).get("videos", [])}
+    attachments["profile"] = await _intake(session, user, content.channel, body, attachments, notes,
+                                           brief_required=not same_videos)
     version = ContentVersion(content_id=content.id, version_no=latest.version_no + 1, parent_id=latest.id,
                              body=body, attachments=attachments, creator_notes=notes, created_by=user.id)
     session.add(version)

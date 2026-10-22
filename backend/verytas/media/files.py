@@ -75,9 +75,18 @@ def sniff(raw: bytes) -> str:
         return "audio/wav"
     if raw.startswith(b"OggS"):
         return "audio/ogg"
-    if raw.startswith(b"ID3") or (len(raw) > 1 and raw[0] == 0xFF and raw[1] & 0xE0 == 0xE0):
+    if raw.startswith(b"ID3") or _mp3_frame(raw):
         return "audio/mpeg"
     return "unknown"
+
+
+def _mp3_frame(raw: bytes) -> bool:
+    """An MPEG audio frame header, not just any bytes starting 0xFF: the layer, bitrate and sample rate
+    fields must hold real values (a UTF-16 text file starts FF FE and is not audio)."""
+    if len(raw) < 4 or raw[0] != 0xFF or raw[1] & 0xE0 != 0xE0 or raw[1] == 0xFE:
+        return False
+    layer, bitrate, rate = (raw[1] >> 1) & 0x3, raw[2] >> 4, (raw[2] >> 2) & 0x3
+    return layer != 0 and bitrate not in (0, 0xF) and rate != 3
 
 
 _HEIF_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1", b"avif", b"avis"}
