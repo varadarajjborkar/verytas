@@ -1,6 +1,6 @@
-# Prism: system architecture
+# Verytas: system architecture
 
-> Working name: **Prism**, after the orchestrator on our design board ("from chaos, light comes out clean"). Status: design, v0.1.
+> Product name (temporary): **Verytas**. **Prism** is its orchestrator agent, named on our design board ("from chaos, light comes out clean"). Status: design, v0.2.
 
 This document turns the team's Excalidraw board into a buildable design and fills in the parts the board left open: APIs, MCP, security mechanisms, information levels, accessibility, and the learning loop. Each section notes what came **from the board** and what was **added** here, along with the research it leans on, so we can defend every decision in front of the judges.
 
@@ -151,9 +151,21 @@ The runtime verifies `sig` before persisting anything. This is the board's "digi
 
 ## 8. Judge ("Jev" on the board) and suggestions
 
-### 8.1 Judge
+### 8.1 Judge (powered by TypeSafe **Jev**)
 - Takes all findings for a bundle and outputs **per-unit and overall scores per category** (tone, terminology, claims, visual, accessibility, legal), each with a **confidence**.
-- **Why we don't trust raw LLM confidence:** verbalised confidence is badly overconfident (Xiong et al., 2024). Ours is built from signals we can measure: checker type (deterministic = 1.0), self-consistency agreement across k samples, grounding-checker probability, and then **calibration against reviewer decisions** (section 12).
+- **Engine:** Jev is a classification model that returns *typed decisions with probabilities* instead of generated text, so it fits the board's "Jev-like agent" exactly. For each unit we send one request: the unit is the `state`, and every applicable semantic rule becomes a named question.
+  - `noul` (yes/no with P(yes)): "Does this text violate VOICE-03? true = ..., false = ...", with the rule's good and bad examples as criteria.
+  - `score` (2 to 10 ordered levels): tone alignment ("off-brand" … "exemplary"), using the brand voice rubric levels.
+  - `choice`: content type and channel classification, used to route the right rules.
+  All questions in a request are answered in one parallel pass, so the cost is a fraction of a chat model's (input tokens only).
+- **Known Jev limits, and how we cover them:**
+  - It is unreliable at arithmetic, counting and date comparison, so those checks stay deterministic (fact validity windows, number matching, counts).
+  - It gives no rationale, so a chat model writes explanations, and only for flagged items.
+  - Its score values aren't calibrated between levels, so we calibrate them against reviewer decisions (section 12).
+  - It can be swayed by content that claims to meet the rubric, so untrusted content is spotlighted, and Jev is never the only gate for a blocker: blockers need a deterministic hit or agreement from a second signal.
+  - We pin a model version (`jev-1.13.0`, not `jev-latest`) so thresholds don't drift.
+- **Fallback:** the `JudgeProvider` interface also has a rubric-prompted chat-model implementation, used when Jev is unavailable (the circuit breaker in section 6.3).
+- **Why we don't trust self-reported confidence:** verbalised confidence is badly overconfident (Xiong et al., 2024). Ours is built from signals we can measure: checker type (deterministic = 1.0), Jev's answer probabilities, grounding-checker probability, and then **calibration against reviewer decisions** (section 12).
 - **Levels explained to users** (the board says "explain what levels are what"):
   - **Blocker:** a rule marked must-fix, with high confidence. Approval stays blocked until it is resolved or an approver overrides it with a reason.
   - **Warning:** likely an issue. The reviewer should look.
@@ -295,15 +307,15 @@ REST (FastAPI, OpenAPI docs auto-generated), JSON, cursor pagination, idempotenc
 
 ## 15. MCP
 
-**Why it matters:** the brief says content now comes from employees, agencies **and AI tools**. If Prism exposes an **MCP server**, governance runs *inside* the AI tools people already write with (Claude, ChatGPT, Cursor, and any MCP client), before the content even reaches a review queue. MCP access is **table stakes, not our differentiator**: Markup AI (formerly Acrolinx) already ships an MCP server (section 21). What makes ours different is what the tools return: cited, fact-grounded findings tied to a review trail.
+**Why it matters:** the brief says content now comes from employees, agencies **and AI tools**. If Verytas exposes an **MCP server**, governance runs *inside* the AI tools people already write with (Claude, ChatGPT, Cursor, and any MCP client), before the content even reaches a review queue. MCP access is **table stakes, not our differentiator**: Markup AI (formerly Acrolinx) already ships an MCP server (section 21). What makes ours different is what the tools return: cited, fact-grounded findings tied to a review trail.
 
-**Prism as an MCP server** (official Python SDK **v2.x**; note that v2 renamed `FastMCP` to `MCPServer` and dropped WebSocket transport, so most 2025 tutorials are out of date; we use Streamable HTTP):
+**Verytas as an MCP server** (official Python SDK **v2.x**; note that v2 renamed `FastMCP` to `MCPServer` and dropped WebSocket transport, so most 2025 tutorials are out of date; we use Streamable HTTP):
 - tools: `check_content(text|url, channel)`, `explain_finding(id)`, `lookup_fact(query)`, `get_brand_voice(channel)`, `submit_for_review(content, title)`
 - resources: `brand://guidelines/{section}`, `brand://facts/public`
 - prompts: `on_brand_rewrite`
 - security: OAuth 2.1 per the MCP authorization spec; MCP clients get a **`public` tier ceiling** by default; read-only tools are annotated as such; every call is audited
 
-**Prism as an MCP client** (import and notify):
+**Verytas as an MCP client** (import and notify):
 - Notion's official server: import brand books.
 - Figma's official server: brand styles and colours.
 - Contentful and Sanity: CMS content and pre-publish hooks.
@@ -313,7 +325,7 @@ Reviewer notifications use a plain **Slack incoming webhook**, which is simpler 
 
 ---
 
-## 16. Accessibility of Prism itself
+## 16. Accessibility of Verytas itself
 
 The brief asks us to *check* accessibility, so our own UI has to pass it too. That means WCAG 2.2 AA, full keyboard navigation in the review screen, findings announced through ARIA live regions, colour never used alone to signal severity (icon + text label too), visible focus, reduced-motion support, and an axe-core check in CI.
 
@@ -327,6 +339,7 @@ The brief asks us to *check* accessibility, so our own UI has to pass it too. Th
 | Orchestration | asyncio task graph + governor in-process (MVP), Redis + arq workers later | simplest thing that runs end to end; scales out without a rewrite |
 | DB | **Postgres 16 + pgvector** (Supabase) | one database for relational, vector and RLS needs, matching the board's "1 database"; Supabase adds auth and storage for free |
 | Frontend | **Next.js + TypeScript + Tailwind + shadcn/ui** | fast to build an accessible review UI; Radix primitives are accessible by default |
+| Judge | **TypeSafe Jev** (`jev-1.13.0`) behind a `JudgeProvider` interface | typed probabilistic answers per rule, all rules in one parallel pass, input-only pricing |
 | LLMs | Claude API behind a `ModelProvider` interface; a small fast model for high-volume checks, a stronger model for judging and rewriting, vision for images | quality on rubric judging; the interface lets routing control swap in a local model for confidential tiers |
 | Local models | sentence-transformers embeddings; **MiniCheck** grounding checker (770M, CPU); optional Ollama model for the confidential tier | confidential text never has to leave our server |
 | Lint | **Vale** (per-company YAML styles generated from rules), **textstat** | deterministic, instant, explainable |
@@ -389,7 +402,7 @@ Collected by our tooling scout and spot-checked on GitHub. Star counts and dates
 
 ### Competitors, and the gap we exploit
 
-| Product | What it does | Gap Prism fills |
+| Product | What it does | Gap Verytas fills |
 |---|---|---|
 | Markup AI (formerly Acrolinx) | Content Guardian agents for terminology, tone and clarity, via API and **MCP** | no cited verification against an approved-fact base; no guideline-ambiguity loop |
 | Writer (brand governance) | voice profiles and restricted terms applied **at generation time** | it prevents its own bad output but doesn't review arbitrary human or agency drafts with citations |
@@ -397,7 +410,7 @@ Collected by our tooling scout and spot-checked on GitHub. Star counts and dates
 | Bynder Compliance Agent | audits DAM assets against brand and legal guidelines | asset-centric; weak on copy, claims and captions |
 | OSS: marketing-machine, brandsystem-mcp | claim provenance plus brand lint; guideline import into a ".brand" runtime | no human workflow, no learning loop |
 
-**Our positioning, in one line:** the others score and rewrite. Prism **verifies every claim against approved, time-valid facts with a citation, keeps humans in an auditable review loop, and learns where the guidelines themselves are unclear.**
+**Our positioning, in one line:** the others score and rewrite. Verytas **verifies every claim against approved, time-valid facts with a citation, keeps humans in an auditable review loop, and learns where the guidelines themselves are unclear.**
 
 ### Adopt / try / skip
 

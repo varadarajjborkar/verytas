@@ -1,4 +1,4 @@
-# Brand-governance platform (Inkloom AI challenge)
+# Verytas: brand-governance platform (Inkloom AI challenge)
 
 Team project for the Inkloom AI problem statement: review content before publication against approved brand guidelines, facts and assets, explain every issue, suggest fixes, and route it through human review.
 
