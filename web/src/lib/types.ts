@@ -78,7 +78,61 @@ export type Finding = {
   suggestions: Suggestion[];
   decisions: Decision[];
   signature_valid: boolean;
+  /** "body" for typed text; otherwise a derived source such as "img:hero:ocr" or "vid:reel:speech". */
+  source?: string;
+  locator?: { image?: string; document?: string; page?: number; video?: string; time?: [number, number];
+    box?: number[]; intake?: string } | null;
+  assessment?: { by: string; outcome?: string; view?: string; reader_reading?: string; suggestion?: string;
+    reader_probability?: number; dispute_id?: number } | null;
 };
+
+export type AgentNode = {
+  id: string;
+  role: string;
+  label: string;
+  parent: string | null;
+  depth: number;
+  status: "ok" | "not_checked" | "failed" | "skipped" | "running";
+  note: string | null;
+  ms: number;
+  findings: number;
+  detail: Record<string, unknown>;
+};
+
+export type SourceInfo = {
+  id: string;
+  kind: string;
+  route: string;
+  confidence: number;
+  locator: Record<string, unknown>;
+  parent: string | null;
+  chars: number;
+  text: string;
+};
+
+export type Escalation = { reason: string; detail?: string; finding?: string };
+
+export type Dispute = {
+  id: number;
+  finding_id: number;
+  content_id: number;
+  status: "queued" | "running" | "upheld" | "overturned" | "escalated";
+  claim: string;
+  language: string | null;
+  verdict: { decided_by?: string; reason?: string; safer_alternative?: string; reader_reading?: string;
+    layers?: { layer: string; p: number | null }[] };
+  created_at: string;
+  decided_at: string | null;
+};
+
+export type Irregularity = { code: string; subject: string; value: string; expected: string; why: string;
+  over_limit: boolean };
+
+export type Precheck = { channel: string; metrics: Record<string, unknown>; irregularities: Irregularity[];
+  needs_reason: boolean };
+
+export type UploadedMedia = { id: string; media_type: string; name: string | null; bytes: number;
+  metrics: Record<string, unknown> };
 
 export type CoverageStatus = "checked" | "not_checked" | "not_configured" | "degraded";
 
@@ -104,9 +158,15 @@ export type Review = {
   coverage: {
     not_checked?: string[];
     notes?: string[];
-    models?: { llm: string; judge: string };
+    models?: { llm: string; judge: string; vision?: string };
     redactions?: number;
     workers?: Record<string, { status: string; note: string | null; findings: number; ms: number }>;
+    agents?: AgentNode[];
+    sources?: SourceInfo[];
+    scenes?: Record<string, { description?: string; tone?: string; risky_elements?: string[];
+      text_in_image?: string }>;
+    escalations?: Escalation[];
+    usage?: Record<string, { input: number; output: number; calls: number }>;
   };
   error: string | null;
   findings: Finding[];

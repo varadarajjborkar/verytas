@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart, Callout } from "@openuidev/react-ui";
+import { BarChart } from "@openuidev/react-ui";
 import type { RuleHealth } from "@/lib/types";
 import { Meter, Panel } from "./ui";
 
@@ -68,7 +68,7 @@ export function GuidelineHealthView({ health }: { health: RuleHealth[] }) {
                   <Meter value={h.ambiguity ?? 0} label={`Ambiguity of ${h.code}`} tone={(h.ambiguity ?? 0) >= 0.4 ? "danger" : "accent"} />
                 </div>
               </div>
-              <dl className="grid grid-cols-3 gap-2 text-xs lg:grid-cols-1 lg:gap-1">
+              <dl className="grid grid-cols-3 gap-3 text-xs">
                 <div><dt className="text-muted">Override rate</dt><dd className="tabular-nums">{pct(h.override_rate)}</dd></div>
                 <div><dt className="text-muted">Unclear share</dt><dd className="tabular-nums">{pct(h.unclear_share)}</dd></div>
                 <div>
@@ -80,7 +80,11 @@ export function GuidelineHealthView({ health }: { health: RuleHealth[] }) {
                 {h.advice.length === 0 ? (
                   <p className="text-xs text-muted">Healthy: reviewers mostly agree with this rule.</p>
                 ) : (
-                  h.advice.map((a) => <Callout key={a} variant="warning" description={a} />)
+                  h.advice.map((a) => (
+                    <p key={a} className="rounded-md border-l-2 border-[var(--vt-warning)] bg-[var(--vt-warning-bg)] px-2.5 py-1.5 text-xs text-[var(--vt-warning)]">
+                      {a[0].toUpperCase() + a.slice(1)}
+                    </p>
+                  ))
                 )}
               </div>
             </li>
