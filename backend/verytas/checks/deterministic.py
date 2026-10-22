@@ -335,8 +335,13 @@ def link_text(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
 def readability(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     max_grade = float(rule.pattern.get("max_grade", 10))
     min_words = int(rule.pattern.get("min_words", 25))
+    from verytas.ingest.language import detect
+
     for p in ctx.units_of("paragraph"):
         if len(words(p.text)) < min_words:
+            continue
+        # Flesch-Kincaid counts English syllables: on Spanish or Hinglish it reports a grade that means nothing.
+        if not detect(p.text).english:
             continue
         grade = flesch_kincaid_grade(p.text)
         if grade > max_grade:
@@ -444,3 +449,17 @@ def banned_emoji(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     for start, end, cluster in _clusters(ctx.body):
         if cluster.replace("\ufe0f", "") in banned or cluster[0] in banned:
             yield _finding(ctx, rule, start, end, f"Emoji {cluster} is not used by this brand", rule.text)
+
+
+@matcher("tone_shift")
+def tone_shift(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
+    from verytas.checks.voice import tone_shift as check
+
+    yield from check(ctx, rule, ctx.profile)
+
+
+@matcher("topic_drift")
+def topic_drift(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
+    from verytas.checks.voice import topic_drift as check
+
+    yield from check(ctx, rule, ctx.profile)
