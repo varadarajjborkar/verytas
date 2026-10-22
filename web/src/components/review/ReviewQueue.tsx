@@ -141,9 +141,9 @@ export function ReviewQueue() {
           <option value="all">Every creator</option>
           {creators.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <select value={channel} onChange={(e) => set({ channel: e.target.value })} aria-label="Channel" className="vt-input w-auto py-1.5 text-xs capitalize">
+        <select value={channel} onChange={(e) => set({ channel: e.target.value })} aria-label="Channel" className="vt-input w-auto py-1.5 text-xs">
           <option value="all">Every channel</option>
-          {channels.map((c) => <option key={c} value={c}>{c.replace("_", " ")}</option>)}
+          {channels.map((c) => <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1).replace("_", " ")}</option>)}
         </select>
         <select value={event} onChange={(e) => set({ event: e.target.value })} aria-label="Event" className="vt-input w-auto py-1.5 text-xs">
           <option value="all">Any event</option>
@@ -193,7 +193,11 @@ export function ReviewQueue() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[52rem] text-sm">
+            <table className="w-full min-w-[56rem] table-fixed text-sm">
+              <colgroup>
+                <col className="w-[7.5rem]" /><col /><col className="w-[14.5rem]" /><col className="w-[11rem]" />
+                <col className="w-[7.5rem]" /><col className="w-[7rem]" /><col className="w-12" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-line text-left text-[11px] font-medium uppercase tracking-wide text-subtle">
                   <th scope="col" className="w-20 py-2 pl-4 pr-2 font-medium md:pl-5">Priority</th>
@@ -246,7 +250,7 @@ function QueueRow({ r, queue, creatorName, eventName, onOpen }: {
           </span>
         ) : <span className="text-xs text-subtle">-</span>}
       </td>
-      <td className="max-w-0 px-3 py-2.5">
+      <td className="px-3 py-2.5">
         <div className="flex items-center gap-2.5">
           <span aria-hidden className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-sunken text-[10px] font-semibold text-muted">{initials}</span>
           <div className="min-w-0">

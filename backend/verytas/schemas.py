@@ -120,6 +120,7 @@ class RuleOut(ORM):
     tier: Tier
     status: RuleStatus
     system: bool
+    event_id: int | None = None
 
 
 class FactIn(BaseModel):

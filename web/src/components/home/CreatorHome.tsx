@@ -172,5 +172,9 @@ function noteOf(i: TimelineItem, piece: ContentRow, myId: number): Note | null {
     const what = { changes_requested: "Asked for changes", approved: "Approved it", published: "Published it" }[i.to];
     return { at: i.at, who: i.actor, piece, text: i.note ? `${what}: ${i.note}` : what, kind: "status" };
   }
+  if (i.type === "escalation" && (i.state === "upheld" || i.state === "cleared")) {
+    const what = i.state === "cleared" ? `Cleared "${i.finding}" after your request` : `Kept "${i.finding}" after your request`;
+    return { at: i.at, who: i.actor, piece, text: i.message ? `${what}: ${i.message}` : what, kind: "status" };
+  }
   return null;
 }

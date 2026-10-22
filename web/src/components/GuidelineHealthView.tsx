@@ -2,7 +2,7 @@
 
 import { BarChart } from "@openuidev/react-ui";
 import type { RuleHealth } from "@/lib/types";
-import { UNCLEAR } from "./DashboardView";
+import { UNCLEAR } from "./dashboard/widgets";
 import { InfoPopover } from "./InfoPopover";
 import { Meter, Panel } from "./ui";
 
