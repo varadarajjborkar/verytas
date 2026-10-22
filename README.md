@@ -1,238 +1,236 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+  <img src="docs/assets/logo-light.svg" alt="Verytas logo" width="112">
+</picture>
+
 # Verytas
 
-**Brand governance before you hit publish.** Verytas reviews content against a company's approved rules, time-valid facts and confidential terms. It explains every issue with a citation, proposes the smallest fix that keeps the writer's intent, and routes the piece through a human approval workflow. It also learns which guidelines are unclear from how reviewers override them.
+**Brand review that shows its work.**
 
-Built for the Inkloom AI brand-governance challenge. Brief: [`docs/problem-statement.md`](docs/problem-statement.md) · design: [`docs/architecture.md`](docs/architecture.md)
+Verytas checks every post, caption, image, document and video against a brand's own rules and approved facts *before* it is published, explains each problem with a citation, suggests the smallest fix, and leaves the final call to a person.
 
-## What it does
+[**Try the live demo**](https://verytas.pages.dev) · [Architecture](docs/architecture.md) · [Problem statement](docs/problem-statement.md)
 
-- **Reads everything a post contains.** The caption, images (with local OCR), PDFs and Word files page by page (text layers, scanned pages and screenshots pasted inside them), and video (burned-in captions, on-screen text, subtitle tracks and speech).
-- **Checks it all the same way** for banned and preferred wording, brand casing, leaked codenames, outdated or inflated statistics, unsupported claims, tone, AI-disclosure labels and accessibility.
-- **Guards the brand's own artwork.** Official logos and mascots are ground truth: altered details, garbled wordmarks, look-alikes and bodies attached to an approved face are flagged, with the pixel region.
-- **Reads between the lines.** Context layers widen from a paragraph to the whole post to caption plus image, catching indirect taunts, sarcasm and meanings that depend on the language (Hinglish included).
-- **Explains, fixes and keeps humans in charge.** Every finding cites its rule or fact. Creators work through a P1/P2/P3 checklist, apply fixes, dispute misreadings and resubmit; blockers and unread content need a noted override.
-- **Learns from the people using it.** Disputes and reviewer decisions tune how sure each model-judged rule must be, and guideline health shows which rules are unclear.
+![CI](https://github.com/varadarajjborkar/verytas/actions/workflows/ci.yml/badge.svg?branch=main)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
 
-## The console
+</div>
 
-The console is two apps from one codebase, and each account sees only its own: **Verytas Studio** for creators, who write and fix their pieces, and the **Verytas Brand Console** for the brand team (reviewers, approvers, auditors and brand admins), one team over many creators. The API enforces the split on every call: a creator can't list, open or escalate another creator's piece.
+<p align="center"><img src="docs/assets/review.png" alt="A piece open in the review queue: the caption with issues marked in place, and a checklist explaining each one with its rule and source" width="900"></p>
 
-| App | Screen | What you do there |
-| --- | --- | --- |
-| Studio | **My work** | See what needs you (drafts and pieces sent back), what is with the brand team, and the team's latest comments, decisions and answers to your requests. |
-| Studio | **My reviews** | Start a review (optionally for a running brand event), or reopen one of yours. The text shows every issue in place beside a P1/P2/P3 checklist. Edit, apply fixes, dispute, re-check, and send it for approval. On a flagged issue, **ask the brand team** to review it by hand. |
-| Brand Console | **Dashboard** | Yours to arrange: thirteen widgets (need-to-knows, the decision queue, the pipeline as a flow, your creators, escalations, events, trends). **Customize** or a long press turns them into light tiles that wobble gently: drag one into place, remove it, add hidden ones back, or use the arrow keys. |
-| Brand Console | **Review queue** | Every creator's pieces, full width: stage tabs (waiting, escalated, with creator, approved, all), filters by creator, channel, event and signal, sort by priority or waiting time, grouping, and previous and next through the open piece. On a piece, confirm, dismiss with a reason or escalate each finding, then approve or send it back with a note. |
-| Brand Console | **Creators** | Everyone writing for the brand. A creator's profile draws their pieces in the order sent by **distance from the brand**: a flat line along zero is someone who stays on brand, and drift lifts it. Hover a point for why, click to open the piece. |
-| Brand Console | **Escalations** | Creators' requests for a person, with the passage, the cited rule or fact (readable in full in place) and the creator's words side by side; uphold, or clear with a reason. |
-| Brand Console | **Brand library** | Rules (versioned edits, word-list matchers, drafts to activate), facts with validity dates, **brand events**, **public contacts**, confidential terms, official artwork, and brand-book import (paste, or upload a PDF or Word file, then keep the proposals that read right as drafts). |
-| Brand Console | **Guideline health** | Find the rules reviewers override or disagree on most, with advice on what to clarify. |
-| Both | **Ask Verytas** | Ask about pieces and review data. Answers come as charts and tables. The context and your questions are redacted together before they reach the model, and confidential-tier content is left out. |
+## The problem
 
-Every open piece shows both sides the same **journey map** (written, checked, sent for approval, approved, published, with each round of changes), an **activity** feed with threaded comments, and **track changes** between any two versions.
+A brand works with dozens of creators and agencies who post every day, in many languages and formats. One wrong number, a leaked product codename or a snide line about a competitor can cost real money and trust. Checking all of it by hand doesn't scale, and generic AI checkers flag things without saying *why*, so people stop trusting them.
 
-**Guardrails on what people type.** Escalations, comments, disputes and the brand team's notes are screened before they are stored or reach a model: offers of money or favours, off-the-record contact (personal numbers, private email, "WhatsApp me", numbers spelled out in words) and instructions aimed at the AI are refused with a note on what to change; pressure and links are flagged for the reviewer. Phone numbers and addresses are checked against the **public contacts** register, which also stops posts from carrying anyone's private number. Refusals are audited by type, never by text.
+## What Verytas does
 
-**Drift, in tone and in topic.** Two built-in checks measure a piece against the brand's own approved and published work. Tone covers five ways a voice slips (hostile, slangy, sarcastic, stiff, hyped) and calls out a turn partway through a piece; topic needs a named domain the brand never covers (politics, religion, trading tips, betting, gossip, the writer's personal life). A brand that writes casually may keep doing so, and admins can allow a dimension or a domain.
+| Capability | What it means |
+| --- | --- |
+| **Reads everything in a post** | The caption, text inside images (OCR), every page of a PDF or Word file, and video: on-screen text, subtitles and speech. |
+| **Checks it against the brand's own sources** | Approved facts with validity dates, banned and preferred words, confidential terms, official artwork, tone, accessibility and AI-disclosure rules. |
+| **Explains every flag** | Each issue quotes the exact passage and cites the rule or fact behind it, with page numbers. No unexplained scores. |
+| **Fixes, not just flags** | It proposes the smallest change that keeps the writer's meaning. One click applies it. |
+| **Keeps people in charge** | Creators can dispute a reading; the brand team approves, sends back or overrides, and every override needs a written reason. |
+| **Learns from decisions** | Rules that reviewers keep overriding are surfaced as unclear, and model-judged rules tune how confident they must be before flagging. |
 
-**Any language, and mixes of them.** Creators write from anywhere and switch languages mid-sentence. A small detector names the language and any blend (Hinglish, Tanglish, English with Spanish); the drift word lists cover English, Hindi in both scripts, Spanish, French, German and Portuguese and apply to every post at once, so a hybrid is caught in whichever language it slips. Checks that only make sense in English, such as the reading grade, stay quiet on other text, and each review says which checks could read it. The model judge reads every language.
+## Try it in 60 seconds
 
-**Brand events reach every review on their own.** An event (a launch, a sale, a crisis) owns its rules: its brief, the words to avoid while it runs, and its hashtag on pieces made for it. Saving one starts the update chain: the rules are rewritten as new versions and every piece in review is re-checked, bounded and audited, so the queue reflects what the brand is doing now.
+1. Open **[verytas.pages.dev](https://verytas.pages.dev)** and pick a person at *Kitepath*, a made-up online learning brand with three weeks of history.
+2. As **Dev Sharma** (creator), open *My reviews*, paste a caption like *"Kitepath has 2 million learners. Guaranteed results!"* and run it. The claim is checked against the approved fact (1.2 million), a fix appears, and the promise is flagged. Apply the fixes and send it for approval.
+3. Use **Switch account** to become **Arjun Mehta** (brand team). Your piece is now in the review queue, ranked by what needs attention first. Approve it, or send it back with a note.
+
+<p align="center"><img src="docs/assets/dashboard.png" alt="The brand team's dashboard: pieces waiting for a decision, creators, escalations and findings over time" width="900"></p>
+
+## How a review works
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Creator
+    participant W as Web app
+    participant A as API
+    participant P as Prism (review engine)
+    participant M as Language and vision models
+    actor B as Brand team
+
+    C->>W: Writes a post, attaches images, PDFs or video
+    W->>A: Submit (an intake check flags anything unusual for the channel)
+    A->>P: Start a review
+    P->>P: Split into parts, read text locally (OCR, speech to text)
+    P->>P: Rule checks: facts, words, confidential terms, artwork
+    P->>M: Meaning checks, with confidential terms redacted first
+    M-->>P: Candidate issues, each quoting real text
+    P->>P: An independent judge confirms each one, then findings are signed
+    P-->>W: Issues in place, ranked P1 to P3, each with its source and a fix
+    C->>W: Applies fixes or disputes a reading, then sends for approval
+    B->>W: Approves, sends back or overrides with a reason
+    W->>A: Every step is written to a tamper-evident audit log
+```
 
 ## Architecture
 
 ```mermaid
-flowchart TB
-    subgraph Clients
-        direction LR
-        UI["Web app<br/>review, dashboard, ask"]:::client
-        BB["Black-box simulator<br/>tests via API only"]:::sim
+flowchart LR
+    subgraph People
+        direction TB
+        CR["Creators<br/>Studio app"]:::client
+        BT["Brand team<br/>Brand Console app"]:::client
     end
 
-    API["REST API<br/>auth, roles, intake check"]:::api
-    DB[("Knowledge store<br/>rules, facts, terms, assets")]:::data
-    NOTE["Creator's note<br/>kept apart from checks"]:::note
-
-    subgraph Pipeline["Prism: agents spawned per part"]
-        direction LR
-        TXT["Text agent<br/>caption, page text"]:::check
-        IMG["Image agent<br/>OCR, assets, scene"]:::check
-        DOC["Document agent<br/>page agents"]:::check
-        VID["Video agent<br/>captions, speech, frames"]:::check
-        ONION["Context layers<br/>paragraph to post"]:::core
-        DOC --> IMG
-        VID --> TXT
-        IMG --> TXT
+    subgraph Web["Next.js server"]
+        direction TB
+        UI["Pages and components"]:::web
+        BFF["Backend for frontend<br/>holds the session token,<br/>forwards an allowlist of routes"]:::web
     end
 
-    subgraph Models["Model access"]
-        direction LR
-        RED["Redaction<br/>text and pixels"]:::sec
-    GRD["Guardrails<br/>offers, contact swaps,<br/>instructions to the AI"]:::sec
-        LLM["Ollama Cloud<br/>gpt-oss, gemma4 vision"]:::ext
-        RED --> LLM
+    subgraph Backend["FastAPI service"]
+        direction TB
+        API["REST API<br/>roles and clearance<br/>checked on every call"]:::api
+        PRISM["Prism<br/>one agent per part of the post"]:::core
+        CHECKS["Checkers<br/>facts, words, artwork,<br/>tone, accessibility"]:::core
+        GUARD["Safety layer<br/>redaction, guardrails,<br/>signed findings"]:::sec
     end
 
-    subgraph Governance
-        direction LR
-        SIG["Signed findings<br/>P1, P2, P3"]:::sec
-        FLOW["Checklist and approval<br/>disputes, resubmit"]:::api
-        AUD["Audit chain<br/>hash-linked log"]:::sec
-        LEARN["Learning<br/>rule thresholds, health"]:::api
-        SIG --> FLOW --> AUD
-        FLOW --> LEARN
-    end
+    LOCAL["Local media tools<br/>OCR, speech to text,<br/>image matching, PDF"]:::local
+    MODELS["Ollama Cloud<br/>gpt-oss, gemma4 vision"]:::ext
+    DB[("Database<br/>rules, facts, reviews,<br/>hash-chained audit log")]:::data
 
-    Clients --> API --> Pipeline
-    DB --> Pipeline
-    Pipeline -. "model calls" .-> Models
-    Pipeline --> Governance
-    NOTE -. "read only after findings" .-> Governance
-    LEARN -. "feeds back" .-> Pipeline
+    CR & BT --> UI --> BFF --> API --> PRISM
+    PRISM --> CHECKS
+    PRISM --> LOCAL
+    PRISM --> GUARD -- "redacted text and pixels" --> MODELS
+    API & PRISM --> DB
 
-    style Clients fill:#f8fafc,stroke:#94a3b8,color:#334155
-    style Pipeline fill:#f8fafc,stroke:#94a3b8,color:#334155
-    style Models fill:#f8fafc,stroke:#94a3b8,color:#334155
-    style Governance fill:#f8fafc,stroke:#94a3b8,color:#334155
-
-    classDef client fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
-    classDef sim fill:#fce7f3,stroke:#db2777,color:#831843
-    classDef api fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
-    classDef core fill:#e0e7ff,stroke:#4f46e5,color:#312e81
-    classDef check fill:#dcfce7,stroke:#16a34a,color:#14532d
+    style People fill:#f8fafc,stroke:#94a3b8,color:#334155
+    style Web fill:#f8fafc,stroke:#94a3b8,color:#334155
+    style Backend fill:#f8fafc,stroke:#94a3b8,color:#334155
+    classDef client fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+    classDef web fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef api fill:#e0e7ff,stroke:#3b5bdb,color:#1e2a78
+    classDef core fill:#dcfce7,stroke:#16a34a,color:#14532d
     classDef sec fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
-    classDef data fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef local fill:#f1f5f9,stroke:#64748b,color:#1e293b
     classDef ext fill:#f3f4f6,stroke:#6b7280,color:#111827
-    classDef note fill:#fff7ed,stroke:#ea580c,color:#7c2d12,stroke-dasharray: 4 3
+    classDef data fill:#fef3c7,stroke:#d97706,color:#78350f
 ```
 
-**Legend:** blue = clients · purple = API, workflow and learning · green = agents per content type · indigo = context layers · red = security · amber = data · grey = external models · dashed orange = the creator's note, a separate realm · pink = test harness
+- **Two apps, one codebase.** Creators get *Studio*; the brand team gets the *Brand Console*. The API enforces the split on every call, so a creator can never open another creator's work.
+- **The browser never holds an API key.** The Next.js server keeps the session token and forwards only an allowlisted set of routes.
+- **Prism** splits a submission into its parts and spawns an agent for each one: a PDF gets an agent per page, every image inside it gets its own OCR and artwork agents, and every piece of text found goes through the same checks as typed text. Depth and agent counts are capped, and anything cut off is reported as *not checked* rather than silently passed.
+- **Rules before models.** Facts, words, confidential terms and artwork are checked deterministically. Models only handle meaning (tone, implied claims, sarcasm), and a model-only finding can never block a post on its own.
 
-### How the endpoints fit together
+## System design
 
 ```mermaid
 flowchart LR
-    subgraph Browser["Two apps, one per side"]
+    U["Visitor's browser"]:::client
+    CF["Cloudflare Pages<br/>verytas.pages.dev<br/>pass-through worker"]:::edge
+
+    subgraph AWS["AWS EC2, Mumbai"]
         direction TB
-        CR["Studio :3001<br/>creators: My work,<br/>My reviews, Ask"]:::client
-        MG["Brand Console :3000<br/>Dashboard, Review queue,<br/>Escalations, Library, Ask"]:::client
+        CAD["Caddy<br/>HTTPS, security headers"]:::web
+        NX["Next.js<br/>:3000"]:::web
+        FA["FastAPI + Prism<br/>:8000"]:::api
+        SQ[("SQLite<br/>+ media blobs")]:::data
+        TM["Deploy timer<br/>every 3 min"]:::ops
+        CAD --> NX --> FA --> SQ
     end
 
-    subgraph Web["Next.js server: holds the token"]
+    OL["Ollama Cloud<br/>models over HTTPS"]:::ext
+
+    subgraph GH["GitHub"]
         direction TB
-        PG["Server pages<br/>lib/backend.ts"]:::api
-        PX["/api/v proxy<br/>allowlist, same-site, 150 MB cap"]:::api
-        CH["/api/chat<br/>Ask Verytas stream"]:::api
-        SS["/api/session · /api/persona<br/>sign-in cookie · view as"]:::sec
+        DEV["dev branch"]:::ops
+        MAIN["main = production"]:::ops
+        CI["CI: tests, lint, build,<br/>secret scan, dependency audit"]:::ops
+        LIVE["live branch"]:::ops
+        DEV --> MAIN --> CI -- "all green" --> LIVE
     end
 
-    subgraph API["FastAPI: roles checked on every call"]
-        direction TB
-        ADM["admin<br/>/me /users /audit /bootstrap"]:::api
-        KNO["knowledge<br/>/rules /rules/extract /facts<br/>/confidential-terms /brand-assets"]:::data
-        MED["media<br/>/media /contents/precheck"]:::check
-        GOV["governance<br/>/escalations /events<br/>/public-contacts"]:::sec
-        CON["content<br/>/contents /reviews /findings<br/>transition, comments, timeline,<br/>resubmit, ai-edit, disputes"]:::core
-        INS["insights<br/>/insights/overview, recurring,<br/>guideline-health"]:::api
-        AST["assistant · chats<br/>/assistant/context /chats"]:::api
-    end
+    U --> CF --> CAD
+    FA -- "redacted requests" --> OL
+    TM -- "pulls with a read-only key,<br/>builds, health-checks,<br/>rolls back on failure" --> LIVE
 
-    PRISM["Prism<br/>agents per part, judge"]:::core
-    RED["Redaction<br/>text and pixels"]:::sec
-    GRD["Guardrails<br/>offers, contact swaps,<br/>instructions to the AI"]:::sec
-    LLM["Ollama Cloud<br/>gpt-oss, gemma4"]:::ext
-    DB[("SQLite / Postgres<br/>+ hash-chained audit log")]:::data
-
-    CR & MG --> PG & PX & CH
-    CR & MG -.-> SS
-    PG --> ADM & INS
-    PX --> CON & MED & KNO & AST & ADM & GOV
-    CON & GOV -. "user text" .-> GRD
-    GOV -- "event update chain:<br/>rules rewritten, pieces re-checked" --> PRISM
-    CH -- "context and chat,<br/>redacted together" --> AST
-    CH --> LLM
-    CON --> PRISM
-    KNO -- "brand-book import" --> RED
-    PRISM --> RED --> LLM
-    ADM & KNO & MED & CON & INS & AST & GOV --> DB
-
-    style Browser fill:#f8fafc,stroke:#94a3b8,color:#334155
-    style Web fill:#f8fafc,stroke:#94a3b8,color:#334155
-    style API fill:#f8fafc,stroke:#94a3b8,color:#334155
-
-    classDef client fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
-    classDef api fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
-    classDef core fill:#e0e7ff,stroke:#4f46e5,color:#312e81
-    classDef check fill:#dcfce7,stroke:#16a34a,color:#14532d
-    classDef sec fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    style AWS fill:#f8fafc,stroke:#94a3b8,color:#334155
+    style GH fill:#f8fafc,stroke:#94a3b8,color:#334155
+    classDef client fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+    classDef edge fill:#fff7ed,stroke:#ea580c,color:#7c2d12
+    classDef web fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef api fill:#e0e7ff,stroke:#3b5bdb,color:#1e2a78
     classDef data fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef ext fill:#f3f4f6,stroke:#6b7280,color:#111827
+    classDef ops fill:#dcfce7,stroke:#16a34a,color:#14532d
 ```
 
+| Decision | Why |
+| --- | --- |
+| **Pull-based deploys** | The server pulls a branch that only CI can move, with a read-only key. No inbound SSH from CI, and a commit that fails any check never ships. Each release builds beside the live one and rolls back automatically if it fails its health checks. |
+| **Heavy media work stays local** | OCR, speech to text, PDF rendering and artwork matching run on the server's CPU, so raw images and audio never leave the machine. Only redacted text and pixels go to a model. |
+| **Bounded concurrency everywhere** | A shared pool of model slots, a cap on reviews running at once, and per-step deadlines. A burst of uploads queues instead of exhausting memory or hammering a provider. |
+| **Circuit breakers on every model** | If a provider is down, its checks are marked *degraded* on the review instead of failing the whole thing or pretending they passed. |
+| **One cheap server** | One small ARM instance behind a free edge, with an AWS budget that stops it at a hard cap. The demo runs on credits, at no cost to the team. |
 
-The browser talks only to the Next.js server, which holds the token and forwards an allowlist of routes. The full route table, with who may call each one, is in [`docs/architecture.md`](docs/architecture.md#14-apis-as-built).
+## Tech stack
 
-### How a review flows
+| Layer | Tools |
+| --- | --- |
+| **Frontend** | Next.js 16 (App Router, React 19), Tailwind CSS 4, OpenUI for generated answers in *Ask Verytas* |
+| **Backend** | Python 3.12, FastAPI, SQLAlchemy 2 (async), SQLite (Postgres-ready), Pydantic |
+| **AI models** | Ollama Cloud: `gpt-oss:120b` and `gpt-oss:20b` for language, `gemma4:31b` for vision. Swappable for TypeSafe Jev or Anthropic Claude |
+| **Media, all local** | RapidOCR (ONNX Runtime), faster-whisper, OpenCV, pdfium, PyAV |
+| **Security** | Ed25519-signed findings, SHA-256 hash-chained audit log, text and pixel redaction, input guardrails, CSP |
+| **Infra and delivery** | AWS EC2, Caddy, systemd, Cloudflare Pages, GitHub Actions (pinned to commit SHAs), gitleaks, pip-audit, pnpm audit |
+| **Testing** | pytest (offline, no keys needed), a black-box simulator that tests only through the public API |
 
-1. A creator uploads a caption plus any images, documents and video. Before anything is accepted, the intake check compares it with what the channel normally carries (caption length, page count, image size, video length, hidden characters). Anything irregular needs a reason, and still counts against the score.
-2. **Prism** loads the rules, facts and official assets the content's tier may see, then spawns an agent per part. Agents spawn their own: a PDF gets a page agent per page, each pasted screenshot an image agent, each image its OCR, asset and scene agents, and every piece of text found a text agent running the same checks as typed text. Depth and agent counts are capped; anything cut off is reported as not checked.
-3. Text is read locally first. Confidential terms are **blacked out in the pixels** before any image or video frame reaches the vision model, and redacted from all text sent to a model. Confidential-tier content never leaves the machine as pixels.
-4. **Context layers** then read the whole submission, from paragraphs to the full post to caption plus images. Each candidate must quote real text and pass an independent judge question.
-5. Only now is the **creator's note** weighed, and only against model-judged findings. It can cap a far-fetched reading at advisory, never clear a mechanical one; a note that tries to steer the review is escalated.
-6. Findings are **signed**, ordered P1 to P3, and shown as a checklist. Creators tick what they fixed, apply suggestions, dispute misreadings and resubmit. Disputes are re-judged layer by layer without the claim in view, and the system can still say no. Every step lands in the **hash-chained audit log**, and outcomes tune each rule's threshold.
+## Trust and security
 
-## Tested from the outside
+- **Every finding is signed** when it is made, so an edited verdict shows as tampered.
+- **Every action is logged** in a hash-chained audit log; changing or deleting an old entry breaks the chain, and anyone with audit access can verify it.
+- **Confidential terms never reach a model**: they are redacted from text and blacked out in image pixels first. Confidential-tier content is never sent as pixels at all.
+- **What people type is screened too.** Bribes, "WhatsApp me" style contact swaps and instructions aimed at the AI are refused before they are stored.
+- **Access follows role and clearance**, checked on the server on every request, including in the audit log.
+- **Audited.** A security review with the Cloudflare security-audit method ran on this codebase; its confirmed findings are fixed, each with a regression test.
 
-[`blackbox/`](blackbox/README.md) is a reality simulator that knows Verytas only through its API. It invents brand worlds, writes roasts, flame wars, Hinglish captions and crisis apologies inside them, and plants violations with exact ground truth, including evasive spellings. A bandit then steers each generation toward what Verytas misses. Its first runs found that public posts skipped the built-in checks, that look-alike letters slipped past banned-term and leak checks, and that parallel submissions hit database deadlocks and 500s.
+## Quality
 
-On a 216-case campaign, core recall rose from 78% to 96%, false positives on controls fell from 7% to 0%, and server errors went from 17 to 0, even at 32 parallel submissions.
+- **Over 320 backend tests** run fully offline in about 25 seconds, plus type checks, lint and a production build for the web apps, all on every push.
+- **Tested from the outside.** [`blackbox/`](blackbox/README.md) is a simulator that knows Verytas only through its API. It invents brands, writes posts, images, PDFs and video with planted violations, and steers each round toward what Verytas misses. Across a 216-case campaign, recall on core checks rose **from 78% to 96%**, false alarms on clean posts fell **from 7% to 0%**, and server errors fell **from 17 to 0**, even at 32 parallel submissions.
+
+## Run it locally
+
+```bash
+# Backend on :8000 (tests need no keys)
+cd backend
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+cp .env.example .env                 # add OLLAMA_API_KEY for live models
+.venv/bin/pytest -q
+.venv/bin/python -m verytas.cli seed-showcase --db showcase.db --write-env ../web/.env.local
+VERYTAS_DATABASE_URL=sqlite+aiosqlite:///./showcase.db .venv/bin/uvicorn verytas.main:app
+
+# Web apps, each in its own terminal
+cd web
+pnpm install
+pnpm dev:manager                     # Brand Console on :3000
+pnpm dev:creator                     # Studio on :3001
+```
+
+The seed creates the *Kitepath* brand with seven creators and three weeks of history, and writes their tokens into `web/.env.local`. Without any API keys, model-judged checks fall back to an offline heuristic and every review says so. Without a backend, the web app shows clearly labelled sample data.
 
 ## Repository layout
 
-| Path | What |
+| Path | What is inside |
 | --- | --- |
-| `backend/` | FastAPI service: checks, Prism, workflow, insights, security (Python 3.12+) |
-| `web/` | Next.js 16 on OpenUI: the Studio and Brand Console apps (homes, review, escalations, library, guideline health, Ask Verytas) |
-| `blackbox/` | Black-box reality simulator: invents brands, writes posts, images, PDFs and video, grades Verytas |
-| `docs/` | Problem statement, architecture, submission checklist |
-
-## Run locally
-
-```bash
-# Backend on :8000 (tests run fully offline, no keys needed)
-cd backend
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-cp .env.example .env              # add OLLAMA_API_KEY for live models
-.venv/bin/pytest -q
-# A demo brand team with seven creators and three weeks of history; tokens go to the web env file
-.venv/bin/python -m verytas.cli seed-showcase --db showcase.db --write-env ../web/.env.local
-VERYTAS_DATABASE_URL=sqlite+aiosqlite:///./showcase.db VERYTAS_KEYS_DIR=.keys-showcase .venv/bin/uvicorn verytas.main:app
-
-# The two apps (each in its own terminal)
-cd web
-pnpm install
-cp .env.example .env.local        # VERYTAS_API_URL, plus the tokens the seed wrote; OLLAMA_API_KEY for Ask
-pnpm dev:manager                  # Brand Console on :3000
-pnpm dev:creator                  # Studio on :3001
-```
-
-On a fresh database, `POST /bootstrap` creates the workspace and returns an admin token (interactive docs at `/docs`); `python -m verytas.cli issue-token <email>` replaces anyone's token. `pnpm dev` runs a single server with both sides and a **View as** switch in Settings while sign-in is off. Without backend settings, the frontend shows clearly labelled demo data.
-
-## Models and external services
-
-| Service | Used for | When |
-| --- | --- | --- |
-| Ollama Cloud (`gpt-oss:120b`, `gpt-oss:20b`) | claim extraction, explanations, fixes, the semantic judge, context layers, disputes, Ask Verytas, simulator content | when `OLLAMA_API_KEY` is set |
-| Ollama Cloud (`gemma4:31b`) | image and video-frame understanding, asset comparison, OCR fallback | when `OLLAMA_API_KEY` is set; never for confidential-tier content |
-| RapidOCR, faster-whisper, OpenCV, pdfium (local) | OCR, speech-to-text, asset matching, PDF rendering | always local; nothing leaves the machine |
-| TypeSafe Jev (`jev-1.13.0`) | semantic judge, if preferred | optional, when `TYPESAFE_API_KEY` is set |
-| Anthropic Claude | alternative LLM backend | only with `VERYTAS_LLM_BACKEND=claude` |
-| Sentry | error monitoring, without request bodies or PII | only when `SENTRY_DSN` is set |
-
-With no keys, semantic checks fall back to an offline heuristic, and the scorecard marks them "degraded" rather than passed.
+| [`backend/`](backend) | FastAPI service: checkers, Prism, workflow, insights, security |
+| [`web/`](web) | Next.js: the Studio and Brand Console apps |
+| [`blackbox/`](blackbox) | The black-box simulator |
+| [`deploy/`](deploy) | Server setup, pull-based deploys, the edge worker ([how it works](deploy/README.md)) |
+| [`docs/`](docs) | Problem statement and the full architecture |
 
 ## Working agreement
 
-- `main` is production; merging into it deploys. `dev` is the integration branch; open PRs into `dev`.
-- Commit small and often from your own account, since judges may read the history.
-- Disclose templates, boilerplate, external services and significant AI assistance, per the challenge rules.
+- `main` is production, and merging into it deploys. `dev` is the integration branch.
+- Templates, external services and significant AI assistance are disclosed, per the challenge rules.
