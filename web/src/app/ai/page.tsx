@@ -34,7 +34,7 @@ export default function Page() {
           <ul className="mt-2 list-disc pl-5 text-muted marker:text-subtle">
             <li>Approving, sending back and publishing are always a person&apos;s call. AI never approves or publishes.</li>
             <li>Any finding can be disputed, dismissed with a reason, or escalated to the brand team.</li>
-            <li>A must-fix finding can only be set aside by an approver, with a note, and that is recorded.</li>
+            <li>A must-fix finding can only be set aside by an approver, who picks a reason (a note is optional), and the call is recorded.</li>
           </ul>
         </section>
         <section aria-labelledby="ai-services">

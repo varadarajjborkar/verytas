@@ -1,6 +1,6 @@
 "use client";
 
-import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ApiError, listContents, listCreators, listEscalations, listEvents, listPeople } from "@/lib/review-client";
 import { useStored, writeStored } from "@/lib/stored";
 import type { BrandEvent, EscalationRequest, Overview, Person, Recurring, RuleHealth } from "@/lib/types";
@@ -45,6 +45,7 @@ export function ManagerDashboard({ overview, recurring, health }: { overview: Ov
   const stored = useStored(key);
   const layout = useMemo(() => parse(stored) ?? DEFAULT_LAYOUT, [stored]);
   const [editing, setEditing] = useState(false);
+  const wide = useWide();
   const [data, setData] = useState<Omit<DashData, "overview" | "recurring" | "health">>({
     rows: null, people: new Map(), escalations: null, events: null, creators: null, demo: false });
 
@@ -87,28 +88,38 @@ export function ManagerDashboard({ overview, recurring, health }: { overview: Ov
   if (editing) {
     return <Arrange layout={layout} onSave={(items) => writeStored(key, items ? JSON.stringify({ v: 1, items }) : null)} onDone={() => setEditing(false)} />;
   }
-  const panel = (item: Item, order: number) => (
-    <div key={item.id} style={{ order }} className="min-w-0"
+  const panel = (item: Item) => (
+    <div key={item.id} className="min-w-0"
       onPointerDown={onHoldStart} onPointerMove={(e) => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 3) cancelHold(); }}
       onPointerUp={cancelHold} onPointerCancel={cancelHold} onPointerLeave={cancelHold}>
       <WidgetPanel id={item.id} d={d} />
     </div>
   );
-  // Half-width widgets alternate between two columns that stack independently, so a short widget
-  // never leaves a hole beside a tall one. Below xl the columns dissolve (display: contents) and
-  // `order` restores the saved sequence in the single column.
+  // Narrow screens get one column in the saved order. Wide ones alternate half-width widgets between
+  // two columns that stack independently, so a short widget never leaves a hole beside a tall one.
+  // Chosen in script, not with CSS order, so the tab order always matches what is on screen.
+  if (!wide) return <div className="grid gap-5">{layout.map(panel)}</div>;
   return (
     <div className="grid gap-5">
-      {runs(layout).map((run, n) => run.full ? panel(run.full, 0) : (
-        <div key={`run-${n}`} className="grid gap-5 xl:grid-cols-2">
+      {runs(layout).map((run, n) => run.full ? panel(run.full) : (
+        <div key={`run-${n}`} className="grid grid-cols-2 gap-5">
           {[0, 1].map((side) => (
-            <div key={side} className="contents xl:flex xl:flex-col xl:gap-5">
-              {run.halves.map((item, i) => i % 2 === side ? panel(item, i) : null)}
+            <div key={side} className="flex min-w-0 flex-col gap-5">
+              {run.halves.filter((_, i) => i % 2 === side).map(panel)}
             </div>
           ))}
         </div>
       ))}
     </div>
+  );
+}
+
+const WIDE = "(min-width: 80rem)"; // Tailwind's xl
+function useWide(): boolean {
+  return useSyncExternalStore(
+    (notify) => { const q = window.matchMedia(WIDE); q.addEventListener("change", notify); return () => q.removeEventListener("change", notify); },
+    () => window.matchMedia(WIDE).matches,
+    () => false,
   );
 }
 
