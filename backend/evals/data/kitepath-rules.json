@@ -1,0 +1,8 @@
+[{"code":"A11Y-LINKTEXT","title":"Link text must describe the destination","text":"Link text such as 'click here' gives no context out of order (WCAG 2.2 SC 2.4.4)."},
+{"code":"CLAIM-UNSUPPORTED","title":"Promotional claims need backing","text":"Factual or promotional claims (numbers, superlatives, comparisons) need an approved fact behind them."},
+{"code":"CTX-IMPLIED","title":"Watch what the content implies, not just what it says","text":"Indirect taunts, insinuation, sarcasm, double meanings, coded language and digs at others carry the brand's name as much as direct statements do, including across caption and image."},
+{"code":"EVT-1-BRIEF","title":"App outage, early October: blackout","text":"During App outage, early October (2026-10-06 to 2026-10-09): Acknowledge the outage plainly; no jokes about downtime. Promotional and celebratory posts are paused while this runs; only service updates and messages about the event itself go out."},
+{"code":"EVT-2-BRIEF","title":"Festive Learning Fest: event brief","text":"During Festive Learning Fest (2026-10-19 to 2026-10-29): Lead with what learners gain; the discount comes second. No countdown pressure."},
+{"code":"EVT-3-BRIEF","title":"KiteLearn 2.0 launch: event brief","text":"During KiteLearn 2.0 launch (from 2026-11-11): Until launch day, tease the feeling, not the features: no screenshots, no dates."},
+{"code":"MSG-RIVALS","title":"No digs at other platforms","text":"Talk about what we do. Never mock or compare against other learning platforms, by name or by hint."},
+{"code":"TONE-PLAIN","title":"Plain, warm words","text":"Write like a good teacher: plain, warm and specific. No corporate jargon or hype."}]
