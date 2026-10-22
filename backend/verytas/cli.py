@@ -1,6 +1,7 @@
 """Operator commands that need the database itself, not the API.
 
     python -m verytas.cli issue-token admin@acme.io
+    python -m verytas.cli seed-showcase --db showcase.db --write-env ../web/.env.local
 
 Tokens are stored only as hashes, so a lost one can't be read back. This
 replaces it with a new one (the old one stops working) and prints it once.
@@ -12,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -44,9 +46,19 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     issue = sub.add_parser("issue-token", help="replace a user's API token and print the new one")
     issue.add_argument("email")
+    demo = sub.add_parser("seed-showcase", help="build a demo workspace with a brand team and many creators")
+    demo.add_argument("--db", type=Path, default=Path("showcase.db"))
+    demo.add_argument("--keys-dir", type=Path, default=Path(".keys-showcase"))
+    demo.add_argument("--write-env", type=Path, default=None,
+                      help="env file to receive VERYTAS_API_TOKEN and VERYTAS_CREATOR_TOKEN (never printed)")
     args = parser.parse_args(argv)
     if args.command == "issue-token":
         sys.stdout.write(asyncio.run(issue_token(args.email)) + "\n")
+    elif args.command == "seed-showcase":
+        from verytas.showcase import seed
+
+        counts = seed(args.db, args.keys_dir, args.write_env)
+        sys.stdout.write(f"{args.db}: {counts['pieces']} pieces, {counts['escalations']} escalations\n")
 
 
 if __name__ == "__main__":

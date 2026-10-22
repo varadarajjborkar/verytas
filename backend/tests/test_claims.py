@@ -146,6 +146,14 @@ async def test_unmatched_figure_is_unsupported():
     assert f.rule_code == "CLAIM-UNSUPPORTED" and '"12"' in f.explanation
 
 
+def test_a_rating_scale_is_not_a_second_quantity():
+    from verytas.checks.claims import parse_numbers
+
+    # "4.7 out of 5" once read as two claims, and the 5 "contradicted" a 4.7 rating fact.
+    assert [n.value for n in parse_numbers("Rated 4.7 out of 5 by learners")] == [4.7]
+    assert [n.value for n in parse_numbers("Learners give us 9/10")] == [9]
+
+
 def test_rank_is_not_a_quantity():
     from verytas.checks.claims import parse_numbers
 

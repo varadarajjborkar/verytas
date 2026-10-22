@@ -55,6 +55,7 @@ _NUMBER = re.compile(
     re.IGNORECASE,
 )
 _YEAR = re.compile(r"^(19|20)\d{2}$")
+_SCALE = re.compile(r"\d\s*(?:out\s+of|/)\s*$", re.IGNORECASE)
 _MULT = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "b": 1e9, "billion": 1e9}
 
 
@@ -77,6 +78,8 @@ def parse_numbers(text: str) -> list[ParsedNumber]:
             continue  # "since 2019" is a date, not a quantity
         if m.start("num") > 0 and text[m.start("num") - 1] == "#":
             continue  # "#1 tool" is a ranking claim, handled as a superlative
+        if _SCALE.search(text[:m.start("num")]):
+            continue  # the "5" in "4.7 out of 5" or "9/10" is the scale, not a second quantity
         value = float(raw_num.replace(",", ""))
         if m.group("mult"):
             value *= _MULT[m.group("mult").lower()]
