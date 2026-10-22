@@ -13,6 +13,7 @@ from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -109,6 +110,19 @@ async def list_escalations(session: Session, user: CurrentUser,
         if content is not None and visible(user, content):
             out.append(await _view(session, user, esc))
     return out
+
+
+@router.get("/escalations/count")
+async def count_escalations(session: Session, user: CurrentUser) -> dict:
+    """Open requests for the nav badge: one cheap query instead of the full inbox rows.
+    Counts only pieces the caller may see (a creator: their own requests)."""
+    q = (select(Escalation.id, Content.tier, Content.created_by, Escalation.raised_by)
+         .join(Content, Escalation.content_id == Content.id)
+         .where(Escalation.workspace_id == user.workspace_id, Escalation.status == "open"))
+    rows = (await session.execute(q)).all()
+    n = sum(1 for _, tier, owner, raiser in rows if can_read(user, tier)
+            and (user.role is not Role.creator or (owner == user.id and raiser == user.id)))
+    return {"open": n}
 
 
 @router.get("/escalations/{esc_id}")
@@ -269,13 +283,17 @@ async def update_event(event_id: int, body: EventPatch, session: Session, admin:
     changes = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None or k == "ends_on"}
     if not changes:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "nothing to change")
-    # Re-validate the whole event, so a patch can't make an invalid one.
-    merged = EventIn.model_validate({**{k: getattr(e, k) for k in EventIn.model_fields}, **changes})
+    # Re-validate the whole event, so a patch can't make an invalid one (ends before it starts, say).
+    try:
+        merged = EventIn.model_validate({**{k: getattr(e, k) for k in EventIn.model_fields}, **changes})
+    except ValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.errors()[0]["msg"]) from None
+    was_live = e.live_on(date.today())
     for k, v in merged.model_dump().items():
         setattr(e, k, v)
     e.revision += 1
     e.updated_at = utcnow()
-    result = await chain.run_chain(session, prism, e, "updated", f"user:{admin.id}")
+    result = await chain.run_chain(session, prism, e, "updated", f"user:{admin.id}", was_live=was_live)
     return await _event_out(session, e, result.rechecked)
 
 
@@ -284,8 +302,9 @@ async def cancel_event(event_id: int, session: Session, admin: Admin, prism: Pri
     e = await _event(session, admin, event_id)
     if e.status == "cancelled":
         raise HTTPException(status.HTTP_409_CONFLICT, "already cancelled")
+    was_live = e.live_on(date.today())
     e.status, e.revision, e.updated_at = "cancelled", e.revision + 1, utcnow()
-    result = await chain.run_chain(session, prism, e, "cancelled", f"user:{admin.id}")
+    result = await chain.run_chain(session, prism, e, "cancelled", f"user:{admin.id}", was_live=was_live)
     return await _event_out(session, e, result.rechecked)
 
 
@@ -301,14 +320,15 @@ async def event_impacts(event_id: int, session: Session, user: CurrentUser) -> l
     """The update chain's record: which pieces each change of this event re-checked, and how it went."""
     await _event(session, user, event_id)
     rows = (await session.execute(
-        select(EventImpact, Content.title, Content.created_by, Review.status, Review.summary)
+        select(EventImpact, Content.title, Content.created_by, Content.tier, Review.status, Review.summary)
         .join(Content, EventImpact.content_id == Content.id).outerjoin(Review, EventImpact.review_id == Review.id)
         .where(EventImpact.event_id == event_id).order_by(EventImpact.id.desc()).limit(200))).all()
     return [{"content_id": i.content_id, "title": title, "revision": i.revision, "change": i.change,
              "review_id": i.review_id, "review_status": rs, "blockers": (summary or {}).get("blockers"),
              "at": _iso(i.created_at)}
-            for i, title, created_by, rs, summary in rows
-            if user.role is not Role.creator or created_by == user.id]
+            for i, title, created_by, tier, rs, summary in rows
+            # The same visibility as the pieces themselves: clearance for everyone, and creators their own.
+            if can_read(user, tier) and (user.role is not Role.creator or created_by == user.id)]
 
 
 # --- public contacts ----------------------------------------------------------------------------
@@ -325,6 +345,17 @@ async def add_contact(body: ContactIn, session: Session, admin: Admin) -> Public
     norm = normalize_contact(body.kind, body.value)
     if body.kind == "phone" and len(norm) < 7:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "a phone number needs at least seven digits")
+    retired = await session.scalar(select(PublicContact).where(
+        PublicContact.workspace_id == admin.workspace_id, PublicContact.kind == body.kind,
+        PublicContact.normalized == norm, PublicContact.active.is_(False)))
+    if retired is not None:
+        # Listing a retired contact again brings the same row back, so its history stays in one place.
+        retired.active, retired.value = True, body.value.strip()
+        retired.label, retired.source_ref = body.label, body.source_ref
+        await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}", action="contact.added",
+                     object_type="public_contact", object_id=retired.id, detail={"kind": body.kind, "relisted": True})
+        await session.commit()
+        return retired
     c = PublicContact(workspace_id=admin.workspace_id, kind=body.kind, value=body.value.strip(), normalized=norm,
                       label=body.label, source_ref=body.source_ref, created_by=admin.id)
     session.add(c)

@@ -77,8 +77,11 @@ def _add_missing_columns(conn) -> None:
     earlier build would fail on the first new column. Only additive, nullable
     columns are handled; anything else still needs a fresh database.
     """
+    import logging
+
     from sqlalchemy import inspect
 
+    log = logging.getLogger("verytas.db")
     inspector = inspect(conn)
     existing_tables = set(inspector.get_table_names())
     for table in Base.metadata.sorted_tables:
@@ -86,7 +89,17 @@ def _add_missing_columns(conn) -> None:
             continue
         have = {c["name"] for c in inspector.get_columns(table.name)}
         for column in table.columns:
-            if column.name in have or not column.nullable or column.primary_key:
+            if column.name in have or column.primary_key:
+                continue
+            if not column.nullable:
+                log.warning("%s.%s is new and NOT NULL; it can't be added in place. Start from a fresh database.",
+                            table.name, column.name)
                 continue
             kind = column.type.compile(dialect=conn.dialect)
-            conn.exec_driver_sql(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {kind}')
+            fk = next(iter(column.foreign_keys), None)
+            ref = f' REFERENCES "{fk.column.table.name}"("{fk.column.name}")' if fk is not None else ""
+            conn.exec_driver_sql(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {kind}{ref}')
+            if column.index:
+                conn.exec_driver_sql(f'CREATE INDEX IF NOT EXISTS "ix_{table.name}_{column.name}" '
+                                     f'ON "{table.name}" ("{column.name}")')
+            log.info("added %s.%s to an existing database", table.name, column.name)
