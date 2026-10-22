@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     review_token_budget: int = 400_000
     # Upload storage (media/storage.py): what one person and one workspace may hold, and how long an
     # upload no version uses is kept before the hourly sweep deletes it.
+    # Model files for the visual checks (faces, segmentation), fetched on first use and pinned by hash
+    # (media/model_store.py).
+    vision_models_dir: Path = Path(".models")
     upload_quota_user_mb: int = Field(default=1024, ge=1)
     upload_quota_workspace_mb: int = Field(default=10 * 1024, ge=1)
     orphan_upload_ttl_h: float = Field(default=24.0, gt=0)

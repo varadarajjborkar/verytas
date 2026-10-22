@@ -6,8 +6,9 @@ Two small models from the OpenCV model zoo, run by OpenCV itself on the CPU:
   the same person are close (cosine similarity). OpenCV's published threshold for SFace is 0.363.
 
 Identification only: whether an identified person may appear is the brand's record (checks/likeness.py).
-The model files live in the vision models folder (`vision_models_dir`); without them the face check is
-reported as not run, never as a pass.
+The model files are fetched on first use into the vision models folder and checked against pinned
+hashes (media/model_store.py); when they can't be had, the face check is reported as not run, never as a
+pass.
 """
 
 from __future__ import annotations
@@ -48,12 +49,16 @@ class Face:
 
 
 def _models(folder: Path):
+    from verytas.media.model_store import ModelUnavailable, ensure
+
     folder = folder.resolve()
+    if folder not in _MODELS:
+        try:
+            det, rec = ensure(DETECTOR, folder), ensure(RECOGNISER, folder)
+        except ModelUnavailable as exc:
+            raise FacesUnavailable(str(exc)) from exc
     with _LOCK:
         if folder not in _MODELS:
-            det, rec = folder / DETECTOR, folder / RECOGNISER
-            if not det.is_file() or not rec.is_file():
-                raise FacesUnavailable(f"face models not found in {folder}")
             _MODELS[folder] = (cv2.FaceDetectorYN.create(str(det), "", (320, 320), DETECT_SCORE, 0.3, 50),
                                cv2.FaceRecognizerSF.create(str(rec), ""))
         return _MODELS[folder]
