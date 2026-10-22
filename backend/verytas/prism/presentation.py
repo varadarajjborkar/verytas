@@ -142,5 +142,6 @@ async def presentation_agent(run: ReviewRun, node: AgentNode) -> None:
                       + (f" in the {regions[0][0]} crop" if regions else ""))
 
     run.glance = glance
+    run.caption_folded = bool(fold) and len(body) > fold
     node.detail = {"channel": channel, "fold": fold, "media": len(run.layouts), "findings": len(out)}
     run.add(node, "presentation", out)
