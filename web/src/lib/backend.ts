@@ -51,11 +51,18 @@ export const getOverview = () => liveOrDemo<Overview>("/insights/overview", demo
 export const getGuidelineHealth = () => liveOrDemo<RuleHealth[]>("/insights/guideline-health", demoHealth);
 export const getRecurring = () => liveOrDemo<Recurring[]>("/insights/recurring", demoRecurring);
 
-/** What Ask Verytas may see for this person and question; null when the API isn't reachable. */
-export async function getAssistantContext(question: string): Promise<Record<string, unknown> | null> {
+/** What Ask Verytas may see for this person, plus their conversation redacted with the same
+ * placeholders. Null when the API isn't reachable. */
+export async function getAssistantContext(messages: string[]): Promise<{ context: Record<string, unknown>; messages: string[] } | null> {
   if (!backendConfigured) return null;
   try {
-    return await call<Record<string, unknown>>(`/assistant/context?q=${encodeURIComponent(question.slice(0, 2000))}`);
+    const out = await call<Record<string, unknown> & { messages: string[] }>("/assistant/context", {
+      method: "POST",
+      body: JSON.stringify({ messages }),
+    });
+    const { messages: redacted, ...context } = out;
+    if (!Array.isArray(redacted) || redacted.length !== messages.length) throw new Error("conversation not returned");
+    return { context, messages: redacted };
   } catch (err) {
     console.error("[verytas] assistant context unavailable:", (err as Error).message);
     return null;
