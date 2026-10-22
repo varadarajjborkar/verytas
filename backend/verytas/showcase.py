@@ -125,6 +125,87 @@ class Piece:
     days_ago: float
     flow: list[tuple[float, str, dict]]  # (hours after creation, action, args)
     event: str | None = None
+    images: Callable[[], list[dict]] | None = None  # attachments, drawn when the piece is written
+
+
+# --- artwork ---------------------------------------------------------------------------------------
+# Drawn in code, like the test fixtures, so the repo carries no binary files and the demo has official
+# artwork for the visual checks to compare against: Kit the kite mascot and the Kitepath wordmark.
+
+_FONTS = ["/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+          "/System/Library/Fonts/Supplemental/Arial.ttf"]
+
+
+def _font(size: int):
+    from PIL import ImageFont
+
+    for path in _FONTS:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    return ImageFont.load_default(size=size)
+
+
+def _kit(eye=(25, 35, 60), tail=(240, 130, 40), size=400):
+    """Kit, the mascot: a kite with a face, stripes and a bow-tied tail, detailed enough to be matched."""
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.polygon([(200, 20), (370, 190), (200, 360), (30, 190)], fill=(26, 95, 209, 255))
+    d.polygon([(200, 20), (370, 190), (200, 190)], fill=(64, 140, 235, 255))
+    d.polygon([(30, 190), (200, 190), (200, 360)], fill=(18, 70, 160, 255))
+    d.line([(200, 20), (200, 360)], fill=(250, 250, 250, 255), width=5)
+    d.line([(30, 190), (370, 190)], fill=(250, 250, 250, 255), width=5)
+    for cx in (150, 250):
+        d.ellipse((cx - 30, 120, cx + 30, 180), fill="white")
+        d.ellipse((cx - 14, 136, cx + 14, 168), fill=eye)
+        d.ellipse((cx - 6, 140, cx + 2, 150), fill="white")
+    d.arc((165, 205, 235, 255), 10, 170, fill=(250, 200, 40, 255), width=6)
+    for i, y in enumerate(range(300, 400, 24)):
+        x = 200 + (12 if i % 2 else -12)
+        d.polygon([(x - 14, y), (x + 14, y + 10), (x - 14, y + 20)], fill=tail + (255,))
+    return img
+
+
+def _scene(mascot, caption: str):
+    from PIL import Image, ImageDraw
+
+    s = Image.new("RGB", (1000, 800), (250, 247, 238))
+    d = ImageDraw.Draw(s)
+    m = mascot.resize((300, 300), Image.LANCZOS)
+    s.paste(m, (350, 140), m)
+    d.text((60, 640), caption, fill=(30, 30, 30), font=_font(40))
+    return s
+
+
+def _wordmark(text: str, size=(520, 150), line: str | None = None):
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", size, "white")
+    d = ImageDraw.Draw(img)
+    d.text((28, 36), text, fill=(26, 95, 209), font=_font(72 if line is None else 110))
+    if line:
+        d.text((34, 200), line, fill=(40, 40, 40), font=_font(48))
+    return img
+
+
+def _b64(img) -> str:
+    import base64
+    import io
+
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+ARTWORK = [
+    {"name": "Kit", "kind": "mascot", "part": "full", "image": lambda: _kit(),
+     "notes": "Our mascot. Always blue, with the orange tail. Never redrawn or recoloured."},
+    {"name": "Kitepath wordmark", "kind": "logo", "part": "wordmark", "wordmark": "Kitepath",
+     "image": lambda: _wordmark("Kitepath"), "notes": "Brand book 2026, p.2"},
+]
 
 
 def _pieces() -> list[Piece]:
@@ -192,6 +273,18 @@ def _pieces() -> list[Piece]:
               "Dear parents, here is how Kitepath keeps learning safe: verified mentors, no ads, and progress "
               "reports every Sunday.", 2.0, [(1, *send), (6, "comment", {"body": "Lovely. Can we add one line on "
                                                                         "how parents see the reports?"})]),
+        # Kit in festival colours: the eyes and the tail were recoloured, so the official artwork was altered.
+        Piece("kitposter", 3, "Festive poster with Kit", "instagram",
+              "Kit is celebrating with you this festive week. Learn one new thing a day. #LearnThisFestive", 0.7,
+              [(1, *send)], event="fest",
+              images=lambda: [{"id": "poster", "alt": "Kit the kite mascot above the words Learn one thing a day",
+                               "data_base64": _b64(_scene(_kit(eye=(200, 40, 60), tail=(220, 40, 160)),
+                                                          "Learn one thing a day"))}]),
+        # The wordmark set by hand in a banner, with the wrong capital.
+        Piece("banner", 5, "Design track banner", "linkedin",
+              "New on the design track: twelve short lessons on layout and type.", 1.4, [(1, *send)],
+              images=lambda: [{"id": "banner", "alt": "Banner reading KitePath design track",
+                               "data_base64": _b64(_wordmark("KitePath", size=(1200, 627), line="Design track"))}]),
         Piece("hindi", 0, "Hinglish reel: padhai ka festival", "instagram",
               "Is festive season, padhai bhi celebrate karo! Naya course shuru karo aaj raat. #LearnThisFestive",
               0.9, [], event="fest"),
@@ -325,6 +418,10 @@ def seed(db_path: Path, keys_dir: Path, env_out: Path | None) -> dict[str, int]:
                          "embargo_until": "2027-01-15"}).raise_for_status()
             for ct in CONTACTS:
                 c.post("/public-contacts", headers=h("admin"), json=ct).raise_for_status()
+            for art in ARTWORK:
+                body = {k: v for k, v in art.items() if k != "image"}
+                c.post("/brand-assets", headers=h("admin"), json={**body, "data_base64": _b64(art["image"]())}
+                       ).raise_for_status()
 
             events: dict[str, int] = {}
 
@@ -362,6 +459,8 @@ def seed(db_path: Path, keys_dir: Path, env_out: Path | None) -> dict[str, int]:
                     payload = {"title": p.title, "channel": p.channel, "body": p.body, "tier": "public"}
                     if p.event:
                         payload["event_id"] = events[p.event]
+                    if p.images:
+                        payload["attachments"] = {"images": p.images()}
                     r = c.post("/contents?wait=true", headers=h(who), json=payload)
                     r.raise_for_status()
                     state[p.key] = {"id": r.json()["content"]["id"], "review": r.json()["review_id"], "who": who}
