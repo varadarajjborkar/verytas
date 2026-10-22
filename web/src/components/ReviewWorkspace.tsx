@@ -30,7 +30,8 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
   const { side, loading, demo } = useViewer();
   if (loading) return <div aria-busy="true" aria-label="Loading" className="h-96 animate-pulse rounded-[14px] bg-sunken" />;
   // Without an API there is no queue to work, so everyone gets the sample review form.
-  return side === "manager" && !demo ? <ReviewQueue /> : <CreatorWorkspace initialBody={initialBody} />;
+  // The sample caption suits the demo's sample brand only; a real workspace starts with an empty box.
+  return side === "manager" && !demo ? <ReviewQueue /> : <CreatorWorkspace initialBody={demo ? initialBody : ""} />;
 }
 
 function CreatorWorkspace({ initialBody }: { initialBody: string }) {
