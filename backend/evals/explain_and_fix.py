@@ -160,7 +160,9 @@ async def run_once(spec: str, cases: list[dict[str, Any]], rules: dict[str, Rule
     # One group at a time: the free plan rate-limits bursts (HTTP 429), and a group that waits behind
     # another would time the queue, not the model.
     timings = [await one(g) for g in groups]
-    slots = asyncio.Semaphore(2)
+    # One at a time: the free plan serves one cloud model at once (candidate, judge and graders are
+    # different models), and four in parallel lost half of one model's grades to HTTP 429.
+    slots = asyncio.Semaphore(1)
 
     async def score(case: dict[str, Any], secs: float, err: str | None) -> dict[str, Any]:
         async with slots:
@@ -191,22 +193,58 @@ async def _score(spec: str, case: dict[str, Any], f: RawFinding, fix: dict[str, 
     row["abstained"] = not row["offered"]
     if fix is None:
         return row
+    await _grade(row, case, f, rule, graders)
+    return row
+
+
+async def _grade(row: dict[str, Any], case: dict[str, Any], f: RawFinding, rule: RuleView | None,
+                 graders: list[OllamaJudge]) -> None:
+    """Ask each grader about the explanation and, when a fix was shown, the fix. A grader that fails
+    leaves a grade_error for `regrade` to retry, never a silent zero."""
     rule_line = f"{rule.code}: {rule.title}. {rule.text}" if rule else "Unsupported claim"
     state: dict[str, Any] = {"rule": rule_line, "issue": case["title"], "text": case["quote"],
-                             "explanation": f.explanation}
+                             "explanation": row["explanation"]}
     questions = {"explains": GRADE["explains"]}
-    if f.suggestion is not None:
-        before, after = suggest._in_sentence(f, f.suggestion.original, f.suggestion.proposed)
+    if row["shown"]:
+        before, after = suggest._in_sentence(f, row["original"], row["proposed"])
         state |= {"original": before, "revised": after}
         questions |= {"resolves": GRADE["resolves"], "natural": GRADE["natural"]}
     for g in graders:
         try:
             answers = await g.ask(state, questions)
+            row.pop(f"grade_error@{g.model}", None)
             for name, a in answers.items():
                 row[f"{name}@{g.model}"] = round(a.p_yes, 3)
         except Exception as exc:  # noqa: BLE001
             row[f"grade_error@{g.model}"] = str(exc)[:200]
-    return row
+
+
+def _graders(settings: Settings, models: tuple[str, ...] = GRADERS) -> list[OllamaJudge]:
+    key = settings.ollama_api_key.get_secret_value()  # type: ignore[union-attr]
+    return [OllamaJudge(key, model=m, base_url=settings.ollama_base_url, meter=UsageMeter(10**9), resamples=0)
+            for m in models]
+
+
+async def regrade() -> None:
+    """Retry only the grades that failed (a rate limit, a timeout), from the answers already saved."""
+    cases, rules = load_cases()
+    by_id = {c["id"]: c for c in cases}
+    with tempfile.TemporaryDirectory() as keys:
+        settings = Settings(llm_mode="live", keys_dir=Path(keys))
+        for path in sorted(RESULTS.glob("*.jsonl")):
+            rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+            todo = [r for r in rows if any(k.startswith("grade_error@") for k in r)]
+            # One at a time: the free plan serves one cloud model at once, and bursts are refused.
+            for r in todo:
+                failed = tuple(k.split("@", 1)[1] for k in r if k.startswith("grade_error@"))
+                graders = _graders(settings, failed)
+                await _grade(r, by_id[r["id"]], finding(by_id[r["id"]]), rules.get(r["rule"]), graders)
+                for g in graders:
+                    await g.aclose()
+            left = sum(any(k.startswith("grade_error@") for k in r) for r in todo)
+            path.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+            if todo:
+                print(f"{path.name}: regraded {len(todo)} case(s), {left} still failing", flush=True)
 
 
 async def run(specs: list[str], repeats: int, limit: int | None, pause: float) -> None:
@@ -311,7 +349,10 @@ def main() -> None:
     r.add_argument("--limit", type=int, default=None)
     r.add_argument("--pause", type=float, default=30, help="seconds between runs, to stay under rate limits")
     sub.add_parser("report")
+    sub.add_parser("regrade", help="retry failed grades from saved answers")
     args = p.parse_args()
+    if args.cmd == "regrade":
+        asyncio.run(regrade())
     if args.cmd == "run":
         asyncio.run(run(args.models, args.repeats, args.limit, args.pause))
     print(report())
