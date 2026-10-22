@@ -30,10 +30,11 @@ A brand works with dozens of creators and agencies who post every day, in many l
 
 | Capability | What it means |
 | --- | --- |
-| **Reads everything in a post** | The caption, text inside images (OCR), every page of a PDF or Word file, and video: on-screen text, subtitles and speech. |
+| **Reads everything in a post** | The caption, text inside images (OCR), every page of a PDF or Word file (including text drawn as shapes), and video: on-screen text, subtitles and speech. |
+| **Sees what is in the pictures** | Finds the brand's mascots even when an AI has redrawn them and names what changed (a wrong colour, an extra eye, a missing tail), with the box and, in video, the time range. Identifies faces against the brand's approved people and flags anyone shown without an agreement. |
 | **Checks it against the brand's own sources** | Approved facts with validity dates, banned and preferred words, confidential terms, official artwork, tone, accessibility and AI-disclosure rules. |
 | **Explains every flag** | Each issue quotes the exact passage and cites the rule or fact behind it, with page numbers. No unexplained scores. |
-| **Fixes, not just flags** | It proposes the smallest change that keeps the writer's meaning. One click applies it. |
+| **Fixes, not just flags** | It swaps a phrase, rewrites a sentence or removes a dig, whichever the rule needs, and a judge that knows the rule checks the offer and call to action survive. One click applies it. |
 | **Keeps people in charge** | Creators can dispute a reading; the brand team approves, sends back or overrides, and every override needs a written reason. |
 | **Learns from decisions** | Rules that reviewers keep overriding are surfaced as unclear, and model-judged rules tune how confident they must be before flagging. |
 
@@ -95,13 +96,15 @@ flowchart LR
         GUARD["Safety layer<br/>redaction, guardrails,<br/>signed findings"]:::sec
     end
 
-    LOCAL["Local media tools<br/>OCR, speech to text,<br/>image matching, PDF"]:::local
+    LOCAL["Local media tools<br/>OCR, speech to text,<br/>image matching, faces, PDF"]:::local
+    VISION["Vision worker<br/>finds and compares mascots<br/>(wakes on demand)"]:::local
     MODELS["Ollama Cloud<br/>gpt-oss, gemma4 vision"]:::ext
     DB[("Database<br/>rules, facts, reviews,<br/>hash-chained audit log")]:::data
 
     CR & BT --> UI --> BFF --> API --> PRISM
     PRISM --> CHECKS
     PRISM --> LOCAL
+    PRISM --> VISION
     PRISM --> GUARD -- "redacted text and pixels" --> MODELS
     API & PRISM --> DB
 
@@ -137,7 +140,9 @@ flowchart LR
         FA["FastAPI + Prism<br/>:8000"]:::api
         SQ[("SQLite<br/>+ media blobs")]:::data
         TM["Deploy timer<br/>every 3 min"]:::ops
+        VW["Vision worker<br/>stops itself when idle"]:::api
         CAD --> NX --> FA --> SQ
+        FA -- "starts it when needed" --> VW
     end
 
     OL["Ollama Cloud<br/>models over HTTPS"]:::ext
@@ -172,6 +177,7 @@ flowchart LR
 | **Heavy media work stays local** | OCR, speech to text, PDF rendering and artwork matching run on the server's CPU, so raw images and audio never leave the machine. Only redacted text and pixels go to a model. |
 | **Bounded concurrency everywhere** | A shared pool of model slots, a cap on reviews running at once, and per-step deadlines. A burst of uploads queues instead of exhausting memory or hammering a provider. |
 | **Circuit breakers on every model** | If a provider is down, its checks are marked *degraded* on the review instead of failing the whole thing or pretending they passed. |
+| **Vision on a worker that sleeps** | Finding redrawn mascots needs three image models and torch, too heavy for the always-on server. They run on a second instance that the API starts on the first review needing it and that stops itself after 20 idle minutes, so it costs nothing most of the time. It installs from GitHub alone and holds no brand data. |
 | **One cheap server** | One small ARM instance behind a free edge, with an AWS budget that stops it at a hard cap. The demo runs on credits, at no cost to the team. |
 
 ## Tech stack
@@ -181,7 +187,8 @@ flowchart LR
 | **Frontend** | Next.js 16 (App Router, React 19), Tailwind CSS 4, OpenUI for generated answers in *Ask Verytas* |
 | **Backend** | Python 3.12, FastAPI, SQLAlchemy 2 (async), SQLite (Postgres-ready), Pydantic |
 | **AI models** | Ollama Cloud: `gpt-oss:120b` and `gpt-oss:20b` for language, `gemma4:31b` for vision. Swappable for TypeSafe Jev or Anthropic Claude |
-| **Media, all local** | RapidOCR (ONNX Runtime), faster-whisper, OpenCV, pdfium, PyAV |
+| **Media, all local** | RapidOCR (ONNX Runtime), faster-whisper, OpenCV (with YuNet and SFace for faces), pdfium, PyAV |
+| **Vision worker** | Grounding DINO (tiny), SAM 2.1 (tiny), DINOv2 (small) on PyTorch CPU, on an EC2 Graviton instance that wakes on demand |
 | **Security** | Ed25519-signed findings, SHA-256 hash-chained audit log, text and pixel redaction, input guardrails, CSP |
 | **Infra and delivery** | AWS EC2, Caddy, systemd, Cloudflare Pages, GitHub Actions (pinned to commit SHAs), gitleaks, pip-audit, pnpm audit |
 | **Testing** | pytest (offline, no keys needed), a black-box simulator that tests only through the public API |
@@ -191,21 +198,24 @@ flowchart LR
 - **Every finding is signed** when it is made, so an edited verdict shows as tampered.
 - **Every action is logged** in a hash-chained audit log; changing or deleting an old entry breaks the chain, and anyone with audit access can verify it.
 - **Confidential terms never reach a model**: they are redacted from text and blacked out in image pixels first. Confidential-tier content is never sent as pixels at all.
+- **People's faces follow the brand's records.** A face is identified against the approved-people library; public portraits are looked up only when the brief names someone and the content isn't confidential.
 - **What people type is screened too.** Bribes, "WhatsApp me" style contact swaps and instructions aimed at the AI are refused before they are stored.
 - **Access follows role and clearance**, checked on the server on every request, including in the audit log.
 - **Audited.** A security review with the Cloudflare security-audit method ran on this codebase; its confirmed findings and the leads it raised are fixed, each with a regression test. The [security report](docs/security/README.md) lists every item, the commit that fixed it, and what is still open.
-- **Locked dependencies.** The backend installs from hashed lock files in CI and on the server, so production runs exactly what the tests ran.
+- **Locked dependencies.** The backend and the vision worker install from hashed lock files, and model files are pinned by SHA-256, so production runs exactly what the tests ran.
+- **The live site is reviewed too.** Role checks, cross-site refusals, the browser-only route allowlist, cookie flags and the shipped bundles were checked against the deployed demo; what it found is fixed and listed in the security report.
 
 ## Quality
 
-- **Over 320 backend tests** run fully offline in about 25 seconds, plus type checks, lint and a production build for the web apps, all on every push.
+- **Over 440 backend tests** run fully offline in about a minute, plus type checks, lint and a production build for the web apps, all on every push.
+- **Measured, not guessed.** The [explain-and-fix eval](backend/evals/explain_and_fix.py) runs the production path on 73 findings with two independent graders: the rule-aware fix pipeline took useful fixes **from 45% to 82%** on the same model. The [mascot benchmark](backend/evals/mascots) runs 425 generated scenes through the vision chain: every character found, defects named in 73 to 100% of cases.
 - **Tested from the outside.** [`blackbox/`](blackbox/README.md) is a simulator that knows Verytas only through its API. It invents brands, writes posts, images, PDFs and video with planted violations, and steers each round toward what Verytas misses. Across a 216-case campaign, recall on core checks rose **from 78% to 96%**, false alarms on clean posts fell **from 7% to 0%**, and server errors fell **from 17 to 0**, even at 32 parallel submissions.
 
 ## What comes next
 
 - **One-on-one meetings.** A creator asks the manager who looks after them for a meeting by chat, voice or video; the manager accepts or proposes another time or way. Calls go through temporary masked numbers, the way delivery apps connect a rider and a customer, and only the time, the way and an outcome note go on the record. It is designed and previewed in both apps (marked *Planned*), not built: in a demo one person plays both sides, and masked calling needs a paid telephony provider.
-- **Self-hosted vision and video models** on a GPU that wakes on demand, so confidential artwork never leaves the brand's own cloud.
-- **Finer image and video decomposition:** layout regions, logo placement and scene-by-scene checks in place of whole-frame reads.
+- **Managing it all from the console:** an approved-people tab in the Library, a video player with findings on its timeline, and managers marking moments and areas with comments (the API supports all three today).
+- **Sharper visual checks on busy backgrounds**, where the cut-out still takes in some background and raises false alarms, and a GPU for the language and vision models once AWS grants the quota.
 
 ## Run it locally
 

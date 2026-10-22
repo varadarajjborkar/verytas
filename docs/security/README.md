@@ -2,7 +2,8 @@
 
 Verytas holds unreleased campaigns, confidential product names and the brand's own artwork, so we had
 it audited before Round 2 and fixed what the audit found. This page is the result: what was checked,
-what was found, the commit that fixed each item, and what is still open.
+what was found, the commit that fixed each item, and what is still open. It also covers a review of the
+live demo and of the vision worker added since.
 
 ## How it was reviewed
 
@@ -47,6 +48,48 @@ on the previous version's review in the moment between a new version being saved
 created. We fixed it anyway: approval now requires the newest review to be for the newest version
 ([`cad2338`](https://github.com/varadarajjborkar/verytas/commit/cad2338)).
 
+## Review of the live demo
+
+On 23 October 2026 we checked the deployed demo the way anyone on the internet could reach it: read-only
+requests to [verytas.pages.dev](https://verytas.pages.dev), first signed out, then signed in through the
+demo picker as a creator. Nothing was flooded and nothing was changed.
+
+| Check | Result |
+|---|---|
+| Common leak paths (`.env`, `.git/config`, `package.json`, `openapi.json`, `/docs`, path traversal) | Nothing served: every path redirects to sign-in, and the API itself is not reachable from outside (it listens on the server's loopback) |
+| Signed out, the API proxy | `401` |
+| Signed in as a creator: rules, confidential terms, brand assets, creator insights | Refused with the role each needs (`403`) |
+| A creator opening the other creators' pieces (ids 1 to 40) | None readable; only their own |
+| Audit log, account creation, bootstrap | Not forwarded by the web server at all (`404`) |
+| A write from another site's origin | Refused (`403 cross-site request refused`) |
+| Malformed and invalid input | Validation errors only; no stack traces or internal paths |
+| Session cookie | `__Host-` prefixed, `HttpOnly`, `Secure`, `SameSite=Strict` |
+| The JavaScript the browser downloads (12 bundles) | No keys, tokens or environment names; no source maps published |
+| Response headers | HSTS, `nosniff`, `X-Frame-Options: DENY`, referrer policy and a partial CSP were present |
+
+Two things were fixed in [`ab10825`](https://github.com/varadarajjborkar/verytas/commit/ab10825):
+
+| Finding | Fix |
+|---|---|
+| `Permissions-Policy` denied the microphone to every origin, ours included, so the creator's spoken brief could not record | Allowed for this site only: `microphone=(self)` |
+| Responses announced `X-Powered-By: Next.js` | Turned off |
+
+## The vision worker
+
+The worker that finds redrawn mascots runs on its own instance and was reviewed before it went live
+(internal review findings 251 to 302, all fixed). How it is kept safe:
+
+| Concern | How it is handled |
+|---|---|
+| Who can call it | Only the API server: its security group admits port 8100 from the API server's group alone, and every request carries a token compared in constant time, checked before the body is read |
+| Hostile images | Only PNG, JPEG and WebP are decoded; size, side and pixel-count limits, and decompression bombs refused (`413`) |
+| Secrets | The token and a read-only GitHub deploy key live in SSM Parameter Store, read through the instance's own role; the key is root-only and hidden from the worker process |
+| What the instance may do | Its role can read only its two parameters. The API server's role can only start instances tagged `verytas-vision`. Both roles are new and scoped to this |
+| Code it runs | Pulled from GitHub at boot with a pinned host key, installed from a hash-pinned lock; model files pinned by SHA-256 and Hugging Face models by commit |
+| Restricted artwork | Named only by number in anything a reviewer can read |
+| Plain http | Refused unless the worker is on this machine or the private network |
+| Cost | It stops itself after 20 idle minutes, even if the worker never starts; the AWS budget's automatic stop covers it too |
+
 ## Hardening notes
 
 The audit's hardening suggestions, and where each one stands.
@@ -54,6 +97,7 @@ The audit's hardening suggestions, and where each one stands.
 | Note | Status |
 |---|---|
 | Content Security Policy | Done for images, objects, base URI, framing and forms. A nonce-based `script-src` is still to do. |
+| Framework disclosure in headers | Done ([`ab10825`](https://github.com/varadarajjborkar/verytas/commit/ab10825)) |
 | `/contents/precheck` should need a writer role | Done ([`ce12803`](https://github.com/varadarajjborkar/verytas/commit/ce12803)) |
 | Upload metrics should have a deadline | Done ([`4344642`](https://github.com/varadarajjborkar/verytas/commit/4344642)). The precheck itself still has none. |
 | Learned thresholds counted repeated decisions | Done ([`cad2338`](https://github.com/varadarajjborkar/verytas/commit/cad2338)) |
@@ -105,4 +149,11 @@ uv pip compile pyproject.toml requirements-build.in --universal --python-version
   --generate-hashes --no-header -o requirements.lock
 uv pip compile pyproject.toml requirements-build.in --extra dev --universal --python-version 3.12 \
   --generate-hashes --no-header -o requirements-dev.lock
+```
+
+The vision worker has its own lock, for Linux on ARM, where it runs:
+
+```bash
+uv pip compile requirements-vision.in --python-platform aarch64-unknown-linux-gnu --python-version 3.12 \
+  --generate-hashes --no-header -o requirements-vision.lock
 ```
