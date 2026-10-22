@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
+from verytas.models import Tier
 from verytas.schemas import RuleIn
 
 Category = Literal["tone", "terminology", "messaging", "visual", "accessibility", "legal", "claims",
@@ -143,7 +144,10 @@ def to_rules(proposals: list[Proposal], taken: set[str], source_ref: str | None)
             rule = RuleIn(code=code, category=p.category, kind="deterministic" if term_list else "semantic",
                           severity=p.severity, title=p.title.strip(), text=p.text.strip(),
                           good_examples=p.good_examples[:5], bad_examples=p.bad_examples[:5],
-                          pattern=p.pattern if term_list else {}, source_ref=source_ref)
+                          pattern=p.pattern if term_list else {}, source_ref=source_ref,
+                          # A brand book governs what goes out, so its rules must reach public posts too;
+                          # the API's internal default would leave them out of every public review.
+                          tier=Tier.public)
         except ValidationError as exc:
             notes.append(f'Skipped "{p.title[:60]}": {exc.errors()[0]["msg"]}')
             continue

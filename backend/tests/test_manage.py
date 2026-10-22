@@ -5,6 +5,7 @@ from __future__ import annotations
 from tests.media_fixtures import b64, mascot_face, png
 from tests.test_api_flow import _auth
 from tests.test_api_flow import world as world  # noqa: F401, the fixture is used by name
+from verytas.models import Tier
 from verytas.prism.rulebook import heuristic_rules, to_rules
 
 BOOK = """Our voice
@@ -29,6 +30,8 @@ def test_offline_reading_finds_directives_and_term_swaps():
     codes = [r.code for r in rules]
     assert "BB-TONE-1" not in codes and len(codes) == len(set(codes))
     assert all(r.source_ref == "Brand book p.2" for r in rules) and notes == []
+    # Public posts are what a brand book is for; an internal-tier rule would never see them.
+    assert {r.tier for r in rules} == {Tier.public}
 
 
 def test_brand_book_import_proposes_drafts_for_admins_only(client, world):
