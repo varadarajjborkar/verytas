@@ -294,3 +294,15 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
 .vt-glide { transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), left 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
   bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1), top 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease-out; }
 @media (prefers-reduced-motion: reduce) { .vt-glide { transition: opacity 160ms ease-out; } }
+
+/* A panel that scrolls fades its bottom edge while there is more below, and only then: the fade is
+   driven by the panel's own scroll position, so a list that fits shows no fade at all. A browser without
+   scroll-driven animations runs it as a zero-length animation and lands on the end: no fade. (No
+   @supports guard: the CSS optimiser drops the whole block for its browser targets.) */
+@property --vt-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes vt-scroll-fade { from { --vt-fade: 28px; } to { --vt-fade: 0px; } }
+.vt-scroll {
+  mask-image: linear-gradient(to bottom, black calc(100% - var(--vt-fade)), transparent);
+  animation: vt-scroll-fade linear both;
+  animation-timeline: scroll(self);
+}

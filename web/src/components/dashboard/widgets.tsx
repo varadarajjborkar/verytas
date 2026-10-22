@@ -295,11 +295,14 @@ export const DEFAULT_LAYOUT: { id: string; size: Size }[] = [
 ];
 
 /** A widget in its panel, used both in place and while editing. */
+// Charts and the pipeline have a set shape; every other widget is a list that may grow.
+const FIXED_HEIGHT = new Set(["flow", "trend", "stats"]);
+
 export function WidgetPanel({ id, d, editing = false }: { id: string; d: DashData; editing?: boolean }) {
   const w = WIDGETS[id];
   if (w.bare) return <section aria-label={w.title}>{w.render(d)}</section>;
   return (
-    <Panel title={w.title} className="h-full"
+    <Panel title={w.title} className="h-full" scroll={!FIXED_HEIGHT.has(id)}
       // While editing, the corner controls sit where the link would be; the link is no use then anyway.
       aside={w.link && !editing ? <Link href={w.link.href} className="text-xs font-medium text-accent hover:underline">{w.link.label}</Link> : undefined}>
       {w.render(d)}

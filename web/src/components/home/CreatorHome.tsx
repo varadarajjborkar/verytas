@@ -88,7 +88,7 @@ export function CreatorHome() {
       </section>
 
       <div className="grid gap-5 xl:grid-cols-5">
-        <Panel title="Needs you" className="xl:col-span-3"
+        <Panel title="Needs you" className="xl:col-span-3" scroll
           aside={<Link href="/review" className="vt-btn vt-btn-primary py-1.5"><PlusIcon size={14} /> New review</Link>}>
           {rows === null ? <Skeleton /> : groups.fix.length === 0 ? (
             <p className="text-sm text-muted">Nothing to fix. Start a new review when you have something to post.</p>
@@ -96,7 +96,7 @@ export function CreatorHome() {
             <PieceList rows={groups.fix} />
           )}
         </Panel>
-        <Panel title="From the brand team" className="xl:col-span-2">
+        <Panel title="From the brand team" className="xl:col-span-2" scroll>
           {feed === null ? <Skeleton /> : feed.length === 0 ? (
             <p className="text-sm text-muted">No comments or decisions on your recent pieces yet.</p>
           ) : (
@@ -119,12 +119,12 @@ export function CreatorHome() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <Panel title="With the brand team">
+        <Panel title="With the brand team" scroll>
           {rows === null ? <Skeleton /> : groups.waiting.length === 0
             ? <p className="text-sm text-muted">Nothing is waiting for approval.</p>
             : <PieceList rows={groups.waiting} />}
         </Panel>
-        <Panel title="Approved and published">
+        <Panel title="Approved and published" scroll>
           {rows === null ? <Skeleton /> : groups.done.length === 0
             ? <p className="text-sm text-muted">Approved pieces show up here.</p>
             : <PieceList rows={groups.done.slice(0, 6)} />}
