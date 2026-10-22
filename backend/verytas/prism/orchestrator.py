@@ -94,6 +94,7 @@ _ROLE_COVERS: dict[str, set[str]] = {
     "policy": {"messaging", "legal"}, "presentation": {"legal", "visual", "accessibility"},
     "contrast": {"accessibility"},
     "faces": {"legal"},
+    "characters": {"visual"},
 }
 _ASSET_ROLES = {"assets", "scene", "keyframes"}  # visual, when the workspace has official artwork
 # Context reading is a second opinion over text that was already checked:
@@ -199,7 +200,8 @@ class Prism:
         ctx, redactor, assets = await self._context(session, version)
         language = detect(version.body)
         blobs = await _load_blobs(session, content.workspace_id, version.attachments or {}, version.creator_notes or {})
-        visuals = self.settings.faces_enabled and _has_visuals(version.attachments or {})
+        visuals_any = _has_visuals(version.attachments or {})
+        visuals = self.settings.faces_enabled and visuals_any
         people = await _people(session, content, ctx, self.settings) if visuals else None
         cleared = await _cleared_disputes(session, content.id)
         # Learned from disputes and reviewer decisions: how sure the judge must
@@ -240,6 +242,16 @@ class Prism:
                 notes_realm["brief"] = " ".join(filter(None, [notes_realm.get("brief"), f"(voice note) {said}"]))
         run.brief = notes_realm.get("brief") or ""
         run.people = people
+        if self.settings.vision_worker_url and visuals_any:
+            from verytas.vision.client import VisionClient
+
+            token = self.settings.vision_worker_token
+            try:
+                run.characters = VisionClient(self.settings.vision_worker_url,
+                                              token.get_secret_value() if token else None,
+                                              self.settings.vision_worker_timeout_s)
+            except ValueError as exc:
+                run.notes.append(f"vision worker not used: {exc}")
         # Offers and off-the-record contact in the note go to a person whatever the model makes of it.
         # (Steering is the intent agent's call: it reads the note against each finding.)
         note_text = " ".join(v for v in notes_realm.values() if isinstance(v, str))

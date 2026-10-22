@@ -57,6 +57,7 @@ from verytas.media.files import (
     shrink,
     sniff,
 )
+from verytas.prism.characters import characters_agent, pick_frames
 from verytas.prism.governor import Governor, TaskOutcome
 from verytas.prism.people_agent import faces_agent
 from verytas.providers.base import JudgeProvider, LLMProvider, ProviderError
@@ -191,6 +192,9 @@ class ReviewRun:
     brief: str = ""
     # Approved people and their reference photos, for the faces check (prism/people_agent.py).
     people: Any = None
+    # The vision worker's client (vision/client.py), for redrawn mascots (prism/characters.py); None when
+    # no worker is configured.
+    characters: Any = None
     sources: list[Source] = field(default_factory=list)
     findings: list[RawFinding] = field(default_factory=list)
     outcomes: list[TaskOutcome] = field(default_factory=list)
@@ -371,6 +375,10 @@ async def image_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_i
         run.notes.append(f"{image_id}: not sent to a vision model because local OCR failed, so confidential "
                          "text in it could not be blacked out first")
     _asset_findings(run, node, image_id, locator, matches or [], scene, lines)
+    if any(a.kind == "mascot" for a in run.assets):
+        copies = {m.asset_id for m in matches or [] if m.found}
+        await run.tree.spawn(node, "characters", "Look for redrawn mascots",
+                             lambda n: characters_agent(run, n, [(None, pil)], image_id, locator, copies))
     if run.people is not None:
         await run.tree.spawn(node, "faces", "Identify faces", lambda n: faces_agent(run, n, pil, image_id, locator))
     contrast = run.rule_by_code.get("A11Y-CONTRAST")
@@ -860,6 +868,10 @@ async def video_agent(run: ReviewRun, node: AgentNode, vid: dict[str, Any]) -> N
                                          lambda c: scene_agent(run, c, sheet, video_id, sheet_ocr,
                                                                "Contact sheet of frames from a video, times shown. "
                                                                + run.base.body[:1000]))
+        if any(a.kind == "mascot" for a in run.assets):
+            frames = pick_frames(keys, samples)
+            await run.tree.spawn(n, "characters", "Look for redrawn mascots",
+                                 lambda c: characters_agent(run, c, frames, video_id, locator, set(best)))
         matches = [m for m, _ in best.values()]
         times = {m.asset_id: t for m, t in best.values()}
         before = len(run.findings)

@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     vision_models_dir: Path = Path(".models")
     # Faces in images and video, identified against approved people (prism/people_agent.py).
     faces_enabled: bool = True
+    # The vision worker (verytas/vision) that finds redrawn mascots and compares them with the artwork.
+    # Unset, characters are checked by pixel match and the vision model only, and the review says so.
+    vision_worker_url: str | None = None
+    vision_worker_token: SecretStr | None = None
+    vision_worker_timeout_s: float = Field(150.0, gt=0)
     upload_quota_user_mb: int = Field(default=1024, ge=1)
     upload_quota_workspace_mb: int = Field(default=10 * 1024, ge=1)
     orphan_upload_ttl_h: float = Field(default=24.0, gt=0)
