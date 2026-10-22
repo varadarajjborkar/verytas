@@ -15,21 +15,24 @@ Built for the Inkloom AI brand-governance challenge. Brief: [`docs/problem-state
 
 ## The console
 
-The console has two sides, and each account sees only its own: **creators** write and fix their pieces; the **brand team** (reviewers, approvers, auditors and brand admins) decides on them and keeps the library. The API enforces the same split on every call.
+The console is two apps from one codebase, and each account sees only its own: **Verytas Studio** for creators, who write and fix their pieces, and the **Verytas Brand Console** for the brand team (reviewers, approvers, auditors and brand admins), one team over many creators. The API enforces the split on every call: a creator can't list, open or escalate another creator's piece.
 
-| Side | Screen | What you do there |
+| App | Screen | What you do there |
 | --- | --- | --- |
-| Creator | **My work** | See what needs you (drafts and pieces sent back), what is with the brand team, and the team's latest comments and decisions. |
-| Creator | **Review** | Start a review, or reopen one of yours. The text shows every issue in place beside a P1/P2/P3 checklist. Edit, apply fixes, dispute and re-check, then send it for approval. |
-| Brand team | **Dashboard** | Need-to-knows (waiting, must-fix issues in the queue, failed checks, unclear rules), the pipeline drawn as a flow with its send-back loop, the decision queue, and brand-health charts. |
-| Brand team | **Review queue** | Work the queue by stage: waiting, with creator, approved, all. On a piece, confirm, dismiss (with a reason) or escalate each finding, then approve or send it back with a note. |
-| Brand team | **Brand library** | Rules (versioned edits, word-list matchers, drafts to activate), facts with validity dates, confidential terms, official artwork, and brand-book import: paste or upload a PDF or Word file, review the proposed rules, keep what reads right as drafts. |
-| Brand team | **Guideline health** | Find the rules reviewers override or disagree on most, with advice on what to clarify. |
+| Studio | **My work** | See what needs you (drafts and pieces sent back), what is with the brand team, and the team's latest comments, decisions and answers to your requests. |
+| Studio | **My reviews** | Start a review (optionally for a running brand event), or reopen one of yours. The text shows every issue in place beside a P1/P2/P3 checklist. Edit, apply fixes, dispute, re-check, and send it for approval. On a flagged issue, **ask the brand team** to review it by hand. |
+| Brand Console | **Dashboard** | Yours to arrange: thirteen widgets (need-to-knows, the decision queue, the pipeline as a flow, your creators, escalations, events, trends). **Customize** or a long press starts editing: widgets wobble, drag into place, resize, come off or come back. |
+| Brand Console | **Review queue** | Every creator's pieces, full width: stage tabs (waiting, escalated, with creator, approved, all), filters by creator, channel, event and signal, sort by priority or waiting time, grouping, and previous and next through the open piece. On a piece, confirm, dismiss with a reason or escalate each finding, then approve or send it back with a note. |
+| Brand Console | **Escalations** | Creators' requests for a person, with the passage, the cited rule or fact (readable in full in place) and the creator's words side by side; uphold, or clear with a reason. |
+| Brand Console | **Brand library** | Rules (versioned edits, word-list matchers, drafts to activate), facts with validity dates, **brand events**, **public contacts**, confidential terms, official artwork, and brand-book import (paste, or upload a PDF or Word file, then keep the proposals that read right as drafts). |
+| Brand Console | **Guideline health** | Find the rules reviewers override or disagree on most, with advice on what to clarify. |
 | Both | **Ask Verytas** | Ask about pieces and review data. Answers come as charts and tables. The context and your questions are redacted together before they reach the model, and confidential-tier content is left out. |
 
-Every open piece shows the same **journey map** to both sides (written, checked, sent for approval, approved, published, with each round of changes), an **activity** feed with threaded comments, and **track changes** between any two versions. Settings has an **AI and data** page that lists every model and service and where it runs.
+Every open piece shows both sides the same **journey map** (written, checked, sent for approval, approved, published, with each round of changes), an **activity** feed with threaded comments, and **track changes** between any two versions.
 
-With sign-in off, Settings offers **View as** to switch between a brand-team and a creator account (`VERYTAS_API_TOKEN` and `VERYTAS_CREATOR_TOKEN`); `python -m verytas.cli issue-token <email>` issues one. Sidebars and history rails collapse to icons, and each browser remembers the choice.
+**Guardrails on what people type.** Escalations, comments, disputes and the brand team's notes are screened before they are stored or reach a model: offers of money or favours, off-the-record contact (personal numbers, private email, "WhatsApp me", numbers spelled out in words) and instructions aimed at the AI are refused with a note on what to change; pressure and links are flagged for the reviewer. Phone numbers and addresses are checked against the **public contacts** register, which also stops posts from carrying anyone's private number. Refusals are audited by type, never by text.
+
+**Brand events reach every review on their own.** An event (a launch, a sale, a crisis) owns its rules: its brief, the words to avoid while it runs, and its hashtag on pieces made for it. Saving one starts the update chain: the rules are rewritten as new versions and every piece in review is re-checked, bounded and audited, so the queue reflects what the brand is doing now.
 
 ## Architecture
 
@@ -60,6 +63,7 @@ flowchart TB
     subgraph Models["Model access"]
         direction LR
         RED["Redaction<br/>text and pixels"]:::sec
+    GRD["Guardrails<br/>offers, contact swaps,<br/>instructions to the AI"]:::sec
         LLM["Ollama Cloud<br/>gpt-oss, gemma4 vision"]:::ext
         RED --> LLM
     end
@@ -103,10 +107,10 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    subgraph Browser["Browser: one side per account"]
+    subgraph Browser["Two apps, one per side"]
         direction TB
-        CR["Creator<br/>My work, Review, Ask"]:::client
-        MG["Brand team<br/>Dashboard, Review queue,<br/>Library, Guideline health, Ask"]:::client
+        CR["Studio :3001<br/>creators: My work,<br/>My reviews, Ask"]:::client
+        MG["Brand Console :3000<br/>Dashboard, Review queue,<br/>Escalations, Library, Ask"]:::client
     end
 
     subgraph Web["Next.js server: holds the token"]
@@ -122,6 +126,7 @@ flowchart LR
         ADM["admin<br/>/me /users /audit /bootstrap"]:::api
         KNO["knowledge<br/>/rules /rules/extract /facts<br/>/confidential-terms /brand-assets"]:::data
         MED["media<br/>/media /contents/precheck"]:::check
+        GOV["governance<br/>/escalations /events<br/>/public-contacts"]:::sec
         CON["content<br/>/contents /reviews /findings<br/>transition, comments, timeline,<br/>resubmit, ai-edit, disputes"]:::core
         INS["insights<br/>/insights/overview, recurring,<br/>guideline-health"]:::api
         AST["assistant · chats<br/>/assistant/context /chats"]:::api
@@ -129,19 +134,22 @@ flowchart LR
 
     PRISM["Prism<br/>agents per part, judge"]:::core
     RED["Redaction<br/>text and pixels"]:::sec
+    GRD["Guardrails<br/>offers, contact swaps,<br/>instructions to the AI"]:::sec
     LLM["Ollama Cloud<br/>gpt-oss, gemma4"]:::ext
     DB[("SQLite / Postgres<br/>+ hash-chained audit log")]:::data
 
     CR & MG --> PG & PX & CH
     CR & MG -.-> SS
     PG --> ADM & INS
-    PX --> CON & MED & KNO & AST & ADM
+    PX --> CON & MED & KNO & AST & ADM & GOV
+    CON & GOV -. "user text" .-> GRD
+    GOV -- "event update chain:<br/>rules rewritten, pieces re-checked" --> PRISM
     CH -- "context and chat,<br/>redacted together" --> AST
     CH --> LLM
     CON --> PRISM
     KNO -- "brand-book import" --> RED
     PRISM --> RED --> LLM
-    ADM & KNO & MED & CON & INS & AST --> DB
+    ADM & KNO & MED & CON & INS & AST & GOV --> DB
 
     style Browser fill:#f8fafc,stroke:#94a3b8,color:#334155
     style Web fill:#f8fafc,stroke:#94a3b8,color:#334155
@@ -179,7 +187,7 @@ On a 216-case campaign, core recall rose from 78% to 96%, false positives on con
 | Path | What |
 | --- | --- |
 | `backend/` | FastAPI service: checks, Prism, workflow, insights, security (Python 3.12+) |
-| `web/` | Next.js 16 on OpenUI: both sides of the console (homes, review, library, guideline health, Ask Verytas) |
+| `web/` | Next.js 16 on OpenUI: the Studio and Brand Console apps (homes, review, escalations, library, guideline health, Ask Verytas) |
 | `blackbox/` | Black-box reality simulator: invents brands, writes posts, images, PDFs and video, grades Verytas |
 | `docs/` | Problem statement, architecture, submission checklist |
 
@@ -190,17 +198,20 @@ On a 216-case campaign, core recall rose from 78% to 96%, false positives on con
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 cp .env.example .env              # add OLLAMA_API_KEY for live models
-.venv/bin/uvicorn verytas.main:app --reload
 .venv/bin/pytest -q
+# A demo brand team with seven creators and three weeks of history; tokens go to the web env file
+.venv/bin/python -m verytas.cli seed-showcase --db showcase.db --write-env ../web/.env.local
+VERYTAS_DATABASE_URL=sqlite+aiosqlite:///./showcase.db VERYTAS_KEYS_DIR=.keys-showcase .venv/bin/uvicorn verytas.main:app
 
-# Frontend on :3000
+# The two apps (each in its own terminal)
 cd web
 pnpm install
-cp .env.example .env.local        # VERYTAS_API_URL + VERYTAS_API_TOKEN for live data, OLLAMA_API_KEY for Ask
-pnpm dev
+cp .env.example .env.local        # VERYTAS_API_URL, plus the tokens the seed wrote; OLLAMA_API_KEY for Ask
+pnpm dev:manager                  # Brand Console on :3000
+pnpm dev:creator                  # Studio on :3001
 ```
 
-On first run, `POST /bootstrap` creates the workspace and returns an admin token (interactive docs at `/docs`). Without backend settings, the frontend shows clearly labelled demo data.
+On a fresh database, `POST /bootstrap` creates the workspace and returns an admin token (interactive docs at `/docs`); `python -m verytas.cli issue-token <email>` replaces anyone's token. `pnpm dev` runs a single server with both sides and a **View as** switch in Settings while sign-in is off. Without backend settings, the frontend shows clearly labelled demo data.
 
 ## Models and external services
 

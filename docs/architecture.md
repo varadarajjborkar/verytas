@@ -288,10 +288,10 @@ The browser never holds an API token. Pages render on the Next.js server, and ev
 
 ```mermaid
 flowchart LR
-    subgraph Browser["Browser: one side per account"]
+    subgraph Browser["Two apps, one per side"]
         direction TB
-        CR["Creator<br/>My work, Review, Ask"]:::client
-        MG["Brand team<br/>Dashboard, Review queue,<br/>Library, Guideline health, Ask"]:::client
+        CR["Studio :3001<br/>creators: My work,<br/>My reviews, Ask"]:::client
+        MG["Brand Console :3000<br/>Dashboard, Review queue,<br/>Escalations, Library, Ask"]:::client
     end
 
     subgraph Web["Next.js server: holds the token"]
@@ -307,6 +307,7 @@ flowchart LR
         ADM["admin<br/>/me /users /audit /bootstrap"]:::api
         KNO["knowledge<br/>/rules /rules/extract /facts<br/>/confidential-terms /brand-assets"]:::data
         MED["media<br/>/media /contents/precheck"]:::check
+        GOV["governance<br/>/escalations /events<br/>/public-contacts"]:::sec
         CON["content<br/>/contents /reviews /findings<br/>transition, comments, timeline,<br/>resubmit, ai-edit, disputes"]:::core
         INS["insights<br/>/insights/overview, recurring,<br/>guideline-health"]:::api
         AST["assistant · chats<br/>/assistant/context /chats"]:::api
@@ -314,19 +315,22 @@ flowchart LR
 
     PRISM["Prism<br/>agents per part, judge"]:::core
     RED["Redaction<br/>text and pixels"]:::sec
+    GRD["Guardrails<br/>offers, contact swaps,<br/>instructions to the AI"]:::sec
     LLM["Ollama Cloud<br/>gpt-oss, gemma4"]:::ext
     DB[("SQLite / Postgres<br/>+ hash-chained audit log")]:::data
 
     CR & MG --> PG & PX & CH
     CR & MG -.-> SS
     PG --> ADM & INS
-    PX --> CON & MED & KNO & AST & ADM
+    PX --> CON & MED & KNO & AST & ADM & GOV
+    CON & GOV -. "user text" .-> GRD
+    GOV -- "event update chain:<br/>rules rewritten, pieces re-checked" --> PRISM
     CH -- "context and chat,<br/>redacted together" --> AST
     CH --> LLM
     CON --> PRISM
     KNO -- "brand-book import" --> RED
     PRISM --> RED --> LLM
-    ADM & KNO & MED & CON & INS & AST --> DB
+    ADM & KNO & MED & CON & INS & AST & GOV --> DB
 
     style Browser fill:#f8fafc,stroke:#94a3b8,color:#334155
     style Web fill:#f8fafc,stroke:#94a3b8,color:#334155
@@ -361,7 +365,12 @@ flowchart LR
 | Workflow | `POST /contents/{id}/transition` (blockers need a noted override) | by role and state, mirrored in the UI's next steps |
 | Collaboration | `GET/POST /contents/{id}/comments` (threaded) · `GET /contents/{id}/timeline` · `GET /contents/{id}/changes` | the content's readers |
 | Insights | `GET /insights/overview` · `/insights/recurring` · `/insights/guideline-health` | reviewer, approver, auditor, brand admin |
+| Escalations | `POST /findings/{id}/escalations` · `GET /escalations?state=` · `POST /escalations/{id}/resolve` · `POST /escalations/{id}/withdraw` | raise: the piece's author or a reviewer · inbox: the brand team (creators see their own) · resolve: reviewer, approver; clearing a must-fix needs an approver |
+| Brand events | `GET/POST /events` · `PATCH /events/{id}` · `POST /events/{id}/cancel` · `GET /events/{id}/impacts` | read: anyone · write: brand admin; every write runs the update chain |
+| Public contacts | `GET/POST /public-contacts` · `DELETE /public-contacts/{id}` | read: anyone · write: brand admin |
 | Ask Verytas | `POST /assistant/context` (context plus the conversation, redacted with one set of placeholders) · `GET/POST/PUT/DELETE /chats` | anyone; confidential tier left out |
+
+Creators see only their own pieces on every content route; the brand team sees all of them within its clearance. Escalation messages, comments, disputes and resolution notes pass the guardrails (`security/guard.py`) before they are stored.
 
 `GET /contents/{id}/timeline` is the one record both sides read: each version, its check, every status move, comment and decision, with who did it. The review screen's journey map and activity feed are drawn from it.
 
