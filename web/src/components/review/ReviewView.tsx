@@ -10,7 +10,7 @@ import { canDecide, sideOf } from "@/lib/roles";
 import type { ContentDetail, ContentStatus, Dispute, Person, Review, Timeline } from "@/lib/types";
 import { JourneyMap } from "../Journey";
 import { useToast } from "../Toaster";
-import { Details, Meter } from "../ui";
+import { Details, Meter, tabKeys } from "../ui";
 import { Activity } from "./Activity";
 import { AgentTree, Sources } from "./AgentTree";
 import { Checklist, emptyRow, type RowState, sortFindings } from "./Checklist";
@@ -336,9 +336,11 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
         {/* The text, with every issue marked where it is. */}
         <section className="vt-card min-w-0 p-5 md:p-7" aria-label={manager && !author ? "The text" : "Your text"}>
           {versions.length > 1 && !editing && (
-            <div role="tablist" aria-label="Show" className="mb-5 inline-flex rounded-lg bg-sunken p-0.5 text-xs font-medium">
+            <div role="tablist" aria-label="Show" className="mb-5 inline-flex rounded-lg bg-sunken p-0.5 text-xs font-medium"
+              onKeyDown={tabKeys(["text", "compare"] as const, docView, setDocView, `doc-${contentId}`)}>
               {([["text", `Version ${latest?.version_no ?? 1}`], ["compare", "Compare versions"]] as const).map(([k, l]) => (
-                <button key={k} type="button" role="tab" aria-selected={docView === k} onClick={() => setDocView(k)}
+                <button key={k} id={`doc-${contentId}-${k}`} type="button" role="tab" aria-selected={docView === k}
+                  aria-controls={`doc-${contentId}-panel`} tabIndex={docView === k ? 0 : -1} onClick={() => setDocView(k)}
                   className={`rounded-md px-3 py-1.5 transition ${docView === k ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
                   {l}
                 </button>
@@ -351,6 +353,8 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
               Checking text, media and context… {elapsed}s
             </div>
           )}
+          <div id={`doc-${contentId}-panel`} role={versions.length > 1 && !editing ? "tabpanel" : undefined}
+            aria-labelledby={versions.length > 1 && !editing ? `doc-${contentId}-${docView}` : undefined}>
           {editing ? (
             <div className="flex flex-col gap-3">
               <textarea value={editText} onChange={(e) => setEditText(e.target.value)} maxLength={100000} autoFocus
@@ -372,6 +376,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
             <HighlightedBody body={body} findings={findings.filter((f) => (f.source ?? "body") === "body")}
               active={active} onSelect={setActive} innerRef={textRef} />
           )}
+          </div>
           {coverage?.sources && coverage.sources.length > 1 && !editing && (
             <p className="mt-6 border-t border-line pt-4 text-xs text-subtle">
               Also read: {coverage.sources.filter((s) => s.id !== "body").map((s) => s.id).join(", ")}
@@ -382,15 +387,18 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
         {/* What to fix, most urgent first. */}
         <aside className="flex min-w-0 flex-col gap-5 xl:sticky xl:top-6" aria-label="Issues">
           <section className="vt-card p-4">
-            <div role="tablist" aria-label="Side panel" className="mb-3 flex gap-4 border-b border-line text-sm">
+            <div role="tablist" aria-label="Side panel" className="mb-3 flex gap-4 border-b border-line text-sm"
+              onKeyDown={tabKeys(["issues", "activity"] as const, pane, setPane, `pane-${contentId}`)}>
               {([["issues", "Issues", findings.length], ["activity", "Activity", route ? route.comments + route.decisions : null]] as const)
                 .map(([k, l, n]) => (
-                  <button key={k} type="button" role="tab" aria-selected={pane === k} onClick={() => setPane(k)}
+                  <button key={k} id={`pane-${contentId}-${k}`} type="button" role="tab" aria-selected={pane === k}
+                    aria-controls={`pane-${contentId}-panel`} tabIndex={pane === k ? 0 : -1} onClick={() => setPane(k)}
                     className={`-mb-px border-b-2 pb-2 font-semibold transition ${pane === k ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}>
                     {l}{n ? <span className="ml-1.5 text-xs font-medium tabular-nums text-subtle">{n}</span> : null}
                   </button>
                 ))}
             </div>
+            <div id={`pane-${contentId}-panel`} role="tabpanel" aria-labelledby={`pane-${contentId}-${pane}`}>
             {pane === "activity" ? (
               <Activity timeline={timeline} contentId={contentId} versionId={latest?.id ?? null} onPosted={loadTimeline} />
             ) : <>
@@ -424,6 +432,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
               </div>
             )}
             </>}
+            </div>
           </section>
 
           {disputes.length > 0 && (
@@ -492,9 +501,9 @@ function SendBackBox({ busy, onCancel, onConfirm }: { busy: boolean; onCancel: (
         placeholder="e.g. Drop the 40% claim until legal signs off, and use our product name spelling."
         aria-label="Note for the creator" className="vt-input mt-3 min-h-16" />
       <div className="mt-3 flex items-center gap-2">
-        <button type="button" disabled={busy} onClick={() => onConfirm(note.trim())} className="vt-btn vt-btn-primary">Send back</button>
+        <button type="button" disabled={busy || !note.trim()} onClick={() => onConfirm(note.trim())} className="vt-btn vt-btn-primary">Send back</button>
         <button type="button" onClick={onCancel} className="vt-btn vt-btn-quiet">Cancel</button>
-        <span className="text-xs text-muted">The creator sees this on the piece and on their home page.</span>
+        <span className="text-xs text-muted">Required. The creator sees it on the piece and on their home page.</span>
       </div>
     </div>
   );

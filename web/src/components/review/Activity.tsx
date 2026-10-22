@@ -39,10 +39,22 @@ export function Activity({ timeline, contentId, versionId, onPosted }: {
   // Replies hang under the comment they answer; everything else stays in time order.
   const { feed, replies } = useMemo(() => {
     const items = timeline?.items ?? [];
+    // Threads are shown one level deep, so a reply to a reply joins the thread's first comment.
+    const parent = new Map(items.flatMap((i) => (i.type === "comment" ? [[i.id, i.parent_id] as const] : [])));
+    const rootOf = (id: number) => {
+      let at = id;
+      for (let hops = 0; hops < 50; hops++) {
+        const up = parent.get(at);
+        if (up == null || !parent.has(up)) return at;
+        at = up;
+      }
+      return at;
+    };
     const replies = new Map<number, Comment[]>();
     const feed: TimelineItem[] = [];
     for (const i of items) {
-      if (i.type === "comment" && i.parent_id != null) replies.set(i.parent_id, [...(replies.get(i.parent_id) ?? []), i]);
+      const root = i.type === "comment" && i.parent_id != null ? rootOf(i.id) : null;
+      if (i.type === "comment" && root != null && root !== i.id) replies.set(root, [...(replies.get(root) ?? []), i]);
       else feed.push(i);
     }
     return { feed, replies };

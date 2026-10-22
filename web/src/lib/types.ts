@@ -193,6 +193,8 @@ export type ContentRow = {
   created_at: string;
   version_count: number;
   updated_at: string | null;
+  /** When it entered its current status: how long it has waited in a queue. */
+  status_since?: string | null;
   latest_review: {
     id: number; status: Review["status"]; overall: number | null;
     blockers: number; warnings: number; advisories: number; finished_at: string | null;

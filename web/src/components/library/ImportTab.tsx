@@ -18,7 +18,8 @@ type Proposal = RuleDraft & { keep: boolean };
  * instruction. Nothing is saved until the admin keeps proposals; kept ones are
  * added as drafts, which no review uses until someone activates them.
  */
-export function ImportTab({ onAdded }: { onAdded: () => void }) {
+/** onAdded(done): done means nothing is left to review, so the page can move on to the new drafts. */
+export function ImportTab({ onAdded }: { onAdded: (done: boolean) => void }) {
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [source, setSource] = useState("");
@@ -49,6 +50,7 @@ export function ImportTab({ onAdded }: { onAdded: () => void }) {
     const kept = proposals.filter((p) => p.keep);
     let added = 0;
     const failed: string[] = [];
+    const left: Proposal[] = [];
     // One at a time: codes were chosen to be unique, and a clash should fail alone, not the batch.
     for (const p of kept) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -58,15 +60,24 @@ export function ImportTab({ onAdded }: { onAdded: () => void }) {
         added++;
       } catch (err) {
         failed.push(`${p.code}: ${(err as Error).message}`);
+        left.push(p);
       }
     }
     toast({ kind: failed.length ? "warning" : "success", title: `${added} draft rule${added === 1 ? "" : "s"} added`,
-      detail: failed.length ? `${failed.length} skipped. ${failed[0]}` : "Find them under Rules, Drafts. Activate each when it reads right." });
+      detail: failed.length ? `${failed.length} not added and kept here to fix. ${failed[0]}` : "Activate each draft when it reads right." });
+    if (failed.length) {
+      // Keep what failed on screen (with the reasons) rather than lose the admin's edits.
+      setProposals(left);
+      setNotes(failed);
+      setPhase("review");
+      if (added) onAdded(false);
+      return;
+    }
     setProposals([]);
     setText("");
     setFile(null);
     setPhase("idle");
-    onAdded();
+    onAdded(true);
   }
 
   const set = (i: number, p: Partial<Proposal>) => setProposals((xs) => xs.map((x, j) => (j === i ? { ...x, ...p } : x)));

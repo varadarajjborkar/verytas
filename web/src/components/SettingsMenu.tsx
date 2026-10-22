@@ -39,6 +39,7 @@ const SERVICES = [
   { name: "Ollama Cloud: gemma4 31b", use: "Looks at images and video frames, compares artwork with official assets", where: "Cloud, never for confidential content" },
   { name: "RapidOCR, faster-whisper, OpenCV, pdfium", use: "Reads text in images, transcribes speech, matches logos, renders PDF pages", where: "On the Verytas server only" },
   { name: "TypeSafe Jev", use: "Optional second judge for model-judged rules", where: "Cloud, only if configured" },
+  { name: "Anthropic Claude", use: "Alternative model backend for the same tasks", where: "Cloud, only when chosen in the server settings" },
   { name: "Rule checks", use: "Banned and preferred terms, casing, codenames, facts and dates", where: "On the Verytas server, no model" },
 ];
 type Tab = (typeof TABS)[number]["value"];

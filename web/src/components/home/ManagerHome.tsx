@@ -7,6 +7,7 @@ import type { ContentRow, Overview, Person, RuleHealth } from "@/lib/types";
 import { UNCLEAR } from "../DashboardView";
 import { AlertIcon, ArrowRightIcon, GaugeIcon, OctagonIcon, ReviewIcon } from "../Icons";
 import { StageDots } from "../Journey";
+import { sinceOf } from "../review/QueueOverview";
 import { Panel } from "../ui";
 import { PipelineFlow } from "./PipelineFlow";
 
@@ -28,7 +29,7 @@ export function ManagerHome({ overview, health }: { overview: Overview; health: 
 
   // Oldest first: whoever has waited longest is next.
   const waiting = useMemo(() => (rows ?? []).filter((r) => r.status === "in_review")
-    .sort((a, b) => (a.updated_at ?? a.created_at).localeCompare(b.updated_at ?? b.created_at)), [rows]);
+    .sort((a, b) => sinceOf(a).localeCompare(sinceOf(b))), [rows]);
   const live = rows !== null && !demo;
   // Stage totals come from the overview, which counts every piece; the list stops at 200.
   const counts = overview.content;
@@ -38,7 +39,7 @@ export function ManagerHome({ overview, health }: { overview: Overview; health: 
 
   const facts = [
     { label: "Waiting for a decision", value: counts.in_review ?? 0, Icon: ReviewIcon, href: "/review?queue=waiting",
-      hint: oldest ? `Oldest sent ${relativeTime(oldest.updated_at ?? oldest.created_at)}` : "Queue is clear", tone: "accent" },
+      hint: oldest ? `Oldest sent ${relativeTime(sinceOf(oldest))}` : "Queue is clear", tone: "accent" },
     { label: "Must-fix issues in the queue", value: live ? queueBlockers : "n/a", Icon: OctagonIcon, href: "/review?queue=waiting",
       hint: queueBlockers ? "Approving needs a noted override" : "None open", tone: queueBlockers ? "blocker" : "muted" },
     { label: "Checks that failed", value: overview.reviews.failed, Icon: AlertIcon, href: "/review?queue=all",
@@ -83,7 +84,7 @@ export function ManagerHome({ overview, health }: { overview: Overview; health: 
                       <p className="truncate text-sm font-medium">{r.title}</p>
                       <p className="truncate text-[11px] text-subtle">
                         {people.get(r.created_by)?.name ?? "Creator"} · <span className="capitalize">{r.channel.replace("_", " ")}</span>
-                        {" · "}{relativeTime(r.updated_at ?? r.created_at)}
+                        {" · "}sent {relativeTime(sinceOf(r))}
                       </p>
                     </div>
                     {r.latest_review?.blockers ? (

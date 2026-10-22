@@ -17,6 +17,9 @@ export const QUEUES: Record<Queue, { label: string; title: string; lead: string;
   all: { label: "All", title: "Every piece", lead: "Everything you can see, newest activity first.", statuses: null },
 };
 
+export const isQueue = (q: string | null): q is Queue => q != null && Object.hasOwn(QUEUES, q);
+/** How long a piece has sat where it is; older API builds lack status_since. */
+export const sinceOf = (r: ContentRow) => r.status_since ?? r.updated_at ?? r.created_at;
 export const inQueue = (q: Queue) => (r: ContentRow) => QUEUES[q].statuses?.includes(r.status) ?? true;
 
 /** The brand team's landing view in Review: the selected queue as a table, in place of a new-review form. */
@@ -30,7 +33,7 @@ export function QueueOverview({ queue, rows, people, loading, onSelect }: {
   const q = QUEUES[queue];
   // The waiting queue is first come, first served; the others read newest first.
   const shown = queue === "waiting"
-    ? [...rows].sort((a, b) => (a.updated_at ?? a.created_at).localeCompare(b.updated_at ?? b.created_at))
+    ? [...rows].sort((a, b) => sinceOf(a).localeCompare(sinceOf(b)))
     : rows;
   return (
     <section className="vt-card min-w-0 p-4 md:p-6" aria-label={q.title}>
@@ -89,7 +92,7 @@ export function QueueOverview({ queue, rows, people, loading, onSelect }: {
                               </span>
                             )}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-xs text-muted">{relativeTime(r.updated_at ?? r.created_at)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-xs text-muted">{relativeTime(queue === "waiting" ? sinceOf(r) : r.updated_at ?? r.created_at)}</td>
                     <td className="py-2.5 pr-4 md:pr-6">
                       <ArrowRightIcon size={14} className="text-subtle transition group-hover:translate-x-0.5 group-hover:text-ink" />
                     </td>

@@ -17,7 +17,7 @@ type Note = { at: string; who: Person | null; piece: ContentRow; text: string; k
 
 /** A creator's front page: what needs them, what is with the brand team, and what the team said. */
 export function CreatorHome() {
-  const { me } = useViewer();
+  const { me, loading: viewerLoading } = useViewer();
   const [rows, setRows] = useState<ContentRow[] | null>(null);
   const [demo, setDemo] = useState(false);
   const [notes, setNotes] = useState<Note[] | null>(null);
@@ -45,6 +45,8 @@ export function CreatorHome() {
       });
     return () => { live = false; };
   }, [rows, me]);
+  // Without an account there is no "someone else" to tell apart: the empty state, not a skeleton.
+  const feed = rows && !viewerLoading && !me ? [] : notes;
 
   const groups = useMemo(() => {
     const list = rows ?? [];
@@ -92,11 +94,11 @@ export function CreatorHome() {
           )}
         </Panel>
         <Panel title="From the brand team" className="xl:col-span-2">
-          {notes === null ? <Skeleton /> : notes.length === 0 ? (
+          {feed === null ? <Skeleton /> : feed.length === 0 ? (
             <p className="text-sm text-muted">No comments or decisions on your recent pieces yet.</p>
           ) : (
             <ul className="flex flex-col gap-3.5">
-              {notes.map((n, i) => (
+              {feed.map((n, i) => (
                 <li key={`${n.piece.id}-${n.at}-${i}`}>
                   <Link href={`/review?id=${n.piece.id}`} className="group block">
                     <p className="flex items-center gap-1.5 text-[11px] text-subtle">

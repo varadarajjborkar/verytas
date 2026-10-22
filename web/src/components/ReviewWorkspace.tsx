@@ -10,7 +10,7 @@ import { DashboardIcon, HistoryIcon, PanelIcon, PlusIcon } from "./Icons";
 import { Checklist, emptyRow, type RowState, sortFindings } from "./review/Checklist";
 import { attachmentsPayload, channelOf, Composer, type Draft, emptyDraft } from "./review/Composer";
 import { HighlightedBody } from "./review/parts";
-import { inQueue, type Queue, QueueOverview, QUEUES } from "./review/QueueOverview";
+import { inQueue, isQueue, type Queue, QueueOverview, QUEUES } from "./review/QueueOverview";
 import { ReviewHistory } from "./review/ReviewHistory";
 import { ReviewView } from "./review/ReviewView";
 import { useToast } from "./Toaster";
@@ -34,7 +34,8 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
   const selected = Number(params.get("id")) || null;
   const { me, side, loading: viewerLoading } = useViewer();
   const manager = side === "manager";
-  const queue: Queue = (params.get("queue") ?? "") in QUEUES ? params.get("queue") as Queue : "waiting";
+  const asked = params.get("queue");
+  const queue: Queue = isQueue(asked) ? asked : "waiting";
   const [all, setAll] = useState<ContentRow[]>([]);
   const [people, setPeople] = useState<Map<number, Person>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -123,7 +124,8 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
       {railOpen && <div className="lg:hidden"><Drawer label="Reviews" onClose={() => setRailOpen(false)}>{rail(false)}</Drawer></div>}
 
       <div className="min-w-0">
-        {showing && <ReviewView key={selected} contentId={selected} role={me?.role ?? "creator"} userId={me?.id ?? null} onChanged={refresh} />}
+        {/* Held until the viewer is known: mounting as a guessed role would offer the wrong tools. */}
+        {showing && !viewerLoading && <ReviewView key={selected} contentId={selected} role={me?.role ?? "creator"} userId={me?.id ?? null} onChanged={refresh} />}
         {viewerLoading ? (
           !showing && <div aria-busy="true" aria-label="Loading" className="h-96 animate-pulse rounded-[14px] bg-sunken" />
         ) : queueHome ? (
