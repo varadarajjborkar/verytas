@@ -1,0 +1,2 @@
+# The demo reset stops and starts the API around its database swap; deploys restart both services.
+verytas ALL=(root) NOPASSWD: /usr/bin/systemctl stop verytas-api, /usr/bin/systemctl start verytas-api, /usr/bin/systemctl restart verytas-api, /usr/bin/systemctl restart verytas-web
