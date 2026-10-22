@@ -16,10 +16,12 @@ export function PageHeader({ title, lead, aside, refresh = false }: { title: str
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <h1 className="text-[1.65rem] font-semibold leading-tight tracking-tight">{title}</h1>
           <div id={HEADER_BACK} className="contents" />
+          {/* On a phone the refresh rides in the title row as an icon, not a row of its own under the lead. */}
+          {refresh && <span className="ml-auto md:hidden"><RefreshButton compact /></span>}
         </div>
         {lead && <p className="mt-1.5 max-w-xl text-sm text-muted">{lead}</p>}
       </div>
-      {(aside || refresh) && <div className="flex flex-wrap items-center gap-2">{aside}{refresh && <RefreshButton />}</div>}
+      {(aside || refresh) && <div className={`flex-wrap items-center gap-2 ${aside ? "flex" : "hidden md:flex"}`}>{aside}{refresh && <span className="hidden md:inline-flex"><RefreshButton /></span>}</div>}
     </div>
   );
 }

@@ -44,10 +44,10 @@ export function RulesTab({ rules, editable, onChanged, initialState, initialQuer
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div role="radiogroup" aria-label="Rule status" className="inline-flex rounded-lg bg-sunken p-0.5 text-xs font-medium">
+        <div role="radiogroup" aria-label="Rule status" className="inline-flex rounded-lg bg-sunken p-0.5 text-[13px] font-medium">
           {STATES.map(({ k, l }) => (
             <button key={k} type="button" role="radio" aria-checked={state === k} onClick={() => setState(k)}
-              className={`rounded-md px-2.5 py-1.5 transition ${state === k ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
+              className={`rounded-md px-2.5 py-2 transition ${state === k ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
               {l} <span className="tabular-nums text-subtle">{count(k)}</span>
             </button>
           ))}

@@ -170,7 +170,7 @@ export function ReviewQueue() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <SearchField value={typed} onChange={setTyped} placeholder="Search pieces, creators or channels" label="Search the queue"
+        <SearchField value={typed} onChange={setTyped} placeholder="Search pieces or creators" label="Search the queue"
           className="flex-1 md:min-w-72 md:max-w-md" />
         {/* Phones fold the filters behind one button; there is no room for five selects in a row. */}
         <button type="button" onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters} aria-controls="queue-filters"
