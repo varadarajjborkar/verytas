@@ -62,7 +62,7 @@ export function SideNav() {
         {toggle}
         <div className="md:hidden"><SettingsMenu compact /></div>
       </div>
-      <nav id="main-nav" aria-label="Main" className={`overflow-x-auto pb-3 [mask-image:linear-gradient(to_right,black_85%,transparent)] md:pb-6 md:[mask-image:none] ${collapsed ? "px-3 md:px-2.5" : "px-3"}`}>
+      <nav id="main-nav" aria-label="Main" className={`overflow-x-auto overflow-y-hidden pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_85%,transparent)] md:pb-6 md:[mask-image:none] ${collapsed ? "px-3 md:px-2.5" : "px-3"}`}>
         <ul className="flex gap-1 md:flex-col">
           {links.map(({ href, label, short, Icon }) => {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);

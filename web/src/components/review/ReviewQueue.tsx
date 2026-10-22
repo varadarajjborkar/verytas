@@ -154,12 +154,12 @@ export function ReviewQueue() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div role="tablist" aria-label="Queue" className="flex gap-1 overflow-x-auto border-b border-line"
+      <div role="tablist" aria-label="Queue" className="vt-tabs gap-1"
         onKeyDown={tabKeys(QUEUE_ORDER, queue, (q) => set({ queue: q === "waiting" ? null : q, sort: null }), "queue-tab")}>
         {QUEUE_ORDER.map((q) => (
           <button key={q} id={`queue-tab-${q}`} type="button" role="tab" aria-selected={queue === q} aria-controls="queue-panel"
             tabIndex={queue === q ? 0 : -1} onClick={() => set({ queue: q === "waiting" ? null : q, sort: null })}
-            className={`-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+            className={`flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
               queue === q ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}>
             {q === "escalated" && <InboxIcon size={14} />}{QUEUES[q].label}
             <span className={`rounded-full px-1.5 text-[11px] tabular-nums ${queue === q ? "bg-accent/12 text-accent" : "bg-sunken text-subtle"}`}>

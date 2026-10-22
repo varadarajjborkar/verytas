@@ -306,3 +306,22 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
   animation: vt-scroll-fade linear both;
   animation-timeline: scroll(self);
 }
+
+/* A row of tabs that may be wider than a phone: it swipes sideways, never up and down, and shows no bar.
+   The baseline is an inset shadow rather than a border so the active tab's underline can sit on it
+   without the 1px overhang that used to give the strip a vertical scroll of its own. */
+.vt-tabs {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  box-shadow: inset 0 -1px 0 var(--vt-line);
+  /* The same scroll-driven fade as .vt-scroll, sideways: the right edge fades while tabs are hidden there. */
+  mask-image: linear-gradient(to right, black calc(100% - var(--vt-fade)), transparent);
+  animation: vt-scroll-fade linear both;
+  animation-timeline: scroll(self inline);
+}
+.vt-tabs::-webkit-scrollbar { display: none; }
+/* The strip clips anything outside it, so a tab's focus ring is drawn inside the tab. */
+.vt-tabs [role="tab"]:focus-visible { outline-offset: -2px; }
