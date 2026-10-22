@@ -146,13 +146,7 @@ def find_folded(pattern: re.Pattern[str], text: str) -> Iterator[tuple[int, int,
     """Matches of `pattern` in the folded text as (start, end, folded match),
     with start and end pointing into the original text."""
     seen: set[tuple[int, int]] = set()
-    for mode in ("space", "drop", "spaced", "leet"):
-        if mode == "spaced":
-            folded, index = _unspaced(*fold(text, "drop"))
-        elif mode == "leet":
-            folded, index = _unleet(*_unspaced(*fold(text, "drop")))
-        else:
-            folded, index = fold(text, mode)
+    for folded, index in _readings(text):
         for m in pattern.finditer(folded):
             if m.end() > m.start():
                 span = (index[m.start()], index[m.end() - 1] + 1)
@@ -161,19 +155,42 @@ def find_folded(pattern: re.Pattern[str], text: str) -> Iterator[tuple[int, int,
                     yield span[0], span[1], m.group(0)
 
 
-# Letter-spacing ("s y n e r g y", "P.r.o.j.e.c.t"): four or more single
-# characters, each followed by one separator. Real prose almost never does it.
-_SPACED = re.compile(r"(?<!\w)(?:\w[ ._\-\u00b7]){3,}\w(?!\w)")
+def _readings(text: str) -> Iterator[tuple[str, tuple[int, ...]]]:
+    """The folded forms a pattern is tried against, cheapest first."""
+    yield fold(text, "space")
+    dropped = fold(text, "drop")
+    yield dropped
+    spaced = _unspaced(*dropped)
+    yield spaced
+    # "is a r i s k - f r e e": the lone "a" may be the article, or the first
+    # letter of "a m a z i n g". Both readings are tried.
+    article = _unspaced(*dropped, skip_article=True)
+    if article[0] != spaced[0]:
+        yield article
+    yield _unleet(*spaced)
 
 
-def _unspaced(folded: str, index: tuple[int, ...]) -> tuple[str, tuple[int, ...]]:
-    """`folded` with letter-spaced runs closed up, and its map back to the original text."""
+# Letter-spacing ("s y n e r g y", "P.r.o.j.e.c.t", "n e x t - g e n"): four
+# or more single characters, each followed by a separator, optionally padded
+# with spaces. Real prose almost never does it.
+_SPACED = re.compile(r"(?<!\w)\w(?:(?: ?[._\-\u00b7] ?| )\w){3,}(?!\w)")
+_ARTICLE = re.compile(r"[ai] (?=\w(?:(?: ?[._\-\u00b7] ?| )\w){3,}(?!\w))", re.IGNORECASE)
+
+
+def _unspaced(folded: str, index: tuple[int, ...], skip_article: bool = False) -> tuple[str, tuple[int, ...]]:
+    """`folded` with letter-spaced runs closed up, and its map back to the
+    original text. With `skip_article`, a run's leading "a" or "I" is left as a
+    word of its own."""
     if not _SPACED.search(folded):
         return folded, index
     keep = [True] * len(folded)
     for m in _SPACED.finditer(folded):
-        for k in range(m.start() + 1, m.end(), 2):
-            keep[k] = False
+        start = m.start()
+        if skip_article and (a := _ARTICLE.match(folded, start)):
+            start = a.end()
+        for k in range(start, m.end()):
+            if not folded[k].isalnum() and folded[k] != "_":
+                keep[k] = False
     out = "".join(c for c, k in zip(folded, keep, strict=True) if k)
     return out, tuple(i for i, k in zip(index, [*keep, True], strict=True) if k)
 
@@ -188,6 +205,17 @@ _MIXED = re.compile(r"(?=[\w@$]*[A-Za-z])(?=[\w@$]*[0-9@$])[\w@$]+")
 def _unleet(folded: str, index: tuple[int, ...]) -> tuple[str, tuple[int, ...]]:
     """Leetspeak read as letters; one character in, one out, so the index map holds."""
     return _MIXED.sub(lambda m: m.group(0).translate(_LEET), folded), index
+
+
+def leet_digits(escaped: str) -> str:
+    """A regex-escaped term with each digit also accepting its leetspeak letter.
+    The leet pass reads "10x" as "iox", so a term that really contains digits
+    ("10x engineer") must accept both readings to survive "10x 3ng1n33r"."""
+    def both(m: re.Match[str]) -> str:
+        letter = _LEET.get(ord(m.group(0)))
+        return f"[{m.group(0)}{letter}]" if letter else m.group(0)
+
+    return re.sub(r"[0-9]", both, escaped)
 
 
 def sub_folded(pattern: re.Pattern[str], text: str, repl: Callable[[str], str]) -> str:
@@ -217,7 +245,7 @@ _SEP = r"[\s_\-]*"
 def term_pattern(term: str, *, loose: bool = False) -> re.Pattern[str]:
     # Patterns run against folded text (find_folded), so fold the term too: an
     # admin who typed "Projekt\u2011Lumen" with a non-breaking hyphen still matches.
-    parts = [re.escape(p) for p in _SPLIT.split(fold(term.strip(), "drop")[0]) if p]
+    parts = [leet_digits(re.escape(p)) for p in _SPLIT.split(fold(term.strip(), "drop")[0]) if p]
     if not parts:
         # A term made only of dashes, emoji or invisible characters folds to
         # nothing. It can't be matched, and raising here used to break every

@@ -27,7 +27,7 @@ from verytas.checks.color import (
     rgb_to_lab,
 )
 from verytas.checks.readability import flesch_kincaid_grade, words
-from verytas.security.terms import _NEVER, find_folded, fold, term_pattern
+from verytas.security.terms import _NEVER, find_folded, fold, leet_digits, term_pattern
 
 CHECKER = "deterministic"
 log = logging.getLogger("verytas.checks")
@@ -62,7 +62,7 @@ def run_deterministic(ctx: CheckContext, problems: list[tuple[str, str, str]] | 
 
 # --- helpers -----------------------------------------------------------------
 
-def _term_regex(term: str, plural: bool = False) -> re.Pattern[str]:
+def _term_regex(term: str, plural: bool = False, joined: bool = False) -> re.Pattern[str]:
     # Word boundaries that also work for terms starting/ending in punctuation.
     # Compiled from the folded term, since it is matched against folded text.
     # Emoji in a term are dropped: emoji are matched by banned_emoji rules, and
@@ -70,15 +70,27 @@ def _term_regex(term: str, plural: bool = False) -> re.Pattern[str]:
     core = fold(term, "drop")[0].strip()
     if not core:
         return _NEVER
-    # Banned terms also catch their plural ("game-changers") and any spacing
-    # between their words ("gamechanger", "#insanedeals"). Preferred terms
-    # don't: "e-mail" loosened that way would flag "email", the fix itself.
-    if plural:
-        body = r"[\s_\-]*".join(re.escape(w) for w in re.split(r"[\s_\-]+", core) if w)
-        tail = r"(?:e?s)?" if core[-1:].isalpha() else ""
+    # `joined` takes any spacing between the term's words ("gamechanger",
+    # "#insanedeals"); `plural` takes a simple plural, captured as "tail" so a
+    # suggested fix can keep it.
+    if joined:
+        body = r"[\s_\-]*".join(leet_digits(re.escape(w)) for w in re.split(r"[\s_\-]+", core) if w)
     else:
-        body, tail = re.escape(core), ""
+        body = leet_digits(re.escape(core))
+    tail = r"(?P<tail>e?s)?" if plural and core[-1:].isalpha() else ""
     return re.compile(rf"(?<![\w-]){body}{tail}(?![\w-])", re.IGNORECASE)
+
+
+def _preferred_regex(wrong: str, right: str) -> re.Pattern[str]:
+    """The loosest pattern for `wrong` that does not also match `right`: loosened
+    blindly, "e-mail" would flag "email", the fix itself, and "log in" would flag
+    "login"."""
+    fix = fold(right, "drop")[0]
+    for joined, plural in ((True, True), (False, True)):
+        pattern = _term_regex(wrong, plural=plural, joined=joined)
+        if not pattern.search(fix):
+            return pattern
+    return _term_regex(wrong)
 
 
 def _paragraph_for(ctx: CheckContext, offset: int) -> Unit:
@@ -119,16 +131,19 @@ def _finding(ctx: CheckContext, rule: RuleView, start: int, end: int, title: str
 @matcher("banned_terms")
 def banned_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     for term in rule.pattern.get("terms", []):
-        for start, end, _ in find_folded(_term_regex(term, plural=True), ctx.body):
+        for start, end, _ in find_folded(_term_regex(term, plural=True, joined=True), ctx.body):
             yield _finding(ctx, rule, start, end, f'Avoid "{ctx.body[start:end]}"', rule.text)
 
 
 @matcher("preferred_terms")
 def preferred_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     for wrong, right in rule.pattern.get("map", {}).items():
-        for start, end, folded in find_folded(_term_regex(wrong), ctx.body):
+        pattern = _preferred_regex(wrong, right)
+        for start, end, folded in find_folded(pattern, ctx.body):
             original = ctx.body[start:end]
-            proposed = _match_case(folded, right)
+            m = pattern.fullmatch(folded)
+            tail = (m.groupdict().get("tail") or "") if m and right[-1:].isalpha() else ""
+            proposed = _match_case(folded, right + tail)
             yield _finding(
                 ctx, rule, start, end, f'Use "{right}" instead of "{original}"', rule.text,
                 SuggestedEdit(original, proposed, f"House style ({rule.code}) prefers '{right}'."),

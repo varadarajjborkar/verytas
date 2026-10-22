@@ -141,9 +141,58 @@ def test_letter_spaced_terms_and_codenames_are_caught_and_redacted():
     assert run_deterministic(make_ctx("I a m fine, a b c. Rated 4 . 5 stars", [r])) == []
 
 
-def test_banned_terms_catch_plurals_but_preferred_terms_do_not():
+def test_banned_terms_catch_plurals():
     banned = rule("TERM-04", {"type": "banned_terms", "terms": ["game-changer"]})
     found = run_deterministic(make_ctx("Two game-changers in one week", [banned]))
     assert [f.quote for f in found] == ["game-changers"]
-    preferred = rule("TERM-05", {"type": "preferred_terms", "map": {"e-mail": "email"}})
-    assert run_deterministic(make_ctx("Check your e-mails", [preferred])) == []
+
+
+@pytest.mark.parametrize(("written", "proposed"), [
+    ("secret formulas", "methods"),
+    ("secretformula", "method"),
+    ("s e c r e t f o r m u l a", "method"),
+    ("SECRET FORMULA", "METHOD"),
+])
+def test_preferred_terms_see_through_spacing_and_plurals(written, proposed):
+    r = rule("TERM-05", {"type": "preferred_terms", "map": {"secret formula": "method"}})
+    [f] = run_deterministic(make_ctx(f"They call it {written} now", [r]))
+    assert f.quote == written and f.suggestion.proposed == proposed
+
+
+@pytest.mark.parametrize(("wrong", "right", "flagged", "clean"), [
+    ("e-mail", "email", "Check your e-mails", "Check your email"),
+    ("log in", "login", "Two log ins", "Use the login page"),
+])
+def test_preferred_terms_never_flag_their_own_fix(wrong, right, flagged, clean):
+    r = rule("TERM-05", {"type": "preferred_terms", "map": {wrong: right}})
+    assert len(run_deterministic(make_ctx(flagged, [r]))) == 1
+    assert run_deterministic(make_ctx(clean, [r])) == []
+
+
+def test_leetspeak_and_glued_terms_are_caught_but_real_numbers_are_not():
+    terms = [TermView(1, "Project Lantern", date(2099, 1, 1))]
+    body = "Psst, Pr0j3c7 L4n73rn lands soon"
+    assert any(f.rule_code == "CONF-LEAK" for f in run_deterministic(make_ctx(body, system_rule_views(), terms=terms)))
+    assert "L4n73rn" not in Redactor(["Project Lantern"]).redact(body)
+    banned = rule("TERM-06", {"type": "banned_terms", "terms": ["insane deals"]})
+    assert [f.quote for f in run_deterministic(make_ctx("Tag it #insanedeals", [banned]))] == ["insanedeals"]
+    # A term that really contains digits still matches when the rest is leet.
+    tenx = rule("TERM-07", {"type": "preferred_terms", "map": {"10x engineer": "engineer"}})
+    for written in ("10x 3ng1n33r", "1 0 x e n g i n e e r", "#10xengineer"):
+        found = run_deterministic(make_ctx(f"Hiring our {written} today", [tenx]))
+        assert [f.quote for f in found] == [written.lstrip("#")]
+    # Digits that are plainly numbers stay numbers.
+    plain = "4G and 5G plans for B2B in 2026, rated 4.5 by 10k teams"
+    assert run_deterministic(make_ctx(plain, system_rule_views(), terms=terms)) == []
+    assert Redactor(["Project Lantern"]).redact(plain) == plain
+
+
+@pytest.mark.parametrize(("term", "body", "quote"), [
+    ("next-gen", "Our word for it was n e x t - g e n.", "n e x t - g e n"),
+    ("risk-free", "Honestly this one is a r i s k - f r e e plan", "r i s k - f r e e"),
+    ("amazing", "Honestly this one is a m a z i n g today", "a m a z i n g"),
+    ("insane", "I think I n s a n e is the word", "I n s a n e"),
+])
+def test_spaced_terms_with_hyphens_or_after_a_lone_article(term, body, quote):
+    r = rule("TERM-08", {"type": "banned_terms", "terms": [term]})
+    assert [f.quote for f in run_deterministic(make_ctx(body, [r]))] == [quote]
