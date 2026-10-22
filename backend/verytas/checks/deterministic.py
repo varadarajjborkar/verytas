@@ -27,7 +27,7 @@ from verytas.checks.color import (
     rgb_to_lab,
 )
 from verytas.checks.readability import flesch_kincaid_grade, words
-from verytas.security.terms import find_folded, fold, term_pattern
+from verytas.security.terms import _NEVER, find_folded, fold, term_pattern
 
 CHECKER = "deterministic"
 log = logging.getLogger("verytas.checks")
@@ -65,7 +65,12 @@ def run_deterministic(ctx: CheckContext, problems: list[tuple[str, str, str]] | 
 def _term_regex(term: str) -> re.Pattern[str]:
     # Word boundaries that also work for terms starting/ending in punctuation.
     # Compiled from the folded term, since it is matched against folded text.
-    return re.compile(rf"(?<![\w-]){re.escape(fold(term)[0])}(?![\w-])", re.IGNORECASE)
+    # Emoji in a term are dropped: emoji are matched by banned_emoji rules, and
+    # left in, one would fold to a space and match any space in the text.
+    core = fold(term, "drop")[0].strip()
+    if not core:
+        return _NEVER
+    return re.compile(rf"(?<![\w-]){re.escape(core)}(?![\w-])", re.IGNORECASE)
 
 
 def _paragraph_for(ctx: CheckContext, offset: int) -> Unit:
@@ -332,3 +337,33 @@ def palette(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
                     ),
                     confidence=1.0, checker=CHECKER, rule_code=rule.code,
                 )
+
+
+# --- emoji -----------------------------------------------------------------------
+
+@matcher("emoji_a11y")
+def emoji_a11y(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
+    from verytas.checks.emoji import accessibility_issues
+
+    for start, end, problem in accessibility_issues(ctx.body, int(rule.pattern.get("max_run", 3))):
+        yield _finding(ctx, rule, start, end, problem[0].upper() + problem[1:], rule.text)
+
+
+@matcher("emoji_risk")
+def emoji_gesture(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
+    """Only what is never on-brand is flagged here; context-dependent emoji are judged in prism/onion.py."""
+    from verytas.checks.emoji import lexicon_hits
+
+    for hit in lexicon_hits(ctx.body):
+        if hit.kind == "gesture":
+            yield _finding(ctx, rule, hit.start, hit.end, f"Obscene gesture emoji: {hit.reading}", rule.text)
+
+
+@matcher("banned_emoji")
+def banned_emoji(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
+    banned = {e.replace("\ufe0f", "") for e in rule.pattern.get("emojis", [])}
+    from verytas.checks.emoji import _clusters
+
+    for start, end, cluster in _clusters(ctx.body):
+        if cluster.replace("\ufe0f", "") in banned or cluster[0] in banned:
+            yield _finding(ctx, rule, start, end, f"Emoji {cluster} is not used by this brand", rule.text)

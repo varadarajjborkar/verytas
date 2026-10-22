@@ -37,7 +37,9 @@ def _score_question(rule: RuleView) -> Question:
                     list(rule.pattern["levels"]))
 
 
-async def check_semantic(ctx: CheckContext, judge: JudgeProvider, *, threshold: float) -> list[RawFinding]:
+async def check_semantic(ctx: CheckContext, judge: JudgeProvider, *, threshold: float,
+                         per_rule: dict[str, float] | None = None) -> list[RawFinding]:
+    """`per_rule` holds thresholds learned from disputes and decisions (prism/disputes.py)."""
     noul_rules = [r for r in ctx.rules if r.kind == "semantic" and r.pattern.get("type") != "voice_score"]
     score_rules = [r for r in ctx.rules if r.kind == "semantic" and r.pattern.get("type") == "voice_score"
                    and len(r.pattern.get("levels", [])) >= 2]
@@ -55,12 +57,14 @@ async def check_semantic(ctx: CheckContext, judge: JudgeProvider, *, threshold: 
     for para, answers in zip(paragraphs, results, strict=True):
         for key, answer in answers.items():
             rule = by_key[key]
-            if answer.type == "noul" and answer.p_yes >= threshold:
+            if answer.type == "noul" and answer.p_yes >= (per_rule or {}).get(rule.code, threshold):
                 confidence = answer.p_yes
                 title = f"May break {rule.code}: {rule.title}"
             elif answer.type == "score":
                 levels = rule.pattern["levels"]
-                floor = float(rule.pattern.get("min_level", (len(levels) - 1) / 2))
+                # A stored pattern can carry min_level: null; that means "use the midpoint".
+                min_level = rule.pattern.get("min_level")
+                floor = float(min_level) if min_level is not None else (len(levels) - 1) / 2
                 if float(answer.value) >= floor:
                     continue
                 # Probability mass below the floor is what we are actually claiming.

@@ -102,3 +102,31 @@ class RawFinding:
     suggestion: SuggestedEdit | None = None
     model: str | None = None  # set when an AI model produced or scored this finding
     needs_explanation: bool = False  # deterministic findings arrive pre-explained
+    source: str = "body"  # which text the span points into (see Source)
+    locator: dict[str, Any] | None = None  # page / image / pixel box for non-body sources
+    # Set by the intent and dispute agents: the highest level this finding may
+    # take (e.g. "advisory" once a reading is shown to be far-fetched), and why.
+    level_cap: str | None = None
+    assessment: dict[str, Any] | None = None
+
+
+@dataclass
+class Source:
+    """A piece of text Prism found in a submission, and how it was obtained.
+
+    The body is one source. Others come from documents and images: a PDF's
+    text layer, OCR of a screenshot pasted into a page, OCR of a scanned page.
+    Every source is checked with the same text pipeline; `route` and
+    `confidence` say how much to trust the text itself.
+    """
+
+    id: str
+    kind: str  # body | pdf_text | docx_text | ocr
+    text: str
+    route: str  # typed | pdf-text-layer | docx | ocr:local | ocr:vision | ocr:local+vision
+    confidence: float = 1.0
+    locator: dict[str, Any] = field(default_factory=dict)
+    parent: str | None = None
+    # For timed sources (captions, speech): (char_start, char_end, t_start, t_end)
+    # per cue, so a finding's span maps back to the moment in the video.
+    timeline: list[tuple[int, int, float, float]] = field(default_factory=list)
