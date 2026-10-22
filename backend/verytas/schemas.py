@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer, field_validator, model_validator
 
 from verytas.checks.patterns import validate_pattern
 from verytas.models import (
@@ -21,7 +21,18 @@ from verytas.models import (
 )
 
 
-class ORM(BaseModel):
+class UTCModel(BaseModel):
+    """Times leave the API marked as UTC. SQLite returns them without a zone,
+    and a browser would read a zone-less time as local, hours off."""
+
+    @field_serializer("*", mode="wrap")
+    def _utc(self, value: Any, handler: Any) -> Any:
+        if isinstance(value, datetime) and value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return handler(value)
+
+
+class ORM(UTCModel):
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -271,7 +282,7 @@ class ContentOut(ORM):
     created_at: datetime
 
 
-class LatestReview(BaseModel):
+class LatestReview(UTCModel):
     id: int
     status: str
     overall: float | None = None

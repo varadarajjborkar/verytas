@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from verytas.api.deps import CurrentUser, Session
 from verytas.models import ChatThread, utcnow
+from verytas.schemas import UTCModel
 
 router = APIRouter(tags=["chats"])
 
@@ -47,7 +48,7 @@ class ThreadIn(BaseModel):
     messages: list[ChatMessage] = Field(max_length=MAX_MESSAGES)
 
 
-class ThreadSummary(BaseModel):
+class ThreadSummary(UTCModel):
     id: int
     title: str
     updated_at: datetime

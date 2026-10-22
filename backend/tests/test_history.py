@@ -16,7 +16,10 @@ def test_chat_threads_are_private_and_round_trip(client, world):
     ]})
     assert made.status_code == 201
     tid = made.json()["id"]
-    assert [t["id"] for t in client.get("/chats", headers=me).json()] == [tid]
+    listed = client.get("/chats", headers=me).json()
+    assert [t["id"] for t in listed] == [tid]
+    # Marked UTC, so a browser doesn't read it as local time.
+    assert listed[0]["updated_at"].endswith(("Z", "+00:00"))
     assert client.get("/chats", headers=other).json() == []
     assert client.get(f"/chats/{tid}", headers=other).status_code == 404
     assert client.put(f"/chats/{tid}", headers=other, json={"title": "x", "messages": []}).status_code == 404

@@ -19,7 +19,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
-from verytas.api.content import list_contents
+from verytas.api.content import _aware, list_contents
 from verytas.api.deps import CurrentUser, Session
 from verytas.api.insights import guideline_health, overview, recurring
 from verytas.models import ConfidentialTerm, Content, ContentVersion, Finding, Review, Role, Tier
@@ -64,7 +64,7 @@ async def _detail(session: Session, content_id: int) -> dict[str, Any]:
     for v in versions:
         r = last_review.get(v.id)
         s = (r.summary or {}) if r else {}
-        history.append({"version": v.version_no, "created_at": v.created_at.isoformat(),
+        history.append({"version": v.version_no, "created_at": _aware(v.created_at).isoformat(),
                         "review": r.status if r else None, "score": s.get("overall"),
                         "blockers": s.get("blockers", 0), "warnings": s.get("warnings", 0)})
     latest = last_review.get(versions[-1].id) if versions else None
@@ -86,7 +86,7 @@ async def context(session: Session, user: CurrentUser, q: str = Query("", max_le
     rows = [r for r in await list_contents(session, user, state=None, mine=False, limit=200)
             if r.tier != Tier.confidential][:MAX_LISTED]
     items = [{"id": r.id, "title": r.title, "channel": r.channel, "status": r.status, "mine": r.created_by == user.id,
-              "versions": r.version_count, "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+              "versions": r.version_count, "updated_at": _aware(r.updated_at).isoformat() if r.updated_at else None,
               "latest_review": r.latest_review.model_dump(mode="json") if r.latest_review else None}
              for r in rows]
 
