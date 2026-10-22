@@ -81,3 +81,48 @@ def test_scorecard_headline_is_weakest_checked_category():
     assert card.categories["visual"]["score"] is None and not card.categories["visual"]["checked"]
     assert card.overall == card.categories["confidentiality"]["score"] == 0.5
     assert card.blockers == 1
+
+
+async def test_no_unchecked_fix_survives_a_failing_intent_check():
+    import pytest
+
+    from verytas.prism.suggest import Fix, FixList, explain_and_fix
+
+    class Writer:
+        name = "fake/llm"
+
+        async def run(self, task):
+            return FixList(fixes=[Fix(key=k, explanation="Too jargony.", original="leverage synergies",
+                                      proposed="work together") for k, _, _ in task.items])
+
+    class DownJudge:
+        name = "typesafe/jev"
+
+        async def ask(self, state, questions):
+            raise ProviderUnavailable("judge down")
+
+    f = RawFinding(unit_id="p1", category="tone", title="t", explanation="e", confidence=0.8, checker="semantic",
+                   rule_code="VOICE-01", quote="We leverage synergies.", needs_explanation=True)
+    with pytest.raises(ProviderUnavailable):
+        await explain_and_fix([f], {}, Writer(), DownJudge())
+    assert f.suggestion is None and f.explanation == "Too jargony."
+
+
+async def test_shared_slots_cap_concurrent_provider_calls():
+    from verytas.providers.base import Answer
+
+    live = {"now": 0, "peak": 0}
+
+    class Slow:
+        name = "slow"
+
+        async def ask(self, state, questions):
+            live["now"] += 1
+            live["peak"] = max(live["peak"], live["now"])
+            await asyncio.sleep(0.01)
+            live["now"] -= 1
+            return {k: Answer("noul", 0.1) for k in questions}
+
+    judge = GuardedJudge(Slow(), CircuitBreaker(), asyncio.Semaphore(3))
+    await asyncio.gather(*(judge.ask("x", {"q": Question("noul", "?")}) for _ in range(20)))
+    assert live["peak"] == 3

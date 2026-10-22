@@ -124,3 +124,29 @@ async def test_voice_score_flags_below_floor():
     findings = await check_semantic(make_ctx("Some copy.", [voice]), LowScore(), threshold=0.6)
     [f] = findings
     assert f.confidence == pytest.approx(0.6) and "off-brand" in f.title
+
+
+COUNTRIES = FactView(6, "Verytas is used in 40 countries", 40, "countries", "countries", "Board deck Q3",
+                     date(2026, 7, 1), None)
+
+
+async def test_each_number_is_checked_against_its_own_fact():
+    assert await _run("Verytas is used by 800 teams in 40 countries.", [COUNTRIES, TEAMS_NOW]) == []
+    assert await _run("Verytas is used by 800 teams in 40 countries.", [TEAMS_NOW, COUNTRIES]) == []
+
+
+async def test_a_later_wrong_number_is_caught_and_fixed():
+    [f] = await _run("Verytas is used by 800 teams in 90 countries.", [TEAMS_NOW, COUNTRIES])
+    assert f.rule_code == "CLAIM-CONTRADICTED" and f.fact_id == 6
+    assert f.suggestion.proposed == "Verytas is used by 800 teams in 40 countries."
+
+
+async def test_unmatched_figure_is_unsupported():
+    [f] = await _run("Verytas is used by 800 teams across 12 industries.", [TEAMS_NOW])
+    assert f.rule_code == "CLAIM-UNSUPPORTED" and '"12"' in f.explanation
+
+
+def test_rank_is_not_a_quantity():
+    from verytas.checks.claims import parse_numbers
+
+    assert [n.value for n in parse_numbers("The #1 tool, used by 800 teams")] == [800]

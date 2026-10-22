@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
+from verytas.checks.patterns import validate_pattern
 from verytas.models import (
     ContentStatus,
     DecisionAction,
@@ -69,9 +70,8 @@ class RuleIn(BaseModel):
     tier: Tier = Tier.internal
 
     @model_validator(mode="after")
-    def deterministic_rules_need_a_matcher(self) -> RuleIn:
-        if self.kind is RuleKind.deterministic and "type" not in self.pattern:
-            raise ValueError("deterministic rules need pattern.type (e.g. banned_terms, preferred_terms, palette)")
+    def pattern_matches_its_matcher(self) -> RuleIn:
+        self.pattern = validate_pattern(self.kind.value, self.pattern)
         return self
 
 
@@ -159,8 +159,8 @@ class ImageIn(BaseModel):
 
 
 class ColorPairIn(BaseModel):
-    fg: str
-    bg: str
+    fg: str = Field(pattern=r"^#?(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$")
+    bg: str = Field(pattern=r"^#?(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$")
     where: str | None = None
     large: bool = False
 

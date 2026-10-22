@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 import math
 import re
+import warnings
 from collections.abc import Callable, Iterator
 
 import numpy as np
@@ -28,6 +30,7 @@ from verytas.checks.readability import flesch_kincaid_grade, words
 from verytas.security.terms import term_pattern
 
 CHECKER = "deterministic"
+log = logging.getLogger("verytas.checks")
 Matcher = Callable[[CheckContext, RuleView], Iterator[RawFinding]]
 _MATCHERS: dict[str, Matcher] = {}
 
@@ -40,12 +43,20 @@ def matcher(pattern_type: str):
     return register
 
 
-def run_deterministic(ctx: CheckContext) -> list[RawFinding]:
+def run_deterministic(ctx: CheckContext, problems: list[tuple[str, str, str]] | None = None) -> list[RawFinding]:
+    """Run every deterministic rule. A rule that crashes is isolated and reported
+    in `problems` as (code, category, error) instead of taking the others down."""
     findings: list[RawFinding] = []
     for rule in ctx.rules:
         fn = _MATCHERS.get(rule.pattern.get("type", ""))
-        if fn is not None and rule.kind == "deterministic":
+        if fn is None or rule.kind != "deterministic":
+            continue
+        try:
             findings.extend(fn(ctx, rule))
+        except Exception as exc:  # noqa: BLE001, isolate per rule
+            log.exception("rule %s crashed", rule.code)
+            if problems is not None:
+                problems.append((rule.code, rule.category, type(exc).__name__))
     return findings
 
 
@@ -158,13 +169,20 @@ def alt_text(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
 @matcher("contrast")
 def contrast(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     for i, pair in enumerate(ctx.attachments.get("colors", []), start=1):
+        where = pair.get("where", f"colour pair {i}")
         try:
             ratio = contrast_ratio(hex_to_rgb(pair["fg"]), hex_to_rgb(pair["bg"]))
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, TypeError):
+            # An unreadable pair is not a pass: say it could not be checked.
+            yield RawFinding(
+                unit_id=f"color:{i}", category=rule.category, title=f"Could not check contrast in {where}",
+                explanation=f"The colours given ({pair.get('fg')!r} on {pair.get('bg')!r}) are not hex values, so "
+                            "contrast was not measured. Provide hex colours to verify it.",
+                confidence=1.0, checker=CHECKER, rule_code=rule.code,
+            )
             continue
         minimum = float(rule.pattern.get("min_ratio_large" if pair.get("large") else "min_ratio", 4.5))
         if ratio < minimum:
-            where = pair.get("where", f"colour pair {i}")
             yield RawFinding(
                 unit_id=f"color:{i}", category=rule.category,
                 title=f"Low contrast in {where}: {ratio:.2f}:1 (needs {minimum:g}:1)",
@@ -238,16 +256,27 @@ def readability(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
 
 # --- visual ------------------------------------------------------------------
 
+# Far beyond any real social or web image; anything bigger is refused before decoding.
+_MAX_PIXELS = 40_000_000
+
+
 def _decode_image(img: dict) -> np.ndarray | None:
     data = img.get("data_base64")
     if not data:
         return None
     try:
-        with Image.open(io.BytesIO(base64.b64decode(data, validate=True))) as im:
-            im = im.convert("RGB")
-            im.thumbnail((96, 96))
-            return np.asarray(im)
-    except (ValueError, UnidentifiedImageError, OSError):
+        with warnings.catch_warnings():
+            # Pillow only warns between 1x and 2x its own limit; treat that as an error too.
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(base64.b64decode(data, validate=True))) as im:
+                if im.width * im.height > _MAX_PIXELS:
+                    return None
+                im.draft("RGB", (192, 192))  # let JPEG decode at reduced size
+                im = im.convert("RGB")
+                im.thumbnail((96, 96))
+                return np.asarray(im)
+    except (ValueError, UnidentifiedImageError, OSError, Image.DecompressionBombError,
+            Image.DecompressionBombWarning):
         return None
 
 
@@ -267,6 +296,14 @@ def palette(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     for i, img in enumerate(ctx.attachments.get("images", []), start=1):
         pixels = _decode_image(img)
         if pixels is None:
+            if img.get("data_base64"):
+                yield RawFinding(
+                    unit_id=f"img:{img.get('id', i)}", category=rule.category,
+                    title=f"Could not analyse image {img.get('id', i)} for brand colours",
+                    explanation="The image could not be decoded safely (corrupt, unsupported or implausibly large), "
+                                "so its palette was not checked.",
+                    confidence=1.0, checker=CHECKER, rule_code=rule.code,
+                )
             continue
         for colour, share in dominant_colours(pixels, k=5):
             if share < min_share or (allow_neutrals and _chroma(colour) < 8):

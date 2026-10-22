@@ -100,10 +100,37 @@ def test_palette_flags_off_brand_colour_but_allows_neutrals():
     assert run_deterministic(make_ctx("x", [r], attachments=on_brand)) == []
 
 
-def test_bad_image_data_is_ignored_not_fatal():
+def test_bad_image_data_is_reported_not_fatal_and_not_passed():
     r = rule("VIS-01", {"type": "palette", "colors": ["#0A84FF"]}, category="visual")
     att = {"images": [{"id": "x", "alt": "x", "data_base64": "not-base64!!"}]}
-    assert run_deterministic(make_ctx("x", [r], attachments=att)) == []
+    [f] = run_deterministic(make_ctx("x", [r], attachments=att))
+    assert f.title.startswith("Could not analyse image x")
+
+
+def test_decompression_bomb_is_refused():
+    im = Image.new("1", (12_000, 12_000))  # 144M pixels, tiny once compressed
+    buf = io.BytesIO()
+    im.save(buf, format="PNG")
+    r = rule("VIS-01", {"type": "palette", "colors": ["#0A84FF"]}, category="visual")
+    att = {"images": [{"id": "bomb", "alt": "x", "data_base64": base64.b64encode(buf.getvalue()).decode()}]}
+    [f] = run_deterministic(make_ctx("x", [r], attachments=att))
+    assert "Could not analyse" in f.title
+
+
+def test_unparseable_colours_are_reported():
+    att = {"colors": [{"fg": "red", "bg": "#ffffff", "where": "hero"}]}
+    findings = [f for f in run_deterministic(make_ctx("x", system_rule_views(), attachments=att))
+                if f.rule_code == "A11Y-CONTRAST"]
+    assert findings and findings[0].title == "Could not check contrast in hero"
+
+
+def test_one_broken_rule_does_not_sink_the_others():
+    broken = rule("TERM-X", {"type": "preferred_terms", "map": ["not", "a", "dict"]})
+    good = rule("TERM-01", {"type": "banned_terms", "terms": ["synergy"]}, rid=101)
+    problems = []
+    findings = run_deterministic(make_ctx("Synergy wins.", [broken, good]), problems)
+    assert [f.rule_code for f in findings] == ["TERM-01"]
+    assert problems == [("TERM-X", "terminology", "AttributeError")]
 
 
 def test_syllable_heuristic_on_common_words():
