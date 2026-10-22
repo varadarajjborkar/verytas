@@ -146,14 +146,48 @@ def find_folded(pattern: re.Pattern[str], text: str) -> Iterator[tuple[int, int,
     """Matches of `pattern` in the folded text as (start, end, folded match),
     with start and end pointing into the original text."""
     seen: set[tuple[int, int]] = set()
-    for mode in ("space", "drop"):
-        folded, index = fold(text, mode)
+    for mode in ("space", "drop", "spaced", "leet"):
+        if mode == "spaced":
+            folded, index = _unspaced(*fold(text, "drop"))
+        elif mode == "leet":
+            folded, index = _unleet(*_unspaced(*fold(text, "drop")))
+        else:
+            folded, index = fold(text, mode)
         for m in pattern.finditer(folded):
             if m.end() > m.start():
                 span = (index[m.start()], index[m.end() - 1] + 1)
                 if span not in seen and not any(a <= span[0] and span[1] <= b for a, b in seen):
                     seen.add(span)
                     yield span[0], span[1], m.group(0)
+
+
+# Letter-spacing ("s y n e r g y", "P.r.o.j.e.c.t"): four or more single
+# characters, each followed by one separator. Real prose almost never does it.
+_SPACED = re.compile(r"(?<!\w)(?:\w[ ._\-\u00b7]){3,}\w(?!\w)")
+
+
+def _unspaced(folded: str, index: tuple[int, ...]) -> tuple[str, tuple[int, ...]]:
+    """`folded` with letter-spaced runs closed up, and its map back to the original text."""
+    if not _SPACED.search(folded):
+        return folded, index
+    keep = [True] * len(folded)
+    for m in _SPACED.finditer(folded):
+        for k in range(m.start() + 1, m.end(), 2):
+            keep[k] = False
+    out = "".join(c for c, k in zip(folded, keep, strict=True) if k)
+    return out, tuple(i for i, k in zip(index, [*keep, True], strict=True) if k)
+
+
+# Digits standing in for letters, read that way only inside words that mix
+# the two ("Pr0j3c7", "L4n73rn"), so "4G", "2026" and "B2B" stay as they are
+# unless they also spell a protected term.
+_LEET = str.maketrans({"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "8": "b", "@": "a", "$": "s"})
+_MIXED = re.compile(r"(?=[\w@$]*[A-Za-z])(?=[\w@$]*[0-9@$])[\w@$]+")
+
+
+def _unleet(folded: str, index: tuple[int, ...]) -> tuple[str, tuple[int, ...]]:
+    """Leetspeak read as letters; one character in, one out, so the index map holds."""
+    return _MIXED.sub(lambda m: m.group(0).translate(_LEET), folded), index
 
 
 def sub_folded(pattern: re.Pattern[str], text: str, repl: Callable[[str], str]) -> str:
