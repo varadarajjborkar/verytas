@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
@@ -39,12 +40,14 @@ from verytas.schemas import (
     CommentOut,
     ContentDetail,
     ContentIn,
+    ContentListItem,
     ContentOut,
     DecisionIn,
     DecisionOut,
     DisputeIn,
     DisputeOut,
     FindingOut,
+    LatestReview,
     ResubmitIn,
     ResubmitOut,
     ReviewOut,
@@ -261,13 +264,54 @@ async def apply_fixes(content_id: int, session: Session, user: Writer, prism: Pr
                      review_id=review_id)
 
 
-@router.get("/contents", response_model=list[ContentOut])
-async def list_contents(session: Session, user: CurrentUser, state: ContentStatus | None = None) -> list[Content]:
+@router.get("/contents", response_model=list[ContentListItem])
+async def list_contents(session: Session, user: CurrentUser, state: ContentStatus | None = None,
+                        mine: bool = False, limit: int = Query(200, ge=1, le=500)) -> list[ContentListItem]:
+    """Newest activity first, each with its latest review's outcome, so a history list needs one call."""
     q = select(Content).where(Content.workspace_id == user.workspace_id)
     if state:
         q = q.where(Content.status == state)
-    rows = (await session.scalars(q.order_by(Content.id.desc()))).all()
-    return [c for c in rows if can_read(user, c.tier)]
+    if mine:
+        q = q.where(Content.created_by == user.id)
+    rows = [c for c in (await session.scalars(q.order_by(Content.id.desc()))).all() if can_read(user, c.tier)]
+    if not rows:
+        return []
+    ids = [c.id for c in rows]
+    versions = (await session.execute(
+        select(ContentVersion.id, ContentVersion.content_id, ContentVersion.created_at)
+        .where(ContentVersion.content_id.in_(ids)))).all()
+    content_of = {v.id: v.content_id for v in versions}
+    count: dict[int, int] = {}
+    last_edit: dict[int, datetime] = {}
+    for v in versions:
+        count[v.content_id] = count.get(v.content_id, 0) + 1
+        last_edit[v.content_id] = max(last_edit.get(v.content_id, v.created_at), v.created_at)
+    latest: dict[int, Review] = {}
+    for r in (await session.scalars(
+            select(Review).where(Review.version_id.in_(list(content_of))).order_by(Review.id.desc()))).all():
+        latest.setdefault(content_of[r.version_id], r)
+
+    out = []
+    for c in rows:
+        item = ContentListItem.model_validate(c)
+        item.version_count = count.get(c.id, 0)
+        r = latest.get(c.id)
+        item.updated_at = max(filter(None, [last_edit.get(c.id), r.finished_at if r else None]), default=c.created_at)
+        if r is not None:
+            s = r.summary or {}
+            item.latest_review = LatestReview(id=r.id, status=r.status, overall=s.get("overall"),
+                                              blockers=s.get("blockers", 0), warnings=s.get("warnings", 0),
+                                              advisories=s.get("advisories", 0), finished_at=r.finished_at)
+        out.append(item)
+    out.sort(key=lambda i: _aware(i.updated_at), reverse=True)
+    return out[:limit]
+
+
+def _aware(t: datetime | None) -> datetime:
+    """SQLite hands back naive datetimes; compare everything as UTC."""
+    if t is None:
+        return datetime.min.replace(tzinfo=UTC)
+    return t if t.tzinfo else t.replace(tzinfo=UTC)
 
 
 @router.get("/contents/{content_id}", response_model=ContentDetail)

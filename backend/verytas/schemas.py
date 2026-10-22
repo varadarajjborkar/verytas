@@ -271,6 +271,24 @@ class ContentOut(ORM):
     created_at: datetime
 
 
+class LatestReview(BaseModel):
+    id: int
+    status: str
+    overall: float | None = None
+    blockers: int = 0
+    warnings: int = 0
+    advisories: int = 0
+    finished_at: datetime | None = None
+
+
+class ContentListItem(ContentOut):
+    """A row in a review history list: where the piece stands, at a glance."""
+
+    version_count: int = 0
+    updated_at: datetime | None = None
+    latest_review: LatestReview | None = None
+
+
 class ContentDetail(ContentOut):
     versions: list[VersionOut]
     latest_review_id: int | None = None
