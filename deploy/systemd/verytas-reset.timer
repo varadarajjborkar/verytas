@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily check for the 14-day Verytas demo reset
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Asia/Kolkata
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,1 @@
+verytas ALL=(root) NOPASSWD: /usr/bin/systemctl stop verytas-api, /usr/bin/systemctl start verytas-api

@@ -1,0 +1,24 @@
+[Unit]
+Description=Verytas web (Next.js)
+After=network-online.target verytas-api.service
+
+[Service]
+User=verytas
+WorkingDirectory=/srv/verytas/app/web
+EnvironmentFile=/srv/verytas/etc/web.env
+Environment=HOME=/srv/verytas
+ExecStart=/usr/local/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000
+Restart=always
+RestartSec=3
+ReadWritePaths=/srv/verytas/app/web/.next /srv/verytas/.cache
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
