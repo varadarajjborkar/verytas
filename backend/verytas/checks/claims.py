@@ -37,14 +37,18 @@ class ClaimList(BaseModel):
     claims: list[ExtractedClaim]
 
 
+# Lookarounds instead of \b: "#1" starts with a non-word character, so a
+# leading \b could never match it after a space.
 _PROMO = re.compile(
-    r"\b(best|#1|number one|fastest|leading|only|most|first|unmatched|guaranteed?|world[- ]class|"
-    r"better than|faster than|cheaper than|more than|largest|biggest|top)\b",
+    r"(?<!\w)(best|#1|number one|fastest|leading|only|most|first|unmatched|guaranteed?|world[- ]class|"
+    r"better than|faster than|cheaper than|more than|largest|biggest|top)(?!\w)",
     re.IGNORECASE,
 )
+# Indian grouping ("1,40,000" = 140,000) is tried before Western grouping;
+# read the Western way it would parse as "1" and "40,000".
 _NUMBER = re.compile(
     r"(?P<prefix>\b(?:more than|over|at least|up to|nearly|almost)\s+)?"
-    r"(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
+    r"(?P<num>\d{1,2}(?:,\d{2})+,\d{3}(?:\.\d+)?|\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
     r"\s?(?P<mult>[kKmMbB]\b|thousand\b|million\b|billion\b)?"
     r"(?P<plus>\+)?\s?(?P<pct>%|percent\b)?",
     re.IGNORECASE,

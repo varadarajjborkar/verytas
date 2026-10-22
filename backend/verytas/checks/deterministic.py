@@ -27,7 +27,7 @@ from verytas.checks.color import (
     rgb_to_lab,
 )
 from verytas.checks.readability import flesch_kincaid_grade, words
-from verytas.security.terms import term_pattern
+from verytas.security.terms import find_folded, fold, term_pattern
 
 CHECKER = "deterministic"
 log = logging.getLogger("verytas.checks")
@@ -64,7 +64,8 @@ def run_deterministic(ctx: CheckContext, problems: list[tuple[str, str, str]] | 
 
 def _term_regex(term: str) -> re.Pattern[str]:
     # Word boundaries that also work for terms starting/ending in punctuation.
-    return re.compile(rf"(?<![\w-]){re.escape(term)}(?![\w-])", re.IGNORECASE)
+    # Compiled from the folded term, since it is matched against folded text.
+    return re.compile(rf"(?<![\w-]){re.escape(fold(term)[0])}(?![\w-])", re.IGNORECASE)
 
 
 def _paragraph_for(ctx: CheckContext, offset: int) -> Unit:
@@ -97,32 +98,39 @@ def _finding(ctx: CheckContext, rule: RuleView, start: int, end: int, title: str
 
 # --- terminology -------------------------------------------------------------
 
+# Term matchers search a folded copy of the body (look-alike letters, width
+# variants and invisible characters normalised) and report spans in the
+# original text, so "fаt-burning" with a Cyrillic "а" is still caught and the
+# finding still quotes exactly what the writer typed.
+
 @matcher("banned_terms")
 def banned_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     for term in rule.pattern.get("terms", []):
-        for m in _term_regex(term).finditer(ctx.body):
-            yield _finding(ctx, rule, m.start(), m.end(), f'Avoid "{m.group(0)}"', rule.text)
+        for start, end, _ in find_folded(_term_regex(term), ctx.body):
+            yield _finding(ctx, rule, start, end, f'Avoid "{ctx.body[start:end]}"', rule.text)
 
 
 @matcher("preferred_terms")
 def preferred_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     for wrong, right in rule.pattern.get("map", {}).items():
-        for m in _term_regex(wrong).finditer(ctx.body):
-            proposed = _match_case(m.group(0), right)
+        for start, end, folded in find_folded(_term_regex(wrong), ctx.body):
+            original = ctx.body[start:end]
+            proposed = _match_case(folded, right)
             yield _finding(
-                ctx, rule, m.start(), m.end(), f'Use "{right}" instead of "{m.group(0)}"', rule.text,
-                SuggestedEdit(m.group(0), proposed, f"House style ({rule.code}) prefers '{right}'."),
+                ctx, rule, start, end, f'Use "{right}" instead of "{original}"', rule.text,
+                SuggestedEdit(original, proposed, f"House style ({rule.code}) prefers '{right}'."),
             )
 
 
 @matcher("casing")
 def casing(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     for term in rule.pattern.get("terms", []):
-        for m in _term_regex(term).finditer(ctx.body):
-            if m.group(0) != term:
+        for start, end, folded in find_folded(_term_regex(term), ctx.body):
+            if folded != fold(term)[0]:
+                original = ctx.body[start:end]
                 yield _finding(
-                    ctx, rule, m.start(), m.end(), f'Write "{term}" with its official casing', rule.text,
-                    SuggestedEdit(m.group(0), term, f"Official spelling is '{term}'."),
+                    ctx, rule, start, end, f'Write "{term}" with its official casing', rule.text,
+                    SuggestedEdit(original, term, f"Official spelling is '{term}'."),
                 )
 
 
@@ -134,9 +142,9 @@ def confidential_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding
         if t.embargo_until is not None and ctx.today >= t.embargo_until:
             continue
         until = f" until {t.embargo_until.isoformat()}" if t.embargo_until else ""
-        for m in term_pattern(t.term).finditer(ctx.body):
+        for start, end, _ in find_folded(term_pattern(t.term), ctx.body):
             yield _finding(
-                ctx, rule, m.start(), m.end(), f'Confidential term "{m.group(0)}"',
+                ctx, rule, start, end, f'Confidential term "{ctx.body[start:end]}"',
                 f'"{t.term}" is marked confidential{until}. Publishing it would leak protected information.',
             )
 
@@ -144,6 +152,9 @@ def confidential_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding
 # --- accessibility -----------------------------------------------------------
 
 _PLACEHOLDER_ALT = {"image", "photo", "picture", "img", "graphic", "screenshot", "banner", "logo"}
+# Upload tools often default alt text to the file name, which a screen reader
+# then reads out character by character.
+_FILENAME_ALT = re.compile(r"^[\w\- .]*\.(?:png|jpe?g|gif|webp|svg|heic|avif|bmp|tiff?)$", re.IGNORECASE)
 
 
 @matcher("alt_text")
@@ -158,6 +169,8 @@ def alt_text(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
             problem = "has no alt text"
         elif alt.lower().strip(".") in _PLACEHOLDER_ALT or len(alt) < min_len:
             problem = f'has placeholder alt text ("{alt}")'
+        elif _FILENAME_ALT.match(alt):
+            problem = f'uses its file name as alt text ("{alt}")'
         else:
             continue
         yield RawFinding(
