@@ -345,3 +345,25 @@ def test_damaged_animation_is_a_media_error_and_base64_is_strict():
     assert decode_b64("aGVs\nbG8=", 1024) == b"hello"  # line-wrapped is fine
     with pytest.raises(MediaError):
         decode_b64("aGVs*bG8=", 1024)
+
+
+def test_data_appended_after_an_image_is_found_even_behind_a_fake_end_marker():
+    # errcheck 217: the end was the last end marker in the file, so junk that finished with a fake
+    # IEND (or FF D9) hid itself. The end is now found by walking the file's own structure.
+    import io
+
+    from PIL import Image
+
+    from verytas.media.profile import _trailing_bytes
+
+    def encoded(fmt: str) -> bytes:
+        buf = io.BytesIO()
+        Image.new("RGB", (64, 48), (200, 80, 40)).save(buf, fmt)
+        return buf.getvalue()
+
+    png, jpeg = encoded("PNG"), encoded("JPEG")
+    assert _trailing_bytes(png, "PNG") == 0 and _trailing_bytes(jpeg, "JPEG") == 0
+    junk = b"\x00" * 5000
+    assert _trailing_bytes(png + junk, "PNG") == 5000
+    assert _trailing_bytes(png + junk + b"IEND" + b"\x00" * 4, "PNG") == 5008
+    assert _trailing_bytes(jpeg + junk + b"\xff\xd9", "JPEG") == 5002
