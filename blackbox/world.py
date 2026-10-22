@@ -46,6 +46,7 @@ class Reality:
     seed: int
     # Filled in once the reality is loaded into a workspace.
     fact_ids: dict[str, dict[str, int]] = field(default_factory=dict)
+    colour: tuple[int, int, int] = (240, 130, 40)  # mascot colour, set from the brand name
 
     @property
     def name(self) -> str:

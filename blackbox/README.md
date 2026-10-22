@@ -22,7 +22,7 @@ flowchart LR
 
 1. **Reality.** A fictional brand with a voice, banned phrases, a confidential codename and statistics whose approved value changed on a known date. Six hand-written worlds ship for offline runs; with an Ollama key, `gpt-oss:120b` invents new ones.
 2. **Templates.** Roasts, flame wars, Hinglish captions, crisis apologies, sponsored posts, release notes and 20 more genres, with `{{S1}}`-style slots where a plant goes. One LLM call yields a template that is filled many times, so a few calls become hundreds of cases.
-3. **Plants.** Each slot is filled by an *arm*, a (family, variant) pair: a banned term written with a Cyrillic look-alike, a codename hidden by a zero-width space, last year's statistic in Indian digit grouping, alt text that is a file name. Controls (a true statistic, a camel-case hashtag) measure false positives.
+3. **Plants.** Each slot is filled by an *arm*, a (family, variant) pair: a banned term written with a Cyrillic look-alike, a codename hidden by a zero-width space, last year's statistic in Indian digit grouping, alt text that is a file name. Media arms put the codename or banned phrase inside a plain, stylised or low-contrast image, a PDF text layer, a scanned PDF page, a screenshot pasted into a PDF, or burned-in video captions, and tamper with the brand's mascot (a body attached to the official face, recoloured eyes). The simulator draws all of this itself (`blackbox/media.py`). Controls (a true statistic, a camel-case hashtag, the exact official mascot, an unrelated character) measure false positives.
 4. **Grading.** A plant counts as caught when a finding in an acceptable category overlaps its span. Contract invariants are checked on every review: spans match their quotes, findings cite a source, signatures verify, fixes edit text that exists, nothing returns a 5xx, the approval gate refuses content with blockers, and the audit chain verifies.
 5. **Learning.** Thompson sampling over each arm's failure rate puts most of the next generation on what failed, and the stats persist across runs. In LLM mode an adversary invents new spellings for terms that slipped through, and those become arms too.
 
@@ -54,8 +54,11 @@ Runs, reports and server logs go to `blackbox/.runs/` (gitignored).
 | "#1" superlatives were never matched | lookarounds instead of `\b` |
 | Alt text set to a file name passed | flagged |
 | 500s under parallel load: SQLite lock upgrades, a review holding a transaction across model calls, and the audit lock taken in the opposite order to the database lock | `BEGIN IMMEDIATE`, no transaction across provider calls, and one lock for audit appends on SQLite |
+| Pictures with no text raised an "unreadable content" blocker, because OCR "read" texture as stray letters | OCR noise filter; "unreadable" needs real text read badly |
 
 On the same offline campaign (216 cases): core recall went from 78% to 96%, false positives on controls from 7% to 0%, and server errors at 12 parallel submissions from 17 to 0. The campaign itself went from 164 s to 10 s once the lock stalls were gone, and 320 cases at 32 parallel submissions run clean.
+
+With media in the mix (144 cases, half carrying an image, document or video): core recall 95%, false positives on controls 0%, and every text-in-media technique caught, including scanned PDF pages, pasted screenshots, low-contrast images and burned-in captions.
 
 ## Known gaps it still reports
 
