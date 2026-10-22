@@ -13,23 +13,22 @@
   --vt-raised: #fbfbfc;
   --vt-sunken: #e4e7ec;
   --vt-ink: #1b1e26;
-  --vt-muted: #5f6776;
-  --vt-subtle: #8a91a0;
+  --vt-muted: #535b69;
+  --vt-subtle: #626978;
   --vt-line: #d9dde4;
   --vt-line-strong: #c5cbd5;
-  --vt-accent: #1d6ae5;
-  --vt-accent-2: #0fa3a0;
+  --vt-accent: #1a5fd1;
   --vt-accent-ink: #ffffff;
-  --vt-glow: rgba(29, 106, 229, 0.07);
+  --vt-glow: rgba(26, 95, 209, 0.07);
   --vt-shadow: 0 1px 2px rgba(18, 24, 40, 0.04), 0 1px 3px rgba(18, 24, 40, 0.05);
   --vt-shadow-pop: 0 12px 32px -8px rgba(18, 24, 40, 0.18), 0 2px 6px rgba(18, 24, 40, 0.06);
-  --vt-blocker: #c2361f;
+  --vt-blocker: #b8321c;
   --vt-blocker-bg: #f9e5e1;
-  --vt-warning: #9a5806;
+  --vt-warning: #94540a;
   --vt-warning-bg: #f8eed9;
   --vt-advisory: #3f6584;
   --vt-advisory-bg: #e3eaf1;
-  --vt-ok: #13804f;
+  --vt-ok: #0f7446;
   --vt-ok-bg: #ddf1e6;
   color-scheme: light;
 }
@@ -41,11 +40,10 @@
   --vt-sunken: #0f1217;
   --vt-ink: #e4e7ed;
   --vt-muted: #969eae;
-  --vt-subtle: #6b7383;
+  --vt-subtle: #8a92a2;
   --vt-line: #232835;
   --vt-line-strong: #313847;
   --vt-accent: #4c9bff;
-  --vt-accent-2: #2dd4bf;
   --vt-accent-ink: #06101e;
   --vt-glow: rgba(76, 155, 255, 0.06);
   --vt-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -68,11 +66,10 @@
     --vt-sunken: #0f1217;
     --vt-ink: #e4e7ed;
     --vt-muted: #969eae;
-    --vt-subtle: #6b7383;
+    --vt-subtle: #8a92a2;
     --vt-line: #232835;
     --vt-line-strong: #313847;
     --vt-accent: #4c9bff;
-    --vt-accent-2: #2dd4bf;
     --vt-accent-ink: #06101e;
     --vt-glow: rgba(76, 155, 255, 0.06);
     --vt-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -178,8 +175,9 @@ body {
 .vt-input::placeholder { color: var(--vt-subtle); }
 .vt-input:focus { outline: none; border-color: var(--vt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vt-accent) 18%, transparent); }
 
+/* Fixed stops, not the theme accents, so the white mark stays readable (5:1+) in both themes. */
 .vt-mark {
-  background: linear-gradient(135deg, var(--vt-accent), var(--vt-accent-2));
+  background: linear-gradient(135deg, #1a5fd1, #0c7c79);
   color: #fff;
 }
 

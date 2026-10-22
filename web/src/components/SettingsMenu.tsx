@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useStored, writeStored } from "@/lib/stored";
 import { CloseIcon, SettingsIcon } from "./Icons";
@@ -35,6 +35,10 @@ type Tab = (typeof TABS)[number]["value"];
 export function SettingsMenu({ compact = false }: { compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => {
+    setOpen(false);
+    button.current?.focus();
+  }, []);
 
   return (
     <>
@@ -47,7 +51,7 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
           className="shrink-0 transition-transform duration-500 ease-out group-hover:rotate-45" />
         {!compact && <span className="text-sm font-medium">Settings</span>}
       </button>
-      {open && <SettingsDialog onClose={() => { setOpen(false); button.current?.focus(); }} />}
+      {open && <SettingsDialog onClose={close} />}
     </>
   );
 }
@@ -72,6 +76,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const panel = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const ids = useId();
 
   useEffect(() => {
     fetch("/api/session").then((r) => r.json()).then((j) => setSignin(Boolean(j.required))).catch(() => setSignin(false));
@@ -81,26 +86,49 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
     }).catch(() => setMeError("Couldn't load the account."));
   }, []);
 
-  // Modal behaviour: focus moves in, Tab stays inside, Escape closes, the page behind doesn't scroll.
+  // Modal behaviour: focus moves in and stays in, Escape closes, and the page
+  // behind is inert (no clicks, no focus, hidden from screen readers) and still.
   useEffect(() => {
     const el = panel.current;
-    el?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+    if (!el) return;
+    const root = el.closest<HTMLElement>("[data-vt-modal]");
+    el.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+    const focusable = () => [...el.querySelectorAll<HTMLElement>(
+      "button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex='-1'])")];
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") return onClose();
-      if (e.key !== "Tab" || !el) return;
-      const items = el.querySelectorAll<HTMLElement>("button, input, [tabindex]:not([tabindex='-1'])");
+      if (e.key !== "Tab") return;
+      const items = focusable();
       const first = items[0], last = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      const inside = el.contains(document.activeElement);
+      if (e.shiftKey && (!inside || document.activeElement === first)) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); first?.focus(); }
     };
+    const others = [...document.body.children].filter((c): c is HTMLElement => c !== root && c instanceof HTMLElement
+      && !["SCRIPT", "STYLE"].includes(c.tagName) && !c.inert);
+    others.forEach((c) => { c.inert = true; });
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     document.addEventListener("keydown", onKey);
     return () => {
+      others.forEach((c) => { c.inert = false; });
       document.body.style.overflow = overflow;
       document.removeEventListener("keydown", onKey);
     };
   }, [onClose]);
+
+  /** Arrow keys move between options of a tablist or radiogroup, as WAI-ARIA expects. */
+  function arrows<T>(e: ReactKeyboardEvent, values: readonly T[], current: T, pick: (v: T) => void) {
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    const to = e.key === "Home" ? 0 : e.key === "End" ? values.length - 1
+      : step ? (values.indexOf(current) + step + values.length) % values.length : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    // currentTarget is cleared once the handler returns, so hold on to it for the next frame.
+    const group = e.currentTarget as HTMLElement;
+    pick(values[to]);
+    requestAnimationFrame(() => group.querySelector<HTMLElement>("[aria-selected='true'], [aria-checked='true']")?.focus());
+  }
 
   function saveSocials() {
     if (writeStored(SOCIAL_KEY, JSON.stringify(socials))) {
@@ -113,6 +141,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
 
   async function signOut() {
     await fetch("/api/session", { method: "DELETE" }).catch(() => null);
+    onClose();
     router.replace("/signin");
     router.refresh();
   }
@@ -120,7 +149,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
   const initials = (me?.name ?? "You").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 
   return createPortal(
-    <div className="fixed inset-0 z-50 grid place-items-center p-4">
+    <div data-vt-modal className="fixed inset-0 z-50 grid place-items-center p-4">
       <div className="vt-backdrop absolute inset-0 bg-[color-mix(in_srgb,var(--vt-bg)_45%,transparent)] backdrop-blur-[6px]"
         onClick={onClose} aria-hidden />
       <div ref={panel} role="dialog" aria-modal="true" aria-labelledby={titleId}
@@ -133,9 +162,11 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div role="tablist" aria-label="Settings sections" className="mx-5 grid grid-cols-3 gap-1 rounded-xl bg-sunken p-1 text-[13px] font-medium">
+        <div role="tablist" aria-label="Settings sections" className="mx-5 grid grid-cols-3 gap-1 rounded-xl bg-sunken p-1 text-[13px] font-medium"
+          onKeyDown={(e) => arrows(e, TABS.map((t) => t.value), tab, setTab)}>
           {TABS.map((t, i) => (
             <button key={t.value} role="tab" type="button" aria-selected={tab === t.value} onClick={() => setTab(t.value)}
+              id={`${ids}-tab-${t.value}`} aria-controls={`${ids}-panel`} tabIndex={tab === t.value ? 0 : -1}
               data-autofocus={i === 0 ? true : undefined}
               className={`rounded-lg px-2 py-1.5 transition ${tab === t.value ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
               {t.label}
@@ -143,7 +174,8 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
           ))}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto px-5 pb-5 pt-4">
+        <div id={`${ids}-panel`} role="tabpanel" aria-labelledby={`${ids}-tab-${tab}`}
+          className="min-h-0 flex-1 overflow-auto px-5 pb-5 pt-4">
           {tab === "profile" && (
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-3">
@@ -190,10 +222,11 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
           )}
 
           {tab === "theme" && (
-            <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-3">
+            <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-3"
+              onKeyDown={(e) => arrows(e, THEMES.map((t) => t.value), choice, setChoice)}>
               {THEMES.map((th) => (
                 <button key={th.value} type="button" role="radio" aria-checked={choice === th.value}
-                  onClick={() => setChoice(th.value)}
+                  tabIndex={choice === th.value ? 0 : -1} onClick={() => setChoice(th.value)}
                   className={`flex flex-col gap-2 rounded-xl border p-2 text-left text-sm transition ${choice === th.value ? "border-accent ring-2 ring-accent/25" : "border-line hover:border-line-strong"}`}>
                   <ThemeSwatch kind={th.value} />
                   <span className="px-0.5 font-medium">{th.label}</span>
@@ -215,7 +248,7 @@ function ThemeSwatch({ kind }: { kind: ThemeChoice }) {
       <span className="flex-1 rounded" style={{ background: card }} />
     </span>
   );
-  const light = pane("#eceef2", "#f6f7f9", "#1d6ae5");
+  const light = pane("#eceef2", "#f6f7f9", "#1a5fd1");
   const dark = pane("#0c0e13", "#1a1e27", "#4c9bff");
   return (
     <span aria-hidden className="flex h-14 w-full overflow-hidden rounded-lg border border-line">
