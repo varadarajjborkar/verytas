@@ -26,3 +26,39 @@ def test_pale_text_in_an_image_is_flagged_and_dark_text_is_not(client, world):  
     low = [f for f in review["findings"] if f["checker"] == "contrast"]
     assert [f["locator"]["image"] for f in low] == ["img:pale"]
     assert "needs 4.5:1" in low[0]["title"] and len(low[0]["locator"]["box"]) == 4
+
+
+def _caption(px: int, fg: str, jpeg: int | None = None, mode: str = "RGB"):
+    import io
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    from tests.media_fixtures import font
+
+    img = Image.new(mode, (30 * px, 3 * px), "white" if mode == "RGB" else (0, 0, 0, 0))
+    ImageDraw.Draw(img).text((px, px // 2), "Learn one thing a day", fill=fg, font=ImageFont.truetype(font().path, px))
+    if jpeg:
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=jpeg)
+        img = Image.open(buf).convert("RGB")
+    return img
+
+
+def test_compliant_grey_text_is_never_measured_below_its_contrast_small_or_compressed():
+    # errcheck 237: #767676 on white is 4.54:1; anti-aliasing and JPEG used to read it as 2.6 to 4.3.
+    for px in (11, 14, 18, 28):
+        for jpeg in (None, 40):
+            _, _, ratio, _ = text_contrast(np.array(_caption(px, "#767676", jpeg)))
+            assert ratio >= 4.5, (px, jpeg, ratio)
+    # Truly pale text still reads as pale.
+    assert text_contrast(np.array(_caption(14, "#AAAAAA", 40)))[2] < 3.0
+
+
+def test_text_over_transparency_is_not_measured():
+    # errcheck 238: flattening a transparent PNG to white invents the background (white text read as 1:1).
+    from verytas.media.ocr import OcrLine
+    from verytas.prism.agents import _low_contrast_lines
+
+    img = _caption(28, "white", mode="RGBA")
+    line = OcrLine("Learn one thing a day", 0.99, (28, 14, 600, 50))
+    assert _low_contrast_lines(img, [line], 4.5, 3.0) == []

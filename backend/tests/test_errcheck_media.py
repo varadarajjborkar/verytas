@@ -386,5 +386,8 @@ def test_the_wordmark_as_a_hashtag_handle_possessive_or_plural_is_not_a_misspell
     # errcheck 230: these used to raise "Wordmark misspelled" at 0.9 confidence.
     line = agents.local_ocr.OcrLine(f"Learn with {token} today", 0.99, (0, 0, 10, 10))
     assert agents._misspelled("Kitepath", [line]) is None
+    # errcheck 236: a wordmark ending in "e" ("Nikes" is a plural of "Nike", not a misspelling).
+    for word, mark in [("Nikes", "Nike"), ("Inkloom's", "Inkloom"), ("#Acme", "Acme"), ("Classes", "Class")]:
+        assert agents._misspelled(mark, [agents.local_ocr.OcrLine(f"x {word} y", 0.99, (0, 0, 10, 10))]) is None
     garbled = agents.local_ocr.OcrLine("Learn with Kitepaht today", 0.99, (0, 0, 10, 10))
     assert agents._misspelled("Kitepath", [garbled]) == "Kitepaht"
