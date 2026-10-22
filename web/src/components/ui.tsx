@@ -177,36 +177,3 @@ export function PageSkeleton() {
     </div>
   );
 }
-
-/** A donut drawn in SVG so it sizes to its box and follows the theme. */
-export function Donut({ data, colours, label }: { data: { label: string; value: number }[]; colours: string[]; label: string }) {
-  const total = data.reduce((a, d) => a + d.value, 0);
-  const r = 42, c = 2 * Math.PI * r;
-  let offset = 0;
-  return (
-    <div className="relative mx-auto aspect-square w-full max-w-[11rem]">
-      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" role="img"
-        aria-label={`${label}: ${data.map((d) => `${d.label} ${d.value}`).join(", ")}`}>
-        <circle cx="50" cy="50" r={r} fill="none" stroke="var(--vt-sunken)" strokeWidth="10" />
-        {total > 0 && data.map((d, i) => {
-          const len = (d.value / total) * c;
-          // A hairline gap between segments, unless one segment is the whole ring.
-          const gap = data.length > 1 ? 1.2 : 0;
-          const seg = (
-            <circle key={d.label} cx="50" cy="50" r={r} fill="none" stroke={colours[i % colours.length]} strokeWidth="10"
-              strokeDasharray={`${Math.max(0, len - gap)} ${c}`} strokeDashoffset={-offset}
-              className="transition-[stroke-dasharray] duration-700 ease-out" />
-          );
-          offset += len;
-          return seg;
-        })}
-      </svg>
-      <div className="absolute inset-0 grid place-items-center text-center">
-        <div>
-          <p className="text-2xl font-semibold leading-none tabular-nums">{total}</p>
-          <p className="mt-1 text-[11px] text-subtle">{label}</p>
-        </div>
-      </div>
-    </div>
-  );
-}

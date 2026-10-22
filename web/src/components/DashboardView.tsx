@@ -2,12 +2,10 @@
 
 import Link from "next/link";
 import type { Overview, Recurring, RuleHealth } from "@/lib/types";
-import { Donut, HBars, Meter, Panel, Stat, TrendBars } from "./ui";
+import { HBars, Meter, Panel, Stat, TrendBars } from "./ui";
 
 // Mid-tone hues that hold up on both the light and the dark surface.
 const LEVEL_PALETTE = ["#e0604f", "#e0a04a", "#8aa6c4"];
-const STATUS_ORDER = ["draft", "in_review", "changes_requested", "approved", "published"];
-const PIPELINE_PALETTE = ["#8a93a3", "#3d8bf2", "#e0a04a", "#4fb487", "#22b8a6"];
 const TREND_DAYS = 14;
 // The API starts advising a rewrite at this ambiguity (api/insights.py).
 export const UNCLEAR = 0.5;
@@ -35,12 +33,6 @@ export function DashboardView({ overview, recurring, health }: {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6)
     .map(([category, findings]) => ({ label: category, value: findings }));
-  // Colour follows the status, not its position, so a status keeps its colour when another is empty.
-  const pipeline = STATUS_ORDER.flatMap((s, i) => overview.content[s] ? [{
-    status: s.replace("_", " "),
-    items: overview.content[s],
-    colour: PIPELINE_PALETTE[i],
-  }] : []);
   const unclear = health.filter((h) => h.ambiguity != null && h.ambiguity >= UNCLEAR).slice(0, 3);
 
   return (
@@ -54,26 +46,10 @@ export function DashboardView({ overview, recurring, health }: {
         <Stat label="Published" value={published.toLocaleString()} hint={inFlight ? `${inFlight} in review` : undefined} />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-3">
-        <Panel title="Findings, last 14 days" className="xl:col-span-2">
+      <div className="grid gap-5">
+        <Panel title="Findings, last 14 days">
           <div className="h-64">
             <TrendBars data={trend} series={trendSeries} />
-          </div>
-        </Panel>
-        <Panel title="Pipeline">
-          <div className="flex h-64 flex-col gap-4">
-            <div className="grid min-h-0 flex-1 place-items-center">
-              <Donut data={pipeline.map((p) => ({ label: p.status, value: p.items }))} colours={pipeline.map((p) => p.colour)} label="pieces" />
-            </div>
-            <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-              {pipeline.map((p) => (
-                <li key={p.status} className="flex items-center gap-1.5 capitalize text-muted">
-                  <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: p.colour }} />
-                  <span className="truncate">{p.status}</span>
-                  <span className="ml-auto tabular-nums text-ink">{p.items}</span>
-                </li>
-              ))}
-            </ul>
           </div>
         </Panel>
       </div>
