@@ -340,7 +340,7 @@ The brief asks us to *check* accessibility, so our own UI has to pass it too. Th
 | DB | **Postgres 16 + pgvector** (Supabase) | one database for relational, vector and RLS needs, matching the board's "1 database"; Supabase adds auth and storage for free |
 | Frontend | **Next.js + TypeScript + Tailwind + shadcn/ui** | fast to build an accessible review UI; Radix primitives are accessible by default |
 | Judge | **TypeSafe Jev** (`jev-1.13.0`) behind a `JudgeProvider` interface | typed probabilistic answers per rule, all rules in one parallel pass, input-only pricing |
-| LLMs | Claude API behind a `ModelProvider` interface; a small fast model for high-volume checks, a stronger model for judging and rewriting, vision for images | quality on rubric judging; the interface lets routing control swap in a local model for confidential tiers |
+| LLMs | **Ollama Cloud** by default (`gpt-oss:120b` for explanations and rewrites, `gpt-oss:20b` for claim extraction), with Claude as a drop-in alternative behind the same `LLMProvider` interface | free tier fits the team's budget; schema-in-prompt plus pydantic validation and one repair round makes open models reliable for structured output; the interface lets routing control swap in a local model for confidential tiers |
 | Local models | sentence-transformers embeddings; **MiniCheck** grounding checker (770M, CPU); optional Ollama model for the confidential tier | confidential text never has to leave our server |
 | Lint | **Vale** (per-company YAML styles generated from rules), **textstat** | deterministic, instant, explainable |
 | Image | OpenCV, **colour-science** (CIEDE2000), Tesseract OCR, **SigLIP 2** embeddings | deterministic visual checks |

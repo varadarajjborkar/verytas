@@ -32,3 +32,4 @@ venv/
 cred.txt
 cred*.txt
 *.key
+*.egg-info/
