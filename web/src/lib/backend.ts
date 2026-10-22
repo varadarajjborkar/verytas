@@ -2,7 +2,7 @@ import "server-only";
 
 import { demoBody, demoHealth, demoOverview, demoRecurring, demoReview } from "./demo-data";
 import { sessionToken } from "./session";
-import type { Overview, Recurring, Review, ReviewResult, RuleHealth, Sourced } from "./types";
+import type { Me, Overview, Recurring, Review, ReviewResult, RuleHealth, Sourced } from "./types";
 
 // The browser never talks to the API directly: these helpers run on the server
 // as the signed-in person (lib/session.ts), whose token never reaches page scripts.
@@ -50,6 +50,17 @@ async function liveOrDemo<T>(path: string, demo: T): Promise<Sourced<T>> {
 export const getOverview = () => liveOrDemo<Overview>("/insights/overview", demoOverview);
 export const getGuidelineHealth = () => liveOrDemo<RuleHealth[]>("/insights/guideline-health", demoHealth);
 export const getRecurring = () => liveOrDemo<Recurring[]>("/insights/recurring", demoRecurring);
+
+/** Who is looking: the signed-in person or the account their view uses. Null in demo mode or when the
+ * API can't be reached, so pages can fall back to the brand-team view of the demo data. */
+export async function getViewer(): Promise<Me | null> {
+  if (!backendConfigured) return null;
+  try {
+    return await call<Me>("/me");
+  } catch {
+    return null;
+  }
+}
 
 /** What Ask Verytas may see for this person, plus their conversation redacted with the same
  * placeholders. Null when the API isn't reachable. */

@@ -20,9 +20,25 @@ const DEV_TOKEN = !signinRequired
     ? process.env.VERYTAS_API_TOKEN
     : undefined;
 
+// With sign-in off there is no login to tell the two sides apart, so a second
+// account (VERYTAS_CREATOR_TOKEN) lets one browser view the console as a creator.
+// Both are real accounts: the API still enforces each one's role, so switching
+// changes what is allowed, not just what is shown. Never honoured once sign-in is on.
+export const PERSONA_COOKIE = "vt_persona";
+export type Persona = "manager" | "creator";
+const CREATOR_TOKEN = !signinRequired ? process.env.VERYTAS_CREATOR_TOKEN : undefined;
+export const personasAvailable = Boolean(DEV_TOKEN && CREATOR_TOKEN);
+
+export async function currentPersona(): Promise<Persona> {
+  return (await cookies()).get(PERSONA_COOKIE)?.value === "creator" ? "creator" : "manager";
+}
+
 export async function sessionToken(): Promise<string | null> {
   const jar = await cookies();
-  return jar.get(SESSION_COOKIE)?.value || DEV_TOKEN || null;
+  const own = jar.get(SESSION_COOKIE)?.value;
+  if (own) return own;
+  if (CREATOR_TOKEN && jar.get(PERSONA_COOKIE)?.value === "creator") return CREATOR_TOKEN;
+  return DEV_TOKEN || null;
 }
 
 export function cookieOptions() {

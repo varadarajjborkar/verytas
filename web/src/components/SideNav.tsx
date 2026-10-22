@@ -3,18 +3,32 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { usePersistedFlag } from "@/lib/persisted-flag";
-import { DashboardIcon, GaugeIcon, PanelIcon, ReviewIcon, SparkIcon } from "./Icons";
+import { ROLE_LABEL } from "@/lib/roles";
+import { BookIcon, DashboardIcon, GaugeIcon, HomeIcon, PanelIcon, ReviewIcon, SparkIcon } from "./Icons";
 import { SettingsMenu } from "./SettingsMenu";
+import { useViewer } from "./Viewer";
 
-const LINKS = [
-  { href: "/", label: "Dashboard", Icon: DashboardIcon },
-  { href: "/review", label: "Review", Icon: ReviewIcon },
-  { href: "/guidelines", label: "Guideline health", short: "Guidelines", Icon: GaugeIcon },
-  { href: "/ask", label: "Ask Verytas", short: "Ask", Icon: SparkIcon },
-];
+type NavLink = { href: string; label: string; short?: string; Icon: typeof HomeIcon };
+const REVIEW: NavLink = { href: "/review", label: "Review", Icon: ReviewIcon };
+const ASK: NavLink = { href: "/ask", label: "Ask Verytas", short: "Ask", Icon: SparkIcon };
+// Each side sees only its own screens. Until the viewer is known, only the shared ones show,
+// so a creator never glimpses the brand team's links.
+const LINKS: Record<"creator" | "manager" | "loading", NavLink[]> = {
+  creator: [{ href: "/", label: "My work", short: "Home", Icon: HomeIcon }, REVIEW, ASK],
+  manager: [
+    { href: "/", label: "Dashboard", Icon: DashboardIcon },
+    { href: "/review", label: "Review queue", short: "Queue", Icon: ReviewIcon },
+    { href: "/library", label: "Brand library", short: "Library", Icon: BookIcon },
+    { href: "/guidelines", label: "Guideline health", short: "Health", Icon: GaugeIcon },
+    ASK,
+  ],
+  loading: [REVIEW, ASK],
+};
 
 export function SideNav() {
   const pathname = usePathname();
+  const { me, side, loading } = useViewer();
+  const links = LINKS[loading ? "loading" : side];
   // Desktop only: on phones the nav is already a single row of tabs.
   const [collapsed, setCollapsed] = usePersistedFlag("vt-nav-collapsed", false);
   const toggle = (
@@ -36,7 +50,7 @@ export function SideNav() {
       </div>
       <nav id="main-nav" aria-label="Main" className={`overflow-x-auto pb-3 md:pb-6 ${collapsed ? "px-3 md:px-2.5" : "px-3"}`}>
         <ul className="flex gap-1 md:flex-col">
-          {LINKS.map(({ href, label, short, Icon }) => {
+          {links.map(({ href, label, short, Icon }) => {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
             return (
               <li key={href}>
@@ -45,7 +59,7 @@ export function SideNav() {
                     collapsed ? "md:justify-center md:px-0 md:py-2.5" : ""} ${
                     active ? "bg-accent/12 font-medium text-accent" : "text-muted hover:bg-sunken hover:text-ink"}`}>
                   <Icon size={17} className="shrink-0" />
-                  {/* Short labels on phones so all four tabs fit on one line. */}
+                  {/* Short labels on phones so the tabs fit on one line. */}
                   <span className="md:hidden">{short ?? label}</span>
                   <span className={`hidden md:inline ${collapsed ? "md:sr-only" : ""}`}>{label}</span>
                 </Link>
@@ -54,7 +68,15 @@ export function SideNav() {
           })}
         </ul>
       </nav>
-      <div className={`hidden md:mt-auto md:block ${collapsed ? "px-2.5 py-3 [&>button]:mx-auto" : "p-3"}`}>
+      {me && !collapsed && (
+        <div className="hidden px-5 pb-1 md:mt-auto md:block">
+          <p className="truncate text-xs font-medium">{me.name}</p>
+          <p className="truncate text-[11px] text-subtle">
+            {side === "creator" ? "Creator" : `Brand team · ${ROLE_LABEL[me.role] ?? me.role}`}
+          </p>
+        </div>
+      )}
+      <div className={`hidden md:block ${me && !collapsed ? "" : "md:mt-auto"} ${collapsed ? "px-2.5 py-3 [&>button]:mx-auto" : "p-3"}`}>
         <SettingsMenu compact={collapsed} />
       </div>
     </header>

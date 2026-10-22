@@ -4,6 +4,7 @@ import { ThemeProvider } from "@openuidev/react-ui";
 import { createContext, type ReactNode, useCallback, useContext, useSyncExternalStore } from "react";
 import { useStored, writeStored } from "@/lib/stored";
 import { ToastProvider } from "./Toaster";
+import { ViewerProvider } from "./Viewer";
 
 export type ThemeChoice = "light" | "dark" | "system";
 
@@ -79,7 +80,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeContext.Provider value={{ choice, setChoice }}>
       <ThemeProvider mode={mode} lightTheme={OPENUI_THEME} darkTheme={OPENUI_THEME}>
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider><ViewerProvider>{children}</ViewerProvider></ToastProvider>
       </ThemeProvider>
     </ThemeContext.Provider>
   );

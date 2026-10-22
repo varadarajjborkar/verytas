@@ -24,6 +24,26 @@ const ALLOWED: [string, RegExp][] = [
   ["GET", /^chats\/\d+$/],
   ["PUT", /^chats\/\d+$/],
   ["DELETE", /^chats\/\d+$/],
+  // A piece's shared history, comments and the people named in it.
+  ["GET", /^contents\/\d+\/timeline$/],
+  ["GET", /^contents\/\d+\/comments$/],
+  ["POST", /^contents\/\d+\/comments$/],
+  ["GET", /^users$/],
+  // The brand library. Reads are open to the workspace; the API allows writes to brand admins only.
+  ["GET", /^rules$/],
+  ["POST", /^rules$/],
+  ["PATCH", /^rules\/\d+$/],
+  ["POST", /^rules\/extract$/],
+  ["GET", /^facts$/],
+  ["POST", /^facts$/],
+  ["POST", /^facts\/\d+\/retire$/],
+  ["GET", /^confidential-terms$/],
+  ["POST", /^confidential-terms$/],
+  ["PATCH", /^confidential-terms\/\d+$/],
+  ["DELETE", /^confidential-terms\/\d+$/],
+  ["POST", /^brand-assets$/],
+  ["DELETE", /^brand-assets\/\d+$/],
+  ["GET", /^brand-assets\/\d+\/image$/],
 ];
 // Uploads are forwarded as-is; the API sniffs and limits them again.
 const MAX_BODY = 150 * 1024 * 1024;
@@ -78,7 +98,12 @@ async function handle(request: Request, ctx: { params: Promise<{ path: string[] 
     if (res.status === 401) {
       return Response.json({ error: "Your session has expired. Sign in again." }, { status: 401 });
     }
-    return new Response(res.body, { status: res.status, headers: { "content-type": res.headers.get("content-type") ?? "application/json" } });
+    const headers: Record<string, string> = { "content-type": res.headers.get("content-type") ?? "application/json" };
+    // Asset thumbnails: cacheable for this person only, and never sniffed into something else.
+    const cache = res.headers.get("cache-control");
+    if (cache?.startsWith("private")) headers["cache-control"] = cache;
+    if (res.headers.get("x-content-type-options")) headers["x-content-type-options"] = "nosniff";
+    return new Response(res.status === 204 ? null : res.body, { status: res.status, headers });
   } catch (err) {
     if (tripped()) return tooLarge;
     console.error("[verytas] proxy failed:", (err as Error).message);
@@ -89,4 +114,5 @@ async function handle(request: Request, ctx: { params: Promise<{ path: string[] 
 export const GET = handle;
 export const POST = handle;
 export const PUT = handle;
+export const PATCH = handle;
 export const DELETE = handle;

@@ -58,6 +58,7 @@ export type Decision = {
   actor_id: number;
   action: "accepted" | "rejected" | "edited" | "escalated";
   reason_code: string | null;
+  reason_text?: string | null;
   created_at: string;
 };
 
@@ -205,3 +206,70 @@ export type ContentDetail = Omit<ContentRow, "version_count" | "updated_at" | "l
 };
 
 export type Me = { id: number; email: string; name: string; role: string; clearance: string };
+
+// --- the brand team's side -------------------------------------------------------------------
+
+export type Person = { id: number; name: string; role: string };
+
+/** One entry in a piece's shared history (GET /contents/{id}/timeline). */
+export type TimelineItem = { at: string; actor: Person | null } & (
+  | { type: "version"; version: number }
+  | { type: "review"; version: number; review_id: number; status: string; score: number | null; blockers: number;
+      warnings: number; advisories: number }
+  | { type: "status"; from: ContentStatus; to: ContentStatus; note: string | null }
+  | { type: "comment"; id: number; parent_id: number | null; version: number | null; body: string; span: [number, number] | null }
+  | { type: "decision"; finding: string; level: Level; version: number; action: Decision["action"];
+      reason_code: string | null; reason: string | null }
+);
+export type Timeline = { status: ContentStatus; author: Person | null; items: TimelineItem[] };
+
+export type RuleKind = "deterministic" | "semantic";
+export type RuleCategory = "tone" | "terminology" | "messaging" | "visual" | "accessibility" | "legal" | "claims" | "confidentiality";
+export type Rule = {
+  id: number;
+  code: string;
+  version: number;
+  category: RuleCategory;
+  kind: RuleKind;
+  severity: "must" | "should" | "may";
+  title: string;
+  text: string;
+  good_examples: string[];
+  bad_examples: string[];
+  pattern: Record<string, unknown>;
+  source_ref: string | null;
+  tier: "public" | "internal" | "confidential";
+  status: "draft" | "active" | "retired";
+  system: boolean;
+};
+export type RuleDraft = Omit<Rule, "id" | "version" | "status" | "system">;
+
+export type Fact = {
+  id: number;
+  statement: string;
+  value: number | null;
+  unit: string | null;
+  subject: string | null;
+  source_ref: string;
+  tier: Rule["tier"];
+  valid_from: string;
+  valid_to: string | null;
+  supersedes_id: number | null;
+  approved: boolean;
+};
+
+export type Term = { id: number; term: string; note: string | null; embargo_until: string | null };
+
+export type BrandAsset = {
+  id: number;
+  name: string;
+  kind: "logo" | "mascot" | "other";
+  part: string;
+  wordmark: string | null;
+  media_type: string;
+  notes: string | null;
+  tier: Rule["tier"];
+  active: boolean;
+  created_at: string;
+  warning?: string | null;
+};
