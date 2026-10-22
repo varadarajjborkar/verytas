@@ -48,6 +48,10 @@ COMPACT_ASPECT = 0.2
 MAX_PART_SHARE = 0.15
 # Counting uses only pixels clearly of a colour; edges between two colours blend and would add slivers.
 COUNT_DE = 12.0
+# Official shapes smaller than this (a highlight in an eye) are details, not countable parts, and a
+# candidate shape is a part when at least this fraction of the smallest official part's size.
+SIGNIFICANT_PART_SHARE = 0.004
+PART_SIZE_RATIO = 0.4
 
 
 @dataclass
@@ -173,18 +177,32 @@ def _assign(rgb: np.ndarray, mask: np.ndarray, palette: list[tuple[RGB, float]],
     return labels
 
 
-def _parts(labels: np.ndarray, index: int, area: int) -> int:
-    """Compact shapes of one colour: eyes, pupils, limbs, tail pieces. Lines and outlines are left out,
-    since resizing or a generator's blur splits and joins them without anything having changed."""
+def _parts(labels: np.ndarray, index: int, area: int) -> list[float]:
+    """Shares of the character covered by each compact shape of one colour: eyes, pupils, limbs, tail
+    pieces. Lines and outlines are left out, since resizing or a generator's blur splits and joins them
+    without anything having changed."""
     n, _, stats, _ = cv2.connectedComponentsWithStats((labels == index).astype(np.uint8), connectivity=8)
     floor = max(12, MIN_PART_SHARE * area)
-    count = 0
+    shares = []
     for i in range(1, n):
         w, h, a = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT], stats[i, cv2.CC_STAT_AREA]
         if (floor <= a <= MAX_PART_SHARE * area and a / (w * h) >= COMPACT_FILL
                 and min(w, h) / max(w, h) >= COMPACT_ASPECT):
-            count += 1
-    return count
+            shares.append(a / area)
+    return shares
+
+
+def _count(official: list[float], candidate: list[float]) -> tuple[int, int] | None:
+    """(official, candidate) counts of the parts that matter, or None when the colour has none.
+
+    Only official parts clearly above the speck floor count (a highlight in an eye is not a part), and a
+    candidate shape counts when it is comparable in size to the smallest of those: a compression speck
+    near a part's size line must not flip the count."""
+    significant = [s for s in official if s >= SIGNIFICANT_PART_SHARE]
+    if not significant:
+        return None
+    least = min(significant)
+    return len(significant), sum(s >= PART_SIZE_RATIO * least for s in candidate)
 
 
 def official_reference(img: Image.Image) -> tuple[np.ndarray, np.ndarray]:
@@ -228,10 +246,10 @@ def compare(official: tuple[np.ndarray, np.ndarray], candidate: tuple[np.ndarray
     for i, (colour, _) in enumerate(palette):
         if colour in gone:
             continue  # already reported as missing; counting its shapes would only repeat that
-        want = _parts(o_core, i, o_area)
-        if want == 0 or want > MAX_COUNTED_PARTS:
+        counted = _count(_parts(o_core, i, o_area), _parts(c_core, i, c_area))
+        if counted is None or counted[0] > MAX_COUNTED_PARTS:
             continue
-        got = _parts(c_core, i, c_area)
+        want, got = counted
         if got != want:
             out.differences.append(Difference(
                 "parts", f"{got} {colour_label(colour)} shape{'s' if got != 1 else ''} where the artwork has {want}",
