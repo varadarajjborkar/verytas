@@ -147,6 +147,25 @@ def test_banned_terms_catch_plurals():
     assert [f.quote for f in found] == ["game-changers"]
 
 
+@pytest.mark.parametrize("written", [
+    "we guarantee results", "it guarantees results", "guaranteeing results", "a guaranteed result",
+])
+def test_banned_phrases_catch_other_forms_of_their_words(written):
+    # Seen live: "we guarantee results" walked past a ban on "guaranteed results".
+    r = rule("CLAIM-PROMISE", {"type": "banned_terms", "terms": ["guaranteed results"]})
+    [f] = run_deterministic(make_ctx(f"Join now and {written} in a month.", [r]))
+    assert "guarantee" in f.quote.lower()
+
+
+@pytest.mark.parametrize(("term", "text"), [
+    ("fast", "Try intermittent fasting with us."),  # short words stay literal
+    ("guaranteed results", "Results are never guaranteed."),  # word order still matters
+])
+def test_word_forms_do_not_widen_short_words_or_reorder_phrases(term, text):
+    r = rule("TERM-06", {"type": "banned_terms", "terms": [term]})
+    assert run_deterministic(make_ctx(text, [r])) == []
+
+
 @pytest.mark.parametrize(("written", "proposed"), [
     ("secret formulas", "methods"),
     ("secretformula", "method"),

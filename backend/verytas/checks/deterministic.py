@@ -62,7 +62,35 @@ def run_deterministic(ctx: CheckContext, problems: list[tuple[str, str, str]] | 
 
 # --- helpers -----------------------------------------------------------------
 
-def _term_regex(term: str, plural: bool = False, joined: bool = False) -> re.Pattern[str]:
+_VERB_FORMS = r"(?:e|es|ed|ing|s)?"
+
+
+def _inflected(word: str) -> str:
+    """A pattern for the regular English forms of one word: "guaranteed" also takes "guarantee",
+    "guarantees" and "guaranteeing". Only for words of five letters or more, where a stray form is
+    still the same word; a short one ("fast", "cure") is matched as written, since "fasting" isn't
+    "fast". Irregular and doubled-consonant forms are out of reach and stay literal."""
+    w = word.lower()
+    if len(w) < 5 or not w.isalpha():
+        return re.escape(word)
+    if w.endswith("eed") or w.endswith("ee"):
+        stem = w[:-1] if w.endswith("eed") else w
+        return re.escape(stem) + r"(?:s|d|ing)?"
+    if w.endswith("ied") and len(w) > 5:
+        return re.escape(w[:-3]) + r"(?:y|ies|ied|ying)"
+    if w.endswith("ed") or w.endswith("ing"):
+        stem = w[:-2] if w.endswith("ed") else w[:-3]
+        return re.escape(stem) + _VERB_FORMS if len(stem) >= 4 else re.escape(word)
+    if w.endswith("s") and not w.endswith("ss"):
+        return re.escape(w[:-1]) + r"(?:s|es|ed|ing)?"
+    if re.search(r"[^aeiou]y$", w):
+        return re.escape(w[:-1]) + r"(?:y|ies|ied|ying)"
+    if w.endswith("e"):
+        return re.escape(w[:-1]) + r"(?:e|es|ed|ing)"
+    return re.escape(w) + r"(?:s|es|ed|ing)?"
+
+
+def _term_regex(term: str, plural: bool = False, joined: bool = False, inflect: bool = False) -> re.Pattern[str]:
     # Word boundaries that also work for terms starting/ending in punctuation.
     # Compiled from the folded term, since it is matched against folded text.
     # Emoji in a term are dropped: emoji are matched by banned_emoji rules, and
@@ -72,8 +100,14 @@ def _term_regex(term: str, plural: bool = False, joined: bool = False) -> re.Pat
         return _NEVER
     # `joined` takes any spacing between the term's words ("gamechanger",
     # "#insanedeals"); `plural` takes a simple plural, captured as "tail" so a
-    # suggested fix can be inflected to match.
+    # suggested fix can be inflected to match; `inflect` takes other forms of
+    # every word ("we guarantee results" for "guaranteed results"), and has no
+    # tail, since no fix is offered for what it matches.
     words = [w for w in re.split(r"[\s_\-]+", core) if w] if joined else [core]
+    if inflect:
+        parts = [r"\s+".join(_inflected(t) for t in w.split()) for w in words]
+        body = r"[\s_\-]*".join(parts)
+        return re.compile(rf"(?<![\w-]){body}(?:'?s)?(?![\w-])", re.IGNORECASE)
     body = r"[\s_\-]*".join(re.escape(w) for w in words)
     tail = r"(?P<tail>e?s)?" if plural and core[-1:].isalpha() else ""
     return re.compile(rf"(?<![\w-]){body}{tail}(?![\w-])", re.IGNORECASE)
@@ -140,7 +174,7 @@ def _finding(ctx: CheckContext, rule: RuleView, start: int, end: int, title: str
 @matcher("banned_terms")
 def banned_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     for term in rule.pattern.get("terms", []):
-        for start, end, _ in find_folded(_term_regex(term, plural=True, joined=True), ctx.body):
+        for start, end, _ in find_folded(_term_regex(term, plural=True, joined=True, inflect=True), ctx.body):
             yield _finding(ctx, rule, start, end, f'Avoid "{ctx.body[start:end]}"', rule.text)
 
 
