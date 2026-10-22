@@ -450,6 +450,12 @@ async def _approval_state(session, content_id: int) -> tuple[str | None, int, li
         return "the latest automated review failed; save a new version to re-run it", 0, []
     if review.status is not ReviewStatus.done:
         return "the latest automated review has not finished", 0, []
+    # A new version is committed (with its audit entry) a moment before its review row, so for that
+    # moment the newest review is still the previous version's. Approving then would approve text
+    # nothing has checked.
+    newest = await session.scalar(select(func.max(ContentVersion.id)).where(ContentVersion.content_id == content_id))
+    if review.version_id != newest:
+        return "the latest version has not been reviewed yet", 0, []
     blockers = (await session.scalars(
         select(Finding).options(selectinload(Finding.decisions))
         .where(Finding.review_id == review.id, Finding.level == Level.blocker))).all()
@@ -515,7 +521,7 @@ async def list_comments(content_id: int, session: Session, user: CurrentUser) ->
 
 
 @router.post("/contents/{content_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
-async def add_comment(content_id: int, body: CommentIn, session: Session, user: CurrentUser) -> Comment:
+async def add_comment(content_id: int, body: CommentIn, session: Session, user: Writer) -> Comment:
     await _content(session, user, content_id)
     await screened(session, workspace_id=user.workspace_id, actor_id=user.id, text=body.body, where="comment")
     if body.parent_id is not None:
