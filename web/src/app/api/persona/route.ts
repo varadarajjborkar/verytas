@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { backendConfigured } from "@/lib/backend";
 import { cookieOptions, currentPersona, PERSONA_COOKIE, personasAvailable } from "@/lib/session";
+import { crossOrigin } from "@/lib/same-origin";
 
 /** Which side of the console this browser is viewing, and whether it can switch (sign-in off only). */
 export async function GET() {
@@ -8,8 +9,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const origin = request.headers.get("origin");
-  if (origin && new URL(origin).host !== new URL(request.url).host) {
+  if (crossOrigin(request)) {
     return Response.json({ error: "cross-site request refused" }, { status: 403 });
   }
   if (!(request.headers.get("content-type") ?? "").startsWith("application/json")) {
