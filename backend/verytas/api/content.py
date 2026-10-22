@@ -532,6 +532,13 @@ async def add_comment(content_id: int, body: CommentIn, session: Session, user: 
         version = await session.get(ContentVersion, body.version_id)
         if version is None or version.content_id != content_id:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "version does not belong to this content")
+        if body.media_id is not None:
+            media = {str(a.get("id")): key for key in ("images", "videos", "documents")
+                     for a in (version.attachments or {}).get(key, [])}
+            if body.media_id not in media:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "that version has no such image or video")
+            if body.time_start is not None and media[body.media_id] != "videos":
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "only a video has moments to pin to")
     comment = Comment(content_id=content_id, actor_id=user.id, **body.model_dump())
     session.add(comment)
     await session.commit()

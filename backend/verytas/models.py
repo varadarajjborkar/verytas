@@ -381,6 +381,12 @@ class Comment(Base):
     body: Mapped[str] = mapped_column(Text)
     span_start: Mapped[int | None] = mapped_column(Integer)
     span_end: Mapped[int | None] = mapped_column(Integer)
+    # Pinned to a place in an image or video of the version: a moment or a range in seconds, and an area
+    # as fractions of the frame (x0, y0, x1, y1 in 0..1), so the pin holds at any display size.
+    media_id: Mapped[str | None] = mapped_column(String(64))
+    time_start: Mapped[float | None] = mapped_column(Float)
+    time_end: Mapped[float | None] = mapped_column(Float)
+    box: Mapped[list[float] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

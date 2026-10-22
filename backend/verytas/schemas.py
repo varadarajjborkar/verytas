@@ -428,6 +428,24 @@ class CommentIn(BaseModel):
     parent_id: int | None = None
     span_start: int | None = None
     span_end: int | None = None
+    media_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.:@-]{1,64}$",
+                                 description="The image or video of the version the comment is pinned to")
+    time_start: float | None = Field(default=None, ge=0, le=86_400, description="Seconds into the video")
+    time_end: float | None = Field(default=None, ge=0, le=86_400)
+    box: list[float] | None = Field(default=None, min_length=4, max_length=4,
+                                    description="x0, y0, x1, y1 as fractions of the frame")
+
+    @model_validator(mode="after")
+    def _pin(self) -> CommentIn:
+        if (self.time_start is not None or self.box is not None) and (self.media_id is None or self.version_id is None):
+            raise ValueError("a moment or an area is pinned to a media_id of a version_id")
+        if self.time_end is not None and (self.time_start is None or self.time_end < self.time_start):
+            raise ValueError("time_end needs a time_start before it")
+        if self.box is not None:
+            x0, y0, x1, y1 = self.box
+            if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
+                raise ValueError("box is x0, y0, x1, y1 within 0..1, with x0 < x1 and y0 < y1")
+        return self
 
 
 class CommentOut(ORM):
@@ -438,6 +456,10 @@ class CommentOut(ORM):
     body: str
     span_start: int | None
     span_end: int | None
+    media_id: str | None = None
+    time_start: float | None = None
+    time_end: float | None = None
+    box: list[float] | None = None
     created_at: datetime
 
 
