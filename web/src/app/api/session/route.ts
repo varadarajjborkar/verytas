@@ -45,6 +45,8 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   if (crossOrigin(request)) return new Response(null, { status: 403 });
-  (await cookies()).delete(SESSION_COOKIE);
+  // Expired by setting it, not cookies().delete(): the delete omits Secure, and browsers ignore a
+  // __Host- cookie without it, which would leave the session signed in.
+  (await cookies()).set(SESSION_COOKIE, "", { ...cookieOptions(), maxAge: 0 });
   return new Response(null, { status: 204 });
 }

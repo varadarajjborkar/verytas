@@ -36,7 +36,7 @@ function Failure({ err }: { err: Error }) {
 function Roster() {
   const [rows, setRows] = useState<CreatorRow[] | null>(null);
   const [err, setErr] = useState<Error | null>(null);
-  const load = useCallback(() => { listCreators().then(setRows).catch(setErr); }, []);
+  const load = useCallback(() => { listCreators().then((r) => { setRows(r); setErr(null); }).catch(setErr); }, []);
   useEffect(() => { load(); }, [load]);
   useOnRefresh(load);
   if (err) return <Failure err={err} />;
@@ -48,7 +48,7 @@ function Roster() {
 function Profile({ id }: { id: number }) {
   const [track, setTrack] = useState<CreatorTrack | null>(null);
   const [err, setErr] = useState<Error | null>(null);
-  const load = useCallback(() => { creatorTrack(id).then(setTrack).catch(setErr); }, [id]);
+  const load = useCallback(() => { creatorTrack(id).then((t) => { setTrack(t); setErr(null); }).catch(setErr); }, [id]);
   useEffect(() => { load(); }, [load]);
   useOnRefresh(load);
 
