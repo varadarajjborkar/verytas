@@ -380,7 +380,7 @@ def _record(store: Store, run_id: int, gen: int, reality: Reality, results: list
             "channel": case.template.channel, "source": case.template.source, "body": case.body,
             "plants": [asdict(p) for p in case.plants],
             "findings": [{k: f.get(k) for k in ("title", "category", "level", "span_start", "span_end", "quote",
-                                                "checker", "confidence")}
+                                                "checker", "confidence", "source")}
                          for f in ((r["review"] or {}).get("findings") or [])],
             "verdicts": {"plants": g.verdicts if g else [], "unplanned": g.unplanned if g else [],
                          "errors": r["errors"]},
