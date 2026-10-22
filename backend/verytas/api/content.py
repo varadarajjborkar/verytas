@@ -231,7 +231,8 @@ async def get_review(review_id: int, request: Request, session: Session, user: C
         if f.fact:
             cites.append(CitationOut(kind="fact", id=f.fact.id, label=f.fact.statement, source=f.fact.source_ref))
         fo.citations = cites
-        fo.signature_valid = keyring.verify(f.signature, finding_payload(review.id, f, f.rule_id))
+        fix = (f.suggestions[0].original, f.suggestions[0].proposed) if f.suggestions else None
+        fo.signature_valid = keyring.verify(f.signature, finding_payload(review.id, f, f.rule_id, f.level.value, fix))
         out.findings.append(fo)
     return out
 
@@ -246,7 +247,7 @@ async def decide(finding_id: int, body: DecisionIn, session: Session, user: Revi
     version = await session.get(ContentVersion, review.version_id)
     content = await _content(session, user, version.content_id)
     if body.suggestion_id is not None and body.suggestion_id not in {s.id for s in finding.suggestions}:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "suggestion does not belong to this finding")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "suggestion does not belong to this finding")
     if (finding.level is Level.blocker and body.action is DecisionAction.rejected
             and user.role not in (Role.approver, Role.brand_admin)):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "only approvers can dismiss a blocker")
@@ -326,7 +327,11 @@ async def add_comment(content_id: int, body: CommentIn, session: Session, user: 
     if body.parent_id is not None:
         parent = await session.get(Comment, body.parent_id)
         if parent is None or parent.content_id != content_id:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "parent comment is on different content")
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "parent comment is on different content")
+    if body.version_id is not None:
+        version = await session.get(ContentVersion, body.version_id)
+        if version is None or version.content_id != content_id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "version does not belong to this content")
     comment = Comment(content_id=content_id, actor_id=user.id, **body.model_dump())
     session.add(comment)
     await session.commit()

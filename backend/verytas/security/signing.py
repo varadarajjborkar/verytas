@@ -29,12 +29,14 @@ class AgentKeyring:
         self.keys_dir = keys_dir
         self._private: dict[str, Ed25519PrivateKey] = {}
 
-    def _key(self, role: str) -> Ed25519PrivateKey:
+    def _key(self, role: str, *, create: bool = True) -> Ed25519PrivateKey | None:
         if not _ROLE.match(role):
             raise ValueError(f"invalid agent role {role!r}")
         if role in self._private:
             return self._private[role]
         path = self.keys_dir / f"{role}.pem"
+        if not path.exists() and not create:
+            return None
         if path.exists():
             key = serialization.load_pem_private_key(path.read_bytes(), password=None)
             if not isinstance(key, Ed25519PrivateKey):
@@ -50,19 +52,26 @@ class AgentKeyring:
         self._private[role] = key
         return key
 
-    def public_key(self, role: str) -> Ed25519PublicKey:
-        return self._key(role).public_key()
+    def public_key(self, role: str) -> Ed25519PublicKey | None:
+        key = self._key(role, create=False)
+        return key.public_key() if key else None
 
     def sign(self, role: str, payload: dict[str, Any]) -> str:
-        sig = self._key(role).sign(canonical(payload))
+        key = self._key(role)
+        assert key is not None  # create=True always returns a key
+        sig = key.sign(canonical(payload))
         return f"ed25519:{role}:{base64.b64encode(sig).decode()}"
 
     def verify(self, signature: str, payload: dict[str, Any]) -> bool:
+        """Never creates key material: an unknown role simply fails verification."""
         try:
             scheme, role, b64 = signature.split(":", 2)
             if scheme != "ed25519":
                 return False
-            self.public_key(role).verify(base64.b64decode(b64), canonical(payload))
+            public = self.public_key(role)
+            if public is None:
+                return False
+            public.verify(base64.b64decode(b64), canonical(payload))
             return True
         except (ValueError, InvalidSignature):
             return False

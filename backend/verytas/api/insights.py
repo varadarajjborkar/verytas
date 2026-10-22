@@ -17,12 +17,13 @@ from __future__ import annotations
 import math
 from collections import Counter, defaultdict
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from verytas.api.deps import CurrentUser, Session
+from verytas.api.deps import Session, require
 from verytas.models import (
     Content,
     ContentVersion,
@@ -31,10 +32,21 @@ from verytas.models import (
     Finding,
     Review,
     ReviewStatus,
+    Role,
     Rule,
+    Tier,
+    User,
 )
 
 router = APIRouter(prefix="/insights", tags=["insights"])
+# Creators see their own reviews; workspace-wide governance data is for the people who run it.
+Analyst = Annotated[User, Depends(require(Role.reviewer, Role.approver, Role.auditor))]
+
+
+def _visible_tiers(user: User) -> list[Tier]:
+    # Aggregates are computed only over content the caller could open, so a
+    # recurring phrase or count can never reveal above-clearance material.
+    return [t for t in Tier if t.rank <= user.clearance.rank]
 MIN_DECISIONS = 3
 
 
@@ -46,23 +58,26 @@ def beta_summary(accepted: int, rejected: int) -> dict:
     return {"mean": round(mean, 3), "lower_90": round(max(0.0, mean - 1.645 * sd), 3)}
 
 
-async def _workspace_findings(session, workspace_id: int) -> list[Finding]:
+async def _workspace_findings(session, user: User) -> list[Finding]:
     q = (select(Finding).options(selectinload(Finding.decisions))
          .join(Review, Finding.review_id == Review.id)
          .join(ContentVersion, Review.version_id == ContentVersion.id)
          .join(Content, ContentVersion.content_id == Content.id)
-         .where(Content.workspace_id == workspace_id))
+         .where(Content.workspace_id == user.workspace_id, Content.tier.in_(_visible_tiers(user))))
     return list((await session.scalars(q)).all())
 
 
 @router.get("/overview")
-async def overview(session: Session, user: CurrentUser, days: int = 30) -> dict:
+async def overview(session: Session, user: Analyst, days: int = 30) -> dict:
     ws = user.workspace_id
-    contents = (await session.scalars(select(Content).where(Content.workspace_id == ws))).all()
+    tiers = _visible_tiers(user)
+    contents = (await session.scalars(
+        select(Content).where(Content.workspace_id == ws, Content.tier.in_(tiers)))).all()
     reviews = (await session.scalars(
         select(Review).join(ContentVersion, Review.version_id == ContentVersion.id)
-        .join(Content, ContentVersion.content_id == Content.id).where(Content.workspace_id == ws))).all()
-    findings = await _workspace_findings(session, ws)
+        .join(Content, ContentVersion.content_id == Content.id)
+        .where(Content.workspace_id == ws, Content.tier.in_(tiers)))).all()
+    findings = await _workspace_findings(session, user)
     rules = {r.id: r for r in (await session.scalars(select(Rule).where(Rule.workspace_id == ws))).all()}
 
     decisions = [d for f in findings for d in f.decisions]
@@ -94,9 +109,9 @@ async def overview(session: Session, user: CurrentUser, days: int = 30) -> dict:
 
 
 @router.get("/recurring")
-async def recurring(session: Session, user: CurrentUser, min_count: int = 2) -> list[dict]:
+async def recurring(session: Session, user: Analyst, min_count: int = 2) -> list[dict]:
     """The same rule tripping on the same phrase across content: a training or template problem."""
-    findings = await _workspace_findings(session, user.workspace_id)
+    findings = await _workspace_findings(session, user)
     rules = {r.id: r for r in (await session.scalars(
         select(Rule).where(Rule.workspace_id == user.workspace_id))).all()}
     groups: dict[tuple[int, str], list[Finding]] = defaultdict(list)
@@ -146,8 +161,8 @@ def _health(rule: Rule, findings: list[Finding]) -> dict:
 
 
 @router.get("/guideline-health")
-async def guideline_health(session: Session, user: CurrentUser) -> list[dict]:
-    findings = await _workspace_findings(session, user.workspace_id)
+async def guideline_health(session: Session, user: Analyst) -> list[dict]:
+    findings = await _workspace_findings(session, user)
     rules = (await session.scalars(select(Rule).where(Rule.workspace_id == user.workspace_id))).all()
     by_rule: dict[int, list[Finding]] = defaultdict(list)
     for f in findings:

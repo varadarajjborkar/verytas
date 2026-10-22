@@ -25,6 +25,7 @@ from verytas.checks.color import (
     rgb_to_lab,
 )
 from verytas.checks.readability import flesch_kincaid_grade, words
+from verytas.security.terms import term_pattern
 
 CHECKER = "deterministic"
 Matcher = Callable[[CheckContext, RuleView], Iterator[RawFinding]]
@@ -122,7 +123,7 @@ def confidential_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding
         if t.embargo_until is not None and ctx.today >= t.embargo_until:
             continue
         until = f" until {t.embargo_until.isoformat()}" if t.embargo_until else ""
-        for m in _term_regex(t.term).finditer(ctx.body):
+        for m in term_pattern(t.term).finditer(ctx.body):
             yield _finding(
                 ctx, rule, m.start(), m.end(), f'Confidential term "{m.group(0)}"',
                 f'"{t.term}" is marked confidential{until}. Publishing it would leak protected information.',

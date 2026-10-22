@@ -53,8 +53,13 @@ def entry_hash(prev_hash: str, payload: dict[str, Any]) -> str:
 
 async def append(session: AsyncSession, *, workspace_id: int, actor: str, action: str, object_type: str,
                  object_id: str | int | None = None, detail: dict[str, Any] | None = None) -> AuditEntry:
-    """Add an audit entry to the session. The caller owns the commit, so the
-    entry lands atomically with the change it describes."""
+    """Append an audit entry and COMMIT the session.
+
+    The commit happens inside the lock: if it happened later, a second writer
+    could read the same predecessor before this entry became visible and fork
+    the chain. Committing here also commits the caller's pending change, so the
+    entry and the change it describes still land atomically. Call it last.
+    """
     async with _locks[workspace_id]:
         prev = await session.scalar(
             select(AuditEntry.hash).where(AuditEntry.workspace_id == workspace_id)
@@ -70,7 +75,7 @@ async def append(session: AsyncSession, *, workspace_id: int, actor: str, action
         )
         entry.hash = entry_hash(entry.prev_hash, _payload(entry))
         session.add(entry)
-        await session.flush()
+        await session.commit()
         return entry
 
 

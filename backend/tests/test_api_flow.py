@@ -163,3 +163,61 @@ def test_clearance_hides_confidential_content(client, world):
     # Reviewer has the default "internal" clearance: same 404 as a missing item.
     assert client.get(f"/contents/{cid}", headers=_auth(world["reviewer"])).status_code == 404
     assert client.get(f"/contents/{cid}", headers=admin).status_code == 200
+
+
+# --- regression tests for errcheck findings ------------------------------------
+
+def test_insights_respect_clearance_and_roles(client, world):
+    admin = _auth(world["admin"])
+    for _ in range(2):
+        client.post("/contents?wait=true", headers=admin,
+                    json={"title": "Board memo", "tier": "confidential", "body": "Project Lumen numbers inside."})
+    phrases = [r["phrase"] for r in client.get("/insights/recurring", headers=_auth(world["reviewer"])).json()]
+    assert "project lumen" not in phrases
+    assert any(r["phrase"] == "project lumen" for r in client.get("/insights/recurring", headers=admin).json())
+    assert client.get("/insights/overview", headers=_auth(world["creator"])).status_code == 403
+
+
+def test_confidential_rules_do_not_apply_to_lower_tier_content(client, world):
+    admin = _auth(world["admin"])
+    r = client.post("/rules", headers=admin, json={
+        "code": "SECRET-01", "category": "terminology", "kind": "deterministic", "severity": "must",
+        "title": "Secret naming", "text": "Never say Falcon (launch plan Q4).", "tier": "confidential",
+        "pattern": {"type": "banned_terms", "terms": ["Falcon"]},
+    })
+    client.patch(f"/rules/{r.json()['id']}", headers=admin, json={"status": "active"})
+    res = client.post("/contents?wait=true", headers=_auth(world["creator"]),
+                      json={"title": "Post", "body": "Falcon is fast."})
+    review = client.get(f"/reviews/{res.json()['review_id']}", headers=_auth(world["creator"])).json()
+    assert not any("SECRET-01" in c["label"] for f in review["findings"] for c in f["citations"])
+
+
+def test_audit_limit_is_bounded(client, world):
+    assert client.get("/audit?limit=-1", headers=_auth(world["admin"])).status_code == 422
+
+
+def test_comment_version_must_belong_to_content(client, world):
+    creator = _auth(world["creator"])
+    a = client.post("/contents?wait=true", headers=creator, json={"title": "A", "body": "Hello there."}).json()
+    b = client.post("/contents?wait=true", headers=creator, json={"title": "B", "body": "Hi again."}).json()
+    res = client.post(f"/contents/{a['content']['id']}/comments", headers=creator,
+                      json={"body": "x", "version_id": b["version"]["id"]})
+    assert res.status_code == 422
+
+
+async def test_editing_a_finding_level_breaks_its_signature(client, world):
+    from sqlalchemy import update
+
+    from verytas.models import Finding
+
+    creator = _auth(world["creator"])
+    res = client.post("/contents?wait=true", headers=creator,
+                      json={"title": "T", "body": "Project Lumen is coming."}).json()
+    review = client.get(f"/reviews/{res['review_id']}", headers=creator).json()
+    leak = next(f for f in review["findings"] if f["level"] == "blocker")
+    db = client.app.state.db
+    async with db.sessionmaker() as s:
+        await s.execute(update(Finding).where(Finding.id == leak["id"]).values(level="advisory"))
+        await s.commit()
+    after = client.get(f"/reviews/{res['review_id']}", headers=creator).json()
+    assert next(f for f in after["findings"] if f["id"] == leak["id"])["signature_valid"] is False

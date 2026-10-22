@@ -144,3 +144,45 @@ async def test_redacting_judge_hides_terms_in_state_and_questions():
                     {"q": Question("noul", "Is Project Lumen mentioned?", {"true": "Project Lumen", "false": "no"})})
     blob = repr(seen)
     assert "Project Lumen" not in blob and "[[TERM_1]]" in blob
+
+
+# --- regression tests for errcheck findings ------------------------------------
+
+@pytest.mark.parametrize("text", ["Project-Lumen", "project_lumen", "ProjectLumen", "Project  Lumen",
+                                  "Project\nLumen", "Project Lumens", "the Project Lumen-X launch"])
+def test_confidential_variants_are_redacted(text):
+    r = Redactor(["Project Lumen"])
+    assert "lumen" not in r.redact(text).lower()
+    assert r.restore(r.redact(text)) == text
+
+
+def test_leak_check_matches_variants_but_not_inside_other_words():
+    from verytas.security.terms import term_pattern
+
+    bounded = term_pattern("Zebra")
+    assert bounded.search("pre-Zebra plans") and bounded.search("two zebras") and bounded.search("Zebra-2")
+    assert not bounded.search("Zebrafish are fine")
+
+
+async def test_concurrent_appends_do_not_fork_the_chain(db):
+    import asyncio
+
+    async with db.sessionmaker() as s:
+        ws = await _workspace(s)
+        await s.commit()
+
+    async def writer(n):
+        async with db.sessionmaker() as s:
+            await append(s, workspace_id=ws, actor=f"w{n}", action="x", object_type="y")
+
+    await asyncio.gather(*(writer(i) for i in range(8)))
+    async with db.sessionmaker() as s:
+        report = await verify_chain(s, ws)
+    assert report.ok and report.entries == 8
+
+
+def test_verify_never_mints_keys(tmp_path):
+    keys = tmp_path / "keys"
+    ring = AgentKeyring(keys)
+    assert not ring.verify("ed25519:ghost:AAAA", {"a": 1})
+    assert not (keys / "ghost.pem").exists()
