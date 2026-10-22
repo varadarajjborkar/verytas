@@ -207,7 +207,9 @@ export type ContentRow = {
 
 /** GET /contents/{id}. */
 export type ContentDetail = Omit<ContentRow, "version_count" | "updated_at" | "latest_review"> & {
-  versions: { id: number; version_no: number; parent_id: number | null; body: string; created_at: string }[];
+  versions: { id: number; version_no: number; parent_id: number | null; body: string; created_at: string;
+    /** Attached images as references; the bytes come from versionImageUrl. */
+    images?: { id: string; alt: string | null; decorative: boolean; media_type: string }[] }[];
   latest_review_id: number | null;
 };
 
