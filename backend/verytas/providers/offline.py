@@ -33,7 +33,9 @@ class OfflineJudge:
     name = "offline/judge"
 
     async def ask(self, state: str | dict[str, Any], questions: dict[str, Question]) -> dict[str, Answer]:
-        text = state if isinstance(state, str) else " ".join(str(v) for v in state.values())
+        # Only the text under judgement counts. List fields carry the evidence the
+        # hints are drawn from; scored too, every claim "matched" its own evidence.
+        text = state if isinstance(state, str) else " ".join(v for v in state.values() if isinstance(v, str))
         return {name: self._answer(text, q) for name, q in questions.items()}
 
     def _answer(self, text: str, q: Question) -> Answer:
