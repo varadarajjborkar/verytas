@@ -7,6 +7,7 @@ import { ApiError, listEscalations, PRIORITY, relativeTime, resolveEscalation } 
 import { canDecide } from "@/lib/roles";
 import type { EscalationRequest, FactCitation, RuleCitation } from "@/lib/types";
 import { CheckIcon, ChevronIcon } from "../Icons";
+import { MeetingPreview } from "../MeetingPreview";
 import { PriorityPill } from "../review/Checklist";
 import { REASONS } from "../review/DecisionControls";
 import { useToast } from "../Toaster";
@@ -106,15 +107,20 @@ export function EscalationsInbox() {
               </p>
             </div>
           ) : (
-            <section id="esc-panel" role="tabpanel" aria-labelledby={`esc-tab-${tab}`} className="vt-card overflow-hidden">
+            // One table on a wide screen; below that each request is its own card, so two stacked requests
+            // never read as one long one.
+            <section id="esc-panel" role="tabpanel" aria-labelledby={`esc-tab-${tab}`}
+              className="xl:overflow-hidden xl:rounded-[14px] xl:border xl:border-line xl:bg-surface xl:shadow-[var(--vt-shadow)]">
               <div className="hidden grid-cols-[minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1fr)_15rem] gap-5 border-b border-line bg-sunken/50 px-5 py-2.5 text-[11px] font-medium uppercase tracking-wide text-subtle xl:grid">
                 <span>The content</span><span>What the record says</span><span>What the creator said</span><span>Decision</span>
               </div>
-              <ul className="divide-y divide-line">
+              <ul className="flex flex-col gap-4 xl:gap-0">
                 {shown.map((r) => <Row key={r.id} r={r} focused={r.id === focus} approver={approver} decider={decider} onDone={load} />)}
               </ul>
             </section>
           )}
+
+      <MeetingPreview side="manager" />
     </div>
   );
 }
@@ -123,8 +129,8 @@ function Row({ r, focused, approver, decider, onDone }: {
   r: EscalationRequest; focused: boolean; approver: boolean; decider: boolean; onDone: () => void;
 }) {
   return (
-    <li id={`esc-${r.id}`} className={`grid gap-4 px-4 py-5 transition-colors md:grid-cols-2 md:gap-5 md:px-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1fr)_15rem] ${
-      focused ? "bg-accent/[0.05]" : ""}`}>
+    <li id={`esc-${r.id}`} className={`grid gap-4 rounded-[14px] border border-line px-4 py-5 shadow-[var(--vt-shadow)] transition-colors md:grid-cols-2 md:gap-5 md:px-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1fr)_15rem] xl:rounded-none xl:border-0 xl:border-b xl:shadow-none xl:last:border-b-0 ${
+      focused ? "bg-[color-mix(in_oklab,var(--vt-accent)_5%,var(--vt-surface))]" : "bg-surface"}`}>
       <Cell label="The content">
         <Link href={`/review?id=${r.content.id}`} className="block truncate text-sm font-semibold hover:text-accent">{r.content.title}</Link>
         <p className="mt-0.5 truncate text-[11px] text-subtle">
