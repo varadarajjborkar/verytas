@@ -84,11 +84,11 @@ export function LibraryView() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div role="tablist" aria-label="Library" onKeyDown={onTabKey} className="flex gap-1 overflow-x-auto border-b border-line">
+      <div role="tablist" aria-label="Library" onKeyDown={onTabKey} className="vt-tabs gap-1">
         {tabs.map((t) => (
           <button key={t.k} id={`lib-tab-${t.k}`} type="button" role="tab" aria-selected={tab === t.k} aria-controls="lib-panel"
             tabIndex={tab === t.k ? 0 : -1} onClick={() => go(t.k)} title={t.count != null ? `${t.count} ${t.hint}` : t.hint}
-            className={`-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+            className={`flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
               tab === t.k ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}>
             {t.label}
             {t.count != null && (
