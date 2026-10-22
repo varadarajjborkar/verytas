@@ -45,7 +45,17 @@ fail() { log "deploy of ${new:0:12} failed: $*"; echo "$new" > "$ROOT/deploy.fai
 # Build while the old release keeps serving; nothing live changes until the symlink moves.
 (cd "$dest/web" && corepack pnpm install --frozen-lockfile --silent && corepack pnpm build) \
   > "$ROOT/build.log" 2>&1 || { tail -30 "$ROOT/build.log"; fail "web build"; }
-"$ROOT/venv/bin/pip" install -q "$dest/backend" || fail "pip install"
+# Backend dependencies come from the hashed lock: a changed or swapped package fails the install
+# instead of reaching the server. Releases from before the lock fall back to a plain install.
+pyinstall() {
+  if [ -f "$1/backend/requirements.lock" ]; then
+    "$ROOT/venv/bin/pip" install -q --require-hashes -r "$1/backend/requirements.lock" &&
+      "$ROOT/venv/bin/pip" install -q --no-deps --no-build-isolation "$1/backend"
+  else
+    "$ROOT/venv/bin/pip" install -q "$1/backend"
+  fi
+}
+pyinstall "$dest" || fail "pip install"
 
 prev=$(readlink -f "$ROOT/app")
 switch() {
@@ -66,7 +76,7 @@ healthy() {
 switch "$dest"
 if ! healthy; then
   log "new release unhealthy; rolling back to $(basename "$prev")"
-  "$ROOT/venv/bin/pip" install -q "$prev/backend" || true
+  pyinstall "$prev" || true
   switch "$prev"
   healthy || log "rollback is unhealthy too; needs a look"
   fail "health check"

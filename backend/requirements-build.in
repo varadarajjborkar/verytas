@@ -1,0 +1,2 @@
+# Build backend for the editable/local install of verytas itself, pinned with the rest.
+setuptools>=70
