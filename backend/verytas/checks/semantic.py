@@ -51,7 +51,16 @@ async def check_semantic(ctx: CheckContext, judge: JudgeProvider, *, threshold: 
     by_key = {f"rule_{r.id}": r for r in noul_rules} | {f"score_{r.id}": r for r in score_rules}
 
     paragraphs = ctx.units_of("paragraph")
-    results = await asyncio.gather(*(judge.ask(p.text, questions) for p in paragraphs))
+    # One failed paragraph fails the check (a partial result would claim coverage
+    # it doesn't have), and the calls still in flight are cancelled so they stop
+    # spending budget.
+    tasks = [asyncio.ensure_future(judge.ask(p.text, questions)) for p in paragraphs]
+    try:
+        results = await asyncio.gather(*tasks)
+    except BaseException:
+        for t in tasks:
+            t.cancel()
+        raise
 
     findings: list[RawFinding] = []
     for para, answers in zip(paragraphs, results, strict=True):
