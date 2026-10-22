@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -10,6 +11,7 @@ from verytas import __version__
 from verytas.api import admin, assistant, chats, content, governance, insights, knowledge, media
 from verytas.config import Settings, get_settings
 from verytas.db import Database
+from verytas.media import storage
 from verytas.prism.orchestrator import Prism
 from verytas.services.workspace import backfill_system_rule_tiers, backfill_system_rules
 
@@ -44,7 +46,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async with db.sessionmaker() as session:
             await backfill_system_rule_tiers(session)
             await backfill_system_rules(session)
+        sweep = asyncio.create_task(storage.sweep_forever(db.sessionmaker, settings.orphan_upload_ttl_h))
         yield
+        sweep.cancel()
         await prism.drain()
         await db.dispose()
 

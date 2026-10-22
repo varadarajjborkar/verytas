@@ -1,0 +1,99 @@
+"""How much upload storage a person and a workspace may hold, and reclaiming uploads nothing uses.
+
+Uploads live in the database as `MediaBlob` rows. Without limits one account could fill the host's disk
+(security audit, run 1), so each upload is checked against two quotas: one per person, so a single
+account can't take a whole workspace's share, and one per workspace, which bounds the host. An upload
+that no version references after `orphan_upload_ttl_h` hours (an abandoned draft, a brand book read
+by the rule importer) is deleted by a sweep that runs hourly and before a quota refusal.
+
+The quota is checked before the insert, so two uploads racing past the line can overshoot it by at most
+one file (150 MB at most); SQLite serialises writers anyway.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from dataclasses import dataclass
+from datetime import timedelta
+from typing import Any
+
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from verytas.models import Content, ContentVersion, MediaBlob, utcnow
+
+log = logging.getLogger(__name__)
+_MB = 1024 * 1024
+
+
+def blob_ids(attachments: dict[str, Any] | None) -> set[str]:
+    """The upload ids a version's attachments point at."""
+    ids: set[str] = set()
+    for key in ("images", "documents", "videos"):
+        ids |= {a["blob_id"] for a in (attachments or {}).get(key, []) if isinstance(a, dict) and a.get("blob_id")}
+    return ids
+
+
+@dataclass(frozen=True)
+class Usage:
+    user_bytes: int
+    workspace_bytes: int
+
+
+async def usage(session: AsyncSession, workspace_id: int, user_id: int) -> Usage:
+    # Sums over the size column only; the file bytes are never loaded.
+    total = func.coalesce(func.sum(MediaBlob.size), 0)
+    mine = await session.scalar(select(total).where(MediaBlob.workspace_id == workspace_id,
+                                                    MediaBlob.created_by == user_id))
+    everyone = await session.scalar(select(total).where(MediaBlob.workspace_id == workspace_id))
+    return Usage(int(mine or 0), int(everyone or 0))
+
+
+def over_quota(now: Usage, incoming: int, *, user_mb: int, workspace_mb: int) -> str | None:
+    """Why this upload doesn't fit, worded for the person uploading, or None when it does."""
+    if now.user_bytes + incoming > user_mb * _MB:
+        return (f"your uploads already use {now.user_bytes / _MB:.0f} of your {user_mb} MB; "
+                "files you uploaded but never sent for review are cleared after a day")
+    if now.workspace_bytes + incoming > workspace_mb * _MB:
+        return f"this workspace's uploads are at their {workspace_mb} MB limit; ask a brand admin to raise it"
+    return None
+
+
+async def reclaim_orphans(session: AsyncSession, *, older_than: timedelta,
+                          workspace_id: int | None = None) -> int:
+    """Deletes uploads older than `older_than` that no content version references. Returns how many."""
+    cutoff = utcnow() - older_than
+    q = select(MediaBlob.id, MediaBlob.workspace_id).where(MediaBlob.created_at < cutoff)
+    if workspace_id is not None:
+        q = q.where(MediaBlob.workspace_id == workspace_id)
+    candidates = (await session.execute(q)).all()
+    if not candidates:
+        return 0
+    workspaces = {ws for _, ws in candidates}
+    used: set[str] = set()
+    # Streamed: attachments may carry inline base64 images, so the versions are never all in memory.
+    rows = await session.stream_scalars(
+        select(ContentVersion.attachments).join(Content, Content.id == ContentVersion.content_id)
+        .where(Content.workspace_id.in_(workspaces)).execution_options(yield_per=100))
+    async for attachments in rows:
+        used |= blob_ids(attachments)
+    stale = [bid for bid, _ in candidates if bid not in used]
+    for i in range(0, len(stale), 500):
+        await session.execute(delete(MediaBlob).where(MediaBlob.id.in_(stale[i:i + 500])))
+    await session.commit()
+    return len(stale)
+
+
+async def sweep_forever(sessionmaker: async_sessionmaker[AsyncSession], ttl_h: float,
+                        every_s: float = 3600) -> None:
+    """The hourly sweep the API runs in the background. A failed pass is logged and retried next hour."""
+    while True:
+        try:
+            async with sessionmaker() as session:
+                n = await reclaim_orphans(session, older_than=timedelta(hours=ttl_h))
+            if n:
+                log.info("reclaimed %d unused upload(s)", n)
+        except Exception:  # noqa: BLE001, a storage sweep must never take the API down
+            log.exception("upload sweep failed")
+        await asyncio.sleep(every_s)

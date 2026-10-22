@@ -13,14 +13,16 @@ import asyncio
 import hashlib
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
 
 from verytas.api.deps import CurrentUser, Session, require
 from verytas.media import profile as prof
 from verytas.media.files import UNSUPPORTED_IMAGES, MediaError, decode_b64, limit_for, pdf_active_content, sniff
+from verytas.media.storage import blob_ids, over_quota, reclaim_orphans, usage
 from verytas.models import MediaBlob, Role, User
 from verytas.schemas import MediaOut, PrecheckIn
 
@@ -36,7 +38,7 @@ _METRICS_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="media-metr
 
 
 @router.post("/media", response_model=MediaOut, status_code=status.HTTP_201_CREATED)
-async def upload(session: Session, user: Writer, file: Annotated[UploadFile, File()]) -> MediaOut:
+async def upload(request: Request, session: Session, user: Writer, file: Annotated[UploadFile, File()]) -> MediaOut:
     raw = await file.read(_UPLOAD_CAP + 1)
     if len(raw) > _UPLOAD_CAP:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "file is over 150 MB")
@@ -50,6 +52,14 @@ async def upload(session: Session, user: Writer, file: Annotated[UploadFile, Fil
     if len(raw) > limit_for(kind):
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE,
                             f"{kind} files are limited to {limit_for(kind) // 1024 // 1024} MB")
+    settings = request.app.state.settings
+    limits = {"user_mb": settings.upload_quota_user_mb, "workspace_mb": settings.upload_quota_workspace_mb}
+    if over_quota(await usage(session, user.workspace_id, user.id), len(raw), **limits):
+        # Abandoned uploads may be what fills it: clear this workspace's before refusing.
+        await reclaim_orphans(session, older_than=timedelta(hours=settings.orphan_upload_ttl_h),
+                              workspace_id=user.workspace_id)
+        if reason := over_quota(await usage(session, user.workspace_id, user.id), len(raw), **limits):
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, reason)
     digest = hashlib.sha256(raw).hexdigest()
     blob = MediaBlob(id=uuid.uuid4().hex, workspace_id=user.workspace_id, media_type=kind,
                      name=(file.filename or "")[:200] or None, size=len(raw), sha256=digest, data=raw,
@@ -106,13 +116,6 @@ async def load_blobs(session, workspace_id: int, ids: set[str]) -> dict[str, Med
         # Another workspace's id reads as missing too: no cross-tenant probing.
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"unknown media id(s): {sorted(missing)}")
     return found
-
-
-def blob_ids(attachments: dict[str, Any]) -> set[str]:
-    ids = set()
-    for key in ("images", "documents", "videos"):
-        ids |= {a["blob_id"] for a in attachments.get(key, []) if a.get("blob_id")}
-    return ids
 
 
 async def build_profile(session, user: User, channel: str, body: str, attachments: dict[str, Any]) -> prof.Profile:
