@@ -63,25 +63,34 @@ class ParsedNumber:
     raw: str
 
 
-def parse_number(text: str) -> ParsedNumber | None:
+def parse_numbers(text: str) -> list[ParsedNumber]:
+    """Every quantity in the text, in order. Years and ranks ("#1") are not quantities."""
+    out = []
     for m in _NUMBER.finditer(text):
         raw_num = m.group("num")
         if _YEAR.match(raw_num) and not (m.group("pct") or m.group("plus") or m.group("mult")):
             continue  # "since 2019" is a date, not a quantity
+        if m.start("num") > 0 and text[m.start("num") - 1] == "#":
+            continue  # "#1 tool" is a ranking claim, handled as a superlative
         value = float(raw_num.replace(",", ""))
         if m.group("mult"):
             value *= _MULT[m.group("mult").lower()]
         prefix = (m.group("prefix") or "").strip().lower()
         end = m.end("mult") if m.group("mult") else m.end("num")
-        return ParsedNumber(
+        out.append(ParsedNumber(
             value=value,
             at_least=bool(m.group("plus")) or prefix in ("more than", "over", "at least"),
             percent=bool(m.group("pct")),
             start=m.start("num"),
             end=end,
             raw=text[m.start("num"):end],
-        )
-    return None
+        ))
+    return out
+
+
+def parse_number(text: str) -> ParsedNumber | None:
+    numbers = parse_numbers(text)
+    return numbers[0] if numbers else None
 
 
 class ExtractClaimsTask:
@@ -172,38 +181,74 @@ def _format_like(original: str, value: float) -> str:
 class _ClaimResult:
     verdict: Verdict
     fact: FactView | None
-    current: FactView | None  # the valid fact to suggest when the matched one expired
     confidence: float
     model: str | None
 
 
-async def _verify(claim: ExtractedClaim, number: ParsedNumber | None, candidates: list[FactView],
-                  ctx: CheckContext, judge: JudgeProvider) -> _ClaimResult:
+NumberVerdict = Literal["supported", "contradicted", "outdated", "future", "unmatched"]
+
+
+@dataclass
+class _NumberResult:
+    number: ParsedNumber
+    verdict: NumberVerdict
+    fact: FactView | None = None
+    replacement: FactView | None = None  # whose value should replace the number in a fix
+
+
+_MATCH_FLOOR = 0.5
+
+
+def _subject(quote: str, n: ParsedNumber) -> str:
+    """The phrase a number counts: the few words after it ("800 teams"), or
+    before it when it ends the sentence ("teams using us: 800")."""
+    after = " ".join(quote[n.end:].split()[:3])
+    if _content_words(after):
+        return after
+    return " ".join(quote[:n.start].split()[-4:])
+
+
+def _verify_numbers(quote: str, numbers: list[ParsedNumber], candidates: list[FactView],
+                    ctx: CheckContext) -> list[_NumberResult]:
+    numeric = [f for f in candidates if f.value is not None]
+    results = []
+    for n in numbers:
+        subject = _subject(quote, n)
+        scored = [(relevance(subject, f), f) for f in numeric if (f.unit == "%") == n.percent]
+        scored = [(sc, f) for sc, f in scored if sc >= _MATCH_FLOOR]
+        if not scored:
+            results.append(_NumberResult(n, "unmatched"))
+            continue
+        top = max(sc for sc, _ in scored)
+        family = [f for sc, f in scored if sc >= top - 1e-9]  # same subject: e.g. last quarter's and this quarter's
+        valid = [f for f in family if f.valid_on(ctx.today)]
+        past = [f for f in family if f.valid_to is not None and ctx.today >= f.valid_to]
+        future = [f for f in family if ctx.today < f.valid_from]
+        if valid:
+            fact = valid[0]
+            if compare_numbers(n, fact.value) == "supported":
+                results.append(_NumberResult(n, "supported", fact))
+                continue
+            # Wrong today but right in the past is stale copy: report it as outdated.
+            stale = next((f for f in past if compare_numbers(n, f.value) == "supported"), None)
+            results.append(_NumberResult(n, "outdated", stale, fact) if stale
+                           else _NumberResult(n, "contradicted", fact, fact))
+        elif past:
+            fact = past[0]
+            successor = next((f for f in ctx.facts if f.valid_on(ctx.today) and f.value is not None
+                              and relevance(fact.statement, f) >= 0.6), None)
+            results.append(_NumberResult(n, "outdated", fact, successor))
+        else:
+            results.append(_NumberResult(n, "future", future[0]))
+    return results
+
+
+async def _judge_claim(claim: ExtractedClaim, candidates: list[FactView], ctx: CheckContext,
+                       judge: JudgeProvider) -> _ClaimResult:
     valid = [f for f in candidates if f.valid_on(ctx.today)]
     expired = [f for f in candidates if not f.valid_on(ctx.today)]
-
-    if number is not None:
-        numeric = [f for f in candidates if f.value is not None and (f.unit == "%") == number.percent]
-        valid_numeric = [f for f in numeric if f in valid]
-        expired_numeric = [f for f in numeric if f in expired]
-        if valid_numeric:
-            fact = valid_numeric[0]
-            verdict = compare_numbers(number, fact.value)
-            if verdict == "contradicted":
-                # Wrong today but right in the past: that's stale copy, and the
-                # fix is the current figure, so report it as outdated.
-                stale = next((f for f in expired_numeric if compare_numbers(number, f.value) == "supported"), None)
-                if stale is not None:
-                    return _ClaimResult("contradicted", stale, fact, 1.0, None)
-            return _ClaimResult(verdict, fact, None, 1.0, None)
-        if expired_numeric:
-            fact = expired_numeric[0]
-            successor = next((f for f in ctx.facts if f.valid_on(ctx.today) and relevance(fact.statement, f) >= 0.6
-                              and f.value is not None), None)
-            return _ClaimResult("contradicted", fact, successor, 1.0, None)
-
     if not candidates:
-        return _ClaimResult("unsupported", None, None, 0.9, None)
+        return _ClaimResult("unsupported", None, 0.9, None)
 
     pool = valid or expired
     state = {"claim": claim.quote, "approved_evidence": [f.statement for f in pool]}
@@ -223,11 +268,11 @@ async def _verify(claim: ExtractedClaim, number: ParsedNumber | None, candidates
     p_sup, p_con = answers["supported"].p_yes, answers["contradicted"].p_yes
     if p_sup >= 0.7:
         if not valid:
-            return _ClaimResult("contradicted", pool[0], None, p_sup, judge.name)  # outdated, handled by caller
-        return _ClaimResult("supported", pool[0], None, p_sup, judge.name)
+            return _ClaimResult("contradicted", pool[0], p_sup, judge.name)  # outdated, handled by caller
+        return _ClaimResult("supported", pool[0], p_sup, judge.name)
     if p_con >= 0.7:
-        return _ClaimResult("contradicted", pool[0], None, p_con, judge.name)
-    return _ClaimResult("unsupported", pool[0], None, max(1 - p_sup, 0.5), judge.name)
+        return _ClaimResult("contradicted", pool[0], p_con, judge.name)
+    return _ClaimResult("unsupported", pool[0], max(1 - p_sup, 0.5), judge.name)
 
 
 def _locate(quote: str, sentences: list[Unit], body: str) -> tuple[Unit, int, int]:
@@ -242,6 +287,49 @@ def _locate(quote: str, sentences: list[Unit], body: str) -> tuple[Unit, int, in
     return best, best.start, best.end
 
 
+def _numeric_finding(base: dict, quote: str, results: list[_NumberResult], ctx: CheckContext) -> RawFinding | None:
+    bad = [r for r in results if r.verdict in ("contradicted", "outdated", "future")]
+    if bad:
+        explanations, edits = [], []
+        for r in bad:
+            fact = r.fact
+            if r.verdict == "contradicted":
+                explanations.append(f'"{r.number.raw}" conflicts with the approved fact "{fact.statement}" '
+                                    f"({fact.source_ref}).")
+            elif r.verdict == "outdated":
+                explanations.append(f'"{r.number.raw}" matches "{fact.statement}" ({fact.source_ref}), which stopped '
+                                    f"being valid on {fact.valid_to.isoformat()}.")
+            else:
+                explanations.append(f'"{r.number.raw}" matches "{fact.statement}" ({fact.source_ref}), which only '
+                                    f"becomes valid on {fact.valid_from.isoformat()}. Publishing earlier would "
+                                    "pre-announce it.")
+            if r.replacement is not None and r.replacement.value is not None:
+                edits.append((r.number, _format_like(r.number.raw, r.replacement.value)))
+        suggestion = None
+        if edits:
+            proposed = quote
+            for n, new in sorted(edits, key=lambda e: e[0].start, reverse=True):
+                proposed = proposed[:n.start] + new + proposed[n.end:]
+            suggestion = SuggestedEdit(quote, proposed, "Uses the currently approved figures: " +
+                                       "; ".join(r.replacement.statement for r in bad if r.replacement))
+        verdicts = {r.verdict for r in bad}
+        if verdicts == {"outdated"}:
+            code, title = "CLAIM-OUTDATED", "Claim relies on an outdated fact"
+        elif verdicts == {"future"}:
+            code, title = "CLAIM-CONTRADICTED", "Claim relies on a fact that is not valid yet"
+        else:
+            code, title = "CLAIM-CONTRADICTED", "Claim conflicts with an approved fact"
+        return RawFinding(**base, rule_code=code, fact_id=bad[0].fact.id, title=title,
+                          explanation=" ".join(explanations), suggestion=suggestion)
+    unmatched = [r for r in results if r.verdict == "unmatched"]
+    if unmatched:
+        figures = ", ".join(f'"{r.number.raw}"' for r in unmatched)
+        return RawFinding(**base, rule_code="CLAIM-UNSUPPORTED", title="Unsupported figure",
+                          explanation=f"No approved fact backs {figures}. Add a source to the fact library or "
+                                      "soften the claim.", needs_explanation=True)
+    return None
+
+
 async def check_claims(ctx: CheckContext, llm: LLMProvider, judge: JudgeProvider) -> list[RawFinding]:
     sentences = ctx.units_of("sentence")
     if not sentences:
@@ -252,29 +340,29 @@ async def check_claims(ctx: CheckContext, llm: LLMProvider, judge: JudgeProvider
     for claim in extracted.claims:
         unit, start, end = _locate(claim.quote, sentences, ctx.body)
         quote = ctx.body[start:end]
-        number = parse_number(quote) if claim.kind == "numeric" else None
-        candidates = retrieve(f"{quote} {claim.subject or ''}", ctx.facts)
-        result = await _verify(claim, number, candidates, ctx, judge)
-        if result.verdict == "supported":
+        base = {"unit_id": unit.id, "category": "claims", "checker": CHECKER, "quote": quote,
+                "span_start": start, "span_end": end, "confidence": 1.0, "model": None}
+        candidates = retrieve(f"{quote} {claim.subject or ''}", ctx.facts, k=5)
+
+        # Numbers are verified in code, one by one, each against the fact that
+        # matches the thing it counts. Only number-free claims go to the judge.
+        numbers = parse_numbers(quote) if claim.kind in ("numeric", "factual") else []
+        if numbers:
+            finding = _numeric_finding(base, quote, _verify_numbers(quote, numbers, candidates, ctx), ctx)
+            if finding is not None:
+                findings.append(finding)
             continue
 
+        result = await _judge_claim(claim, candidates, ctx, judge)
+        if result.verdict == "supported":
+            continue
+        base |= {"confidence": round(result.confidence, 4), "model": result.model}
         fact = result.fact
-        base = {"unit_id": unit.id, "category": "claims", "checker": CHECKER, "quote": quote,
-                "span_start": start, "span_end": end, "confidence": round(result.confidence, 4),
-                "model": result.model}
-
-        if fact is not None and not fact.valid_on(ctx.today) and fact.valid_to and ctx.today >= fact.valid_to:
-            suggestion = None
-            if number is not None and result.current is not None and result.current.value is not None:
-                new = _format_like(number.raw, result.current.value)
-                suggestion = SuggestedEdit(quote, quote[:number.start] + new + quote[number.end:],
-                                           f"Current approved figure: {result.current.statement}")
+        if fact is not None and fact.valid_to is not None and ctx.today >= fact.valid_to:
             findings.append(RawFinding(
-                **base, rule_code="CLAIM-OUTDATED", fact_id=fact.id,
-                title="Claim relies on an outdated fact",
+                **base, rule_code="CLAIM-OUTDATED", fact_id=fact.id, title="Claim relies on an outdated fact",
                 explanation=(f'This matches "{fact.statement}" ({fact.source_ref}), which stopped being valid on '
                              f"{fact.valid_to.isoformat()}."),
-                suggestion=suggestion,
             ))
         elif fact is not None and ctx.today < fact.valid_from:
             findings.append(RawFinding(
@@ -284,21 +372,14 @@ async def check_claims(ctx: CheckContext, llm: LLMProvider, judge: JudgeProvider
                              f"{fact.valid_from.isoformat()}. Publishing earlier would pre-announce it."),
             ))
         elif result.verdict == "contradicted" and fact is not None:
-            suggestion = None
-            if number is not None and fact.value is not None:
-                new = _format_like(number.raw, fact.value)
-                suggestion = SuggestedEdit(quote, quote[:number.start] + new + quote[number.end:],
-                                           f"Matches the approved fact: {fact.statement}")
             findings.append(RawFinding(
                 **base, rule_code="CLAIM-CONTRADICTED", fact_id=fact.id,
                 title="Claim conflicts with an approved fact",
                 explanation=f'The approved fact says "{fact.statement}" ({fact.source_ref}).',
-                suggestion=suggestion,
             ))
-        elif claim.kind in ("numeric", "superlative", "comparative") or result.fact is not None:
+        elif claim.kind in ("numeric", "superlative", "comparative") or fact is not None:
             findings.append(RawFinding(
-                **base, rule_code="CLAIM-UNSUPPORTED",
-                title=f"Unsupported {claim.kind} claim",
+                **base, rule_code="CLAIM-UNSUPPORTED", title=f"Unsupported {claim.kind} claim",
                 explanation="No approved fact backs this claim. Add a source to the fact library or soften it.",
                 needs_explanation=True,
             ))

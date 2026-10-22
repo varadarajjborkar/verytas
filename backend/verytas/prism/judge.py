@@ -43,13 +43,15 @@ class Scorecard:
                 "warnings": self.warnings, "advisories": self.advisories}
 
 
-def scorecard(levelled: list[tuple[RawFinding, Level]], checked: set[str]) -> Scorecard:
+def scorecard(levelled: list[tuple[RawFinding, Level]], checked: set[str],
+              statuses: dict[str, str] | None = None) -> Scorecard:
     cats: dict[str, dict] = {}
     for cat in CATEGORIES:
         items = [(f, lvl) for f, lvl in levelled if f.category == cat]
         penalty = sum(_PENALTY[lvl] * f.confidence for f, lvl in items)
         cats[cat] = {
             "checked": cat in checked,
+            "status": (statuses or {}).get(cat, "checked" if cat in checked else "not_checked"),
             "score": round(max(0.0, 1.0 - penalty), 3) if cat in checked else None,
             "findings": len(items),
             "blockers": sum(1 for _, lvl in items if lvl is Level.blocker),

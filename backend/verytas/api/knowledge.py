@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from verytas.api.deps import CurrentUser, Session, can_read, require
 from verytas.checks.base import FactView
 from verytas.checks.claims import relevance
+from verytas.checks.patterns import validate_pattern
 from verytas.models import ConfidentialTerm, Fact, Role, Rule, RuleStatus, User
 from verytas.schemas import FactIn, FactOut, RuleIn, RuleOut, RulePatch, TermIn, TermOut
 from verytas.security.audit import append
@@ -53,7 +54,19 @@ async def update_rule(rule_id: int, body: RulePatch, session: Session, admin: Ad
     rule = await session.get(Rule, rule_id)
     if rule is None or rule.workspace_id != admin.workspace_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "rule not found")
-    changes = body.model_dump(exclude_unset=True)
+    latest = await session.scalar(
+        select(func.max(Rule.version)).where(Rule.workspace_id == admin.workspace_id, Rule.code == rule.code))
+    if rule.version != latest:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"{rule.code} v{rule.version} is not the latest; edit v{latest}")
+    # An explicit null means "leave it", not "erase a required field".
+    changes = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if not changes:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "nothing to change")
+    if "pattern" in changes:
+        try:
+            changes["pattern"] = validate_pattern(rule.kind.value, changes["pattern"])
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
     content_fields = {k: v for k, v in changes.items() if k != "status"}
 
     target = rule
@@ -96,18 +109,24 @@ async def list_facts(session: Session, user: CurrentUser, valid_on: date | None 
 
 @router.post("/facts", response_model=FactOut, status_code=status.HTTP_201_CREATED)
 async def create_fact(body: FactIn, session: Session, admin: Admin) -> Fact:
+    old = None
+    if body.supersedes_id:
+        old = await session.get(Fact, body.supersedes_id)
+        if old is None or old.workspace_id != admin.workspace_id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "superseded fact not found")
+        if body.valid_from <= old.valid_from:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                                "a replacement fact must start after the fact it supersedes")
     fact = Fact(workspace_id=admin.workspace_id, approved=True, **body.model_dump())
     session.add(fact)
     try:
         await session.flush()
     except IntegrityError:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid fact") from None
-    if body.supersedes_id:
-        old = await session.get(Fact, body.supersedes_id)
-        if old and old.workspace_id == admin.workspace_id and (old.valid_to is None or old.valid_to > body.valid_from):
-            # Close the old fact's window where the new one opens, so exactly
-            # one version of the figure is valid on any given day.
-            old.valid_to = body.valid_from
+    if old is not None and (old.valid_to is None or old.valid_to > body.valid_from):
+        # Close the old fact's window where the new one opens, so exactly
+        # one version of the figure is valid on any given day.
+        old.valid_to = body.valid_from
     await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}", action="fact.created",
                  object_type="fact", object_id=fact.id, detail={"supersedes": body.supersedes_id})
     await session.commit()

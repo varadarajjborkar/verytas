@@ -62,8 +62,14 @@ class ExplainAndFixTask:
 
 async def explain_and_fix(findings: list[RawFinding], rules: dict[str, RuleView], llm: LLMProvider,
                           judge: JudgeProvider) -> None:
-    """Mutates findings in place: better explanations, plus suggestions that pass both checks."""
+    """Better explanations, plus suggestions that pass both checks.
+
+    Proposed fixes are held aside and only attached to findings once every
+    intent check has run. If anything fails part way, no unchecked fix is ever
+    shown (explanations already written are kept; they carry no edit).
+    """
     pending = [f for f in findings if f.needs_explanation]
+    proposals: list[tuple[RawFinding, SuggestedEdit]] = []
     for start in range(0, len(pending), BATCH):
         batch = pending[start:start + BATCH]
         items = [(str(i), f, rules.get(f.rule_code or "")) for i, f in enumerate(batch)]
@@ -79,16 +85,18 @@ async def explain_and_fix(findings: list[RawFinding], rules: dict[str, RuleView]
             original, proposed = fix.original.strip(), fix.proposed.strip()
             if not original or not proposed or original == proposed or original not in (f.quote or ""):
                 continue  # no fix, or the model edited text that isn't there
-            f.suggestion = SuggestedEdit(original, proposed, fix.explanation.strip(), model=llm.name)
+            proposals.append((f, SuggestedEdit(original, proposed, fix.explanation.strip(), model=llm.name)))
 
-    await _check_intent([f for f in pending if f.suggestion], judge)
+    for f, suggestion in await _check_intent(proposals, judge):
+        f.suggestion = suggestion
 
 
-async def _check_intent(findings: list[RawFinding], judge: JudgeProvider) -> None:
-    if not findings or judge.name.startswith("offline"):
-        return  # the offline judge can't judge meaning; leave intent unscored
-    for f in findings:
-        s = f.suggestion
+async def _check_intent(proposals: list[tuple[RawFinding, SuggestedEdit]],
+                        judge: JudgeProvider) -> list[tuple[RawFinding, SuggestedEdit]]:
+    if not proposals or judge.name.startswith("offline"):
+        return proposals  # the offline judge can't judge meaning; intent stays unscored (shown as such)
+    kept = []
+    for f, s in proposals:
         revised = (f.quote or "").replace(s.original, s.proposed, 1)
         answers = await judge.ask(
             {"original": f.quote, "revised": revised},
@@ -99,5 +107,6 @@ async def _check_intent(findings: list[RawFinding], judge: JudgeProvider) -> Non
             )},
         )
         s.intent_preserved = round(answers["same_intent"].p_yes, 4)
-        if s.intent_preserved < INTENT_FLOOR:
-            f.suggestion = None
+        if s.intent_preserved >= INTENT_FLOOR:
+            kept.append((f, s))
+    return kept

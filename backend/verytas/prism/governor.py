@@ -68,15 +68,32 @@ class CircuitBreaker:
                 self.opened_at = time.monotonic()
 
 
+class _Slots:
+    """Optional shared semaphore; a no-op when none is given."""
+
+    def __init__(self, slots: asyncio.Semaphore | None) -> None:
+        self._slots = slots
+
+    async def __aenter__(self) -> None:
+        if self._slots:
+            await self._slots.acquire()
+
+    async def __aexit__(self, *exc: object) -> None:
+        if self._slots:
+            self._slots.release()
+
+
 class GuardedLLM:
-    def __init__(self, inner: LLMProvider, breaker: CircuitBreaker) -> None:
+    def __init__(self, inner: LLMProvider, breaker: CircuitBreaker, slots: asyncio.Semaphore | None = None) -> None:
         self._inner, self._breaker, self.name = inner, breaker, inner.name
+        self._slots = _Slots(slots)
 
     async def run[T: BaseModel](self, task: StructuredTask[T]) -> T:
         if self._breaker.open:
             raise ProviderUnavailable(f"{self.name} circuit open after repeated failures")
         try:
-            result = await self._inner.run(task)
+            async with self._slots:
+                result = await self._inner.run(task)
         except ProviderUnavailable:
             self._breaker.record(False)
             raise
@@ -85,14 +102,16 @@ class GuardedLLM:
 
 
 class GuardedJudge:
-    def __init__(self, inner: JudgeProvider, breaker: CircuitBreaker) -> None:
+    def __init__(self, inner: JudgeProvider, breaker: CircuitBreaker, slots: asyncio.Semaphore | None = None) -> None:
         self._inner, self._breaker, self.name = inner, breaker, inner.name
+        self._slots = _Slots(slots)
 
     async def ask(self, state: str | dict[str, Any], questions: dict[str, Question]) -> dict[str, Answer]:
         if self._breaker.open:
             raise ProviderUnavailable(f"{self.name} circuit open after repeated failures")
         try:
-            result = await self._inner.ask(state, questions)
+            async with self._slots:
+                result = await self._inner.ask(state, questions)
         except ProviderUnavailable:
             self._breaker.record(False)
             raise

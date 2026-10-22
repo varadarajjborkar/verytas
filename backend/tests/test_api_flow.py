@@ -280,3 +280,41 @@ def test_overlapping_fixes_are_refused_not_dropped(client, world):
                 json={"action": "accepted", "suggestion_id": term["suggestions"][0]["id"]})
     res = client.post(f"/contents/{res['content']['id']}/apply-fixes", headers=creator)
     assert res.status_code == 409 and "overlap" in res.json()["detail"]
+
+
+def test_rule_patterns_are_validated(client, world):
+    admin = _auth(world["admin"])
+    bad = client.post("/rules", headers=admin, json={
+        "code": "TERM-09", "category": "terminology", "kind": "deterministic", "title": "x", "text": "x",
+        "pattern": {"type": "preferred_terms", "map": ["a", "b"]}})
+    assert bad.status_code == 422
+    rid = _rule_id(client, admin, "TERM-01")
+    assert client.patch(f"/rules/{rid}", headers=admin, json={"pattern": {"type": "nope"}}).status_code == 422
+    assert client.patch(f"/rules/{rid}", headers=admin, json={"title": None}).status_code == 422
+
+
+def test_only_the_latest_rule_version_is_editable(client, world):
+    admin = _auth(world["admin"])
+    rid = _rule_id(client, admin, "TERM-01")
+    v2 = client.patch(f"/rules/{rid}", headers=admin, json={"title": "House spellings v2"}).json()
+    assert v2["version"] == 2
+    assert client.patch(f"/rules/{rid}", headers=admin, json={"status": "active"}).status_code == 409
+
+
+def test_superseding_fact_must_start_later(client, world):
+    admin = _auth(world["admin"])
+    old = client.get("/facts", headers=admin).json()[0]
+    res = client.post("/facts", headers=admin, json={
+        "statement": "Verytas is used by 900+ teams", "value": 900, "source_ref": "x",
+        "valid_from": "2026-01-01", "supersedes_id": old["id"]})
+    assert res.status_code == 422
+
+
+def test_scorecard_is_honest_about_coverage(client, world):
+    res = client.post("/contents?wait=true", headers=_auth(world["creator"]),
+                      json={"title": "T", "body": "Plain words here."}).json()
+    review = client.get(f"/reviews/{res['review_id']}", headers=_auth(world["creator"])).json()
+    cats = review["summary"]["categories"]
+    assert cats["legal"]["status"] == "not_configured" and cats["legal"]["score"] is None
+    assert cats["tone"]["status"] == "degraded"  # offline judge in tests
+    assert "legal" in review["coverage"]["not_configured"]

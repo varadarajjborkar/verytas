@@ -35,7 +35,7 @@ from verytas.models import (
     utcnow,
 )
 from verytas.prism.governor import CircuitBreaker, Governor, GuardedJudge, GuardedLLM, TaskOutcome
-from verytas.prism.judge import level_for, scorecard
+from verytas.prism.judge import CATEGORIES, level_for, scorecard
 from verytas.prism.suggest import explain_and_fix
 from verytas.providers import build_providers
 from verytas.providers.base import JudgeProvider, LLMProvider, ProviderError, UsageMeter
@@ -76,6 +76,9 @@ class Prism:
         # Breakers outlive a single review so a dead provider isn't hammered.
         self._llm_breaker = CircuitBreaker()
         self._judge_breaker = CircuitBreaker()
+        # One pool of provider slots shared by every review, so a long document
+        # (one Jev call per paragraph) or a burst of reviews can't flood a provider.
+        self._provider_slots = asyncio.Semaphore(settings.max_concurrent_tasks)
         self._background: set[asyncio.Task[None]] = set()
 
     def schedule(self, review_id: int) -> None:
@@ -117,9 +120,11 @@ class Prism:
 
         governor = Governor(self.settings.max_concurrent_tasks, self.settings.task_timeout_s)
 
+        rule_problems: list[tuple[str, str, str]] = []
+
         async def deterministic() -> list[RawFinding]:
             # CPU-bound (image k-means), so keep it off the event loop.
-            return await asyncio.to_thread(run_deterministic, ctx)
+            return await asyncio.to_thread(run_deterministic, ctx, rule_problems)
 
         outcomes: dict[str, TaskOutcome] = dict(zip(_COVERS, await asyncio.gather(
             governor.run("deterministic-worker", deterministic),
@@ -142,10 +147,18 @@ class Prism:
         except (ProviderError, TimeoutError) as exc:
             suggest_note = f"explanations and fixes skipped: {exc or 'timed out'}"
 
-        checked: set[str] = set()
-        for worker, outcome in outcomes.items():
-            if outcome.status == "ok":
-                checked |= _COVERS[worker]
+        # Coverage must never be claimed when it didn't happen: a category is
+        # "checked" only if its worker ran, a rule for it exists and none of its
+        # rules crashed. Semantic categories judged by the offline heuristic are
+        # marked degraded rather than passed as if a real judge had looked.
+        configured = {r.category for r in ctx.rules}
+        failed = {c for w, o in outcomes.items() if o.status != "ok" for c in _COVERS[w]}
+        failed |= {category for _, category, _ in rule_problems}
+        ran = {c for w, o in outcomes.items() if o.status == "ok" for c in _COVERS[w]}
+        checked = (ran & configured) - failed
+        degraded = {"tone", "messaging"} & checked if judge.name.startswith("offline") else set()
+        statuses = {c: ("not_configured" if c not in configured else "not_checked" if c in failed
+                        else "degraded" if c in degraded else "checked") for c in CATEGORIES}
 
         levelled = []
         dropped = 0
@@ -174,12 +187,15 @@ class Prism:
                 session.add(Suggestion(finding_id=row.id, original=s.original, proposed=s.proposed,
                                        rationale=s.rationale, intent_preserved=s.intent_preserved, model=s.model))
 
-        card = scorecard(levelled, checked)
+        card = scorecard(levelled, checked, statuses)
         review.summary = card.as_dict()
         review.coverage = {
             "workers": {w: {"status": o.status, "note": o.note, "findings": len(o.findings), "ms": o.duration_ms}
                         for w, o in outcomes.items()},
-            "not_checked": sorted({c for w, o in outcomes.items() if o.status != "ok" for c in _COVERS[w]}),
+            "not_checked": sorted(failed & configured),
+            "not_configured": sorted(set(CATEGORIES) - configured),
+            "degraded": sorted(degraded),
+            "rule_errors": [f"{code}: {err}" for code, _, err in rule_problems],
             "notes": notes + ([suggest_note] if suggest_note else []) + (
                 [f"{dropped} uncited finding(s) dropped"] if dropped else []),
             # AI disclosure: every external model that saw (redacted) content.
@@ -231,5 +247,6 @@ class Prism:
             judge = RedactingJudge(judge, redactor)
         if not llm.name.startswith("offline"):
             llm = RedactingLLM(llm, redactor)
-        return GuardedJudge(judge, self._judge_breaker), GuardedLLM(llm, self._llm_breaker), notes
+        return (GuardedJudge(judge, self._judge_breaker, self._provider_slots),
+                GuardedLLM(llm, self._llm_breaker, self._provider_slots), notes)
 
