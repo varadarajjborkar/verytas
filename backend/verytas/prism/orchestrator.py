@@ -16,6 +16,7 @@ import hashlib
 import logging
 import threading
 from collections import OrderedDict
+from datetime import date
 from typing import Any
 
 import cv2
@@ -24,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from verytas.checks.base import CheckContext, FactView, RawFinding, RuleView, TermView
+from verytas.checks.base import CheckContext, ContactView, FactView, RawFinding, RuleView, TermView
 from verytas.checks.claims import drop_fixes_that_keep_claims
 from verytas.config import Settings
 from verytas.ingest.segment import image_units, segment
@@ -32,6 +33,7 @@ from verytas.media import assets as asset_match
 from verytas.media.files import decode_b64, open_image, png_b64, shrink
 from verytas.models import (
     BrandAsset,
+    BrandEvent,
     ConfidentialTerm,
     ContentVersion,
     Dispute,
@@ -39,6 +41,7 @@ from verytas.models import (
     Finding,
     Level,
     MediaBlob,
+    PublicContact,
     Review,
     ReviewStatus,
     Rule,
@@ -57,6 +60,7 @@ from verytas.prism.suggest import explain_and_fix
 from verytas.providers import build_providers, build_vision
 from verytas.providers.base import JudgeProvider, LLMProvider, ProviderError, UsageMeter
 from verytas.security.audit import append
+from verytas.security.guard import screen
 from verytas.security.redaction import RedactingJudge, RedactingLLM, Redactor
 from verytas.security.signing import AgentKeyring
 
@@ -203,6 +207,12 @@ class Prism:
 
         escalations: list[dict] = []
         notes_realm = dict(version.creator_notes or {})
+        # Offers and off-the-record contact in the note go to a person whatever the model makes of it.
+        # (Steering is the intent agent's call: it reads the note against each finding.)
+        note_text = " ".join(v for v in notes_realm.values() if isinstance(v, str))
+        for flag in screen(note_text, ctx.contacts).refused if note_text.strip() else []:
+            if flag.code in ("inducement", "contact_exchange"):
+                escalations.append({"reason": f"creator note: {flag.label}", "detail": flag.quote})
 
         async def prism(root):
             await plan(run, root)
@@ -341,6 +351,26 @@ class Prism:
         # Same ceiling for rules: a confidential rule's text and source must not
         # appear in findings on lower-tier content (or reach a model through it).
         rules = [r for r in rules if r.tier.rank <= content.tier.rank]
+        # Event rules apply while their event runs (a crisis brief covers every post), or to a piece made
+        # for that event even before it starts; hashtag rules only to pieces tagged with the event.
+        today = date.today()
+        events = {e.id: e for e in (await session.scalars(
+            select(BrandEvent).where(BrandEvent.workspace_id == ws))).all()}
+
+        def applies(r: Rule) -> bool:
+            if r.event_id is None:
+                return True
+            event = events.get(r.event_id)
+            if event is None or event.status != "active":
+                return False
+            tagged = content.event_id == r.event_id
+            if (r.pattern or {}).get("type") == "event_hashtags":
+                return tagged
+            return tagged or event.live_on(today)
+
+        rules = [r for r in rules if applies(r)]
+        contacts = (await session.scalars(
+            select(PublicContact).where(PublicContact.workspace_id == ws, PublicContact.active))).all()
         attachments = version.attachments or {}
         ctx = CheckContext(
             body=version.body,
@@ -351,6 +381,7 @@ class Prism:
             facts=[FactView(f.id, f.statement, f.value, f.unit, f.subject, f.source_ref, f.valid_from, f.valid_to)
                    for f in visible_facts],
             terms=[TermView(t.id, t.term, t.embargo_until) for t in terms],
+            contacts=[ContactView(c.kind, c.value, c.normalized, c.label) for c in contacts],
             attachments=attachments, channel=content.channel,
         )
         rows = (await session.scalars(
