@@ -62,6 +62,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [me, setMe] = useState<Me | null>(null);
   const [meError, setMeError] = useState<string | null>(null);
   const [signin, setSignin] = useState<boolean | null>(null);
+  const [demo, setDemo] = useState(false);
   const saved = useStored(SOCIAL_KEY);
   const savedSocials = useMemo<Record<string, string>>(() => {
     try {
@@ -82,7 +83,8 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
   const ids = useId();
 
   useEffect(() => {
-    fetch("/api/session").then((r) => r.json()).then((j) => setSignin(Boolean(j.required))).catch(() => setSignin(false));
+    fetch("/api/session").then((r) => r.json()).then((j) => { setSignin(Boolean(j.required)); setDemo(Boolean(j.demo)); })
+      .catch(() => setSignin(false));
     fetch("/api/v/me").then(async (r) => {
       if (r.ok) setMe(await r.json());
       else setMeError(r.status === 503 ? "Demo mode: no account is connected." : "Couldn't load the account.");
@@ -234,7 +236,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
                 </div>
               )}
               {me && signin && (
-                <button type="button" onClick={signOut} className="vt-btn vt-btn-quiet self-start">Sign out</button>
+                <button type="button" onClick={signOut} className="vt-btn vt-btn-quiet self-start">{demo ? "Switch account" : "Sign out"}</button>
               )}
             </div>
           )}

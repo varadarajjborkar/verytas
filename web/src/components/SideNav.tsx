@@ -38,6 +38,7 @@ export function SideNav() {
   const waiting = useOpenEscalations(side === "manager" && !(loading && !app));
   // Desktop only: on phones the nav is already a single row of tabs.
   const [collapsed, setCollapsed] = usePersistedFlag("vt-nav-collapsed", false);
+  const demo = useDemoSignin();
   const toggle = (
     <button type="button" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed} aria-controls="main-nav"
       aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -46,6 +47,8 @@ export function SideNav() {
     </button>
   );
 
+  // The sign-in page comes before any account: there is nothing to navigate yet.
+  if (pathname === "/signin") return null;
   return (
     <header className={`border-b border-line bg-surface/70 backdrop-blur md:sticky md:top-0 md:flex md:h-screen md:shrink-0 md:flex-col md:border-b-0 md:border-r md:transition-[width] md:duration-300 md:ease-out ${
       collapsed ? "md:w-[4.5rem]" : "md:w-60"}`}>
@@ -88,6 +91,12 @@ export function SideNav() {
           <p className="truncate text-[11px] text-subtle">
             {side === "creator" ? "Creator" : `Brand team · ${ROLE_LABEL[me.role] ?? me.role}`}
           </p>
+          {demo && (
+            <button type="button" onClick={switchAccount}
+              className="mt-2 block text-xs font-medium text-accent underline-offset-2 hover:underline">
+              Switch account
+            </button>
+          )}
           <Link href="/ai" className="mt-2 inline-block text-[11px] text-subtle underline-offset-2 hover:text-ink hover:underline">
             AI-assisted · how AI is used
           </Link>
@@ -98,6 +107,21 @@ export function SideNav() {
       </div>
     </header>
   );
+}
+
+/** Whether sign-in is the shared demo's account picker. */
+function useDemoSignin(): boolean {
+  const [demo, setDemo] = useState(false);
+  useEffect(() => {
+    fetch("/api/session").then((r) => r.json()).then((j) => setDemo(Boolean(j.demo))).catch(() => {});
+  }, []);
+  return demo;
+}
+
+/** Back to the demo's picker: the session ends, the work done as this person stays. */
+export async function switchAccount() {
+  await fetch("/api/session", { method: "DELETE" }).catch(() => null);
+  window.location.assign("/signin");
 }
 
 /** Open escalations for the nav badge: checked on load, when the tab regains focus, and each minute. */
