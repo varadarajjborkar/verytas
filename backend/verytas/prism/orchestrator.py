@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from verytas.checks.base import CheckContext, FactView, RawFinding, RuleView, TermView
+from verytas.checks.claims import drop_fixes_that_keep_claims
 from verytas.config import Settings
 from verytas.ingest.segment import image_units, segment
 from verytas.media import assets as asset_match
@@ -224,6 +225,16 @@ class Prism:
                                    timeout=self.settings.task_timeout_s)
         except (ProviderError, TimeoutError) as exc:
             suggest_note = f"explanations and fixes skipped: {exc or 'timed out'}"
+        else:
+            try:
+                await asyncio.wait_for(drop_fixes_that_keep_claims(raw, ctx, llm, judge),
+                                       timeout=self.settings.task_timeout_s)
+            except (ProviderError, TimeoutError) as exc:
+                # A claim fix nobody could re-check may just restate the claim: withhold it.
+                for f in raw:
+                    if f.category == "claims" and f.suggestion and f.suggestion.model:
+                        f.suggestion = None
+                suggest_note = f"AI-written claim fixes withheld (could not re-check them): {exc or 'timed out'}"
 
         # Coverage must never be claimed when it didn't happen. A category is
         # "checked" only if a rule for it exists, every worker that covers it

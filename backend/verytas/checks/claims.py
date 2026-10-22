@@ -20,6 +20,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from verytas.checks.base import CheckContext, FactView, RawFinding, SuggestedEdit, Unit
+from verytas.ingest.segment import segment
 from verytas.providers.base import JudgeProvider, LLMProvider, Question
 
 CHECKER = "claims"
@@ -346,6 +347,18 @@ def _numeric_finding(base: dict, quote: str, results: list[_NumberResult], ctx: 
     return None
 
 
+def _kind(quote: str, labelled: str) -> str:
+    """The claim's kind, settled by the text wherever it can be. The model labels
+    the same sentence "numeric" in one review and "factual" in the next, and the
+    kind decides whether an unbacked claim is reported at all."""
+    if parse_number(quote) is not None:
+        return "numeric"
+    promo = _PROMO.search(quote)
+    if promo:
+        return "comparative" if promo.group(0).lower().endswith("than") else "superlative"
+    return labelled
+
+
 async def check_claims(ctx: CheckContext, llm: LLMProvider, judge: JudgeProvider) -> list[RawFinding]:
     sentences = ctx.units_of("sentence")
     if not sentences:
@@ -359,10 +372,11 @@ async def check_claims(ctx: CheckContext, llm: LLMProvider, judge: JudgeProvider
         base = {"unit_id": unit.id, "category": "claims", "checker": CHECKER, "quote": quote,
                 "span_start": start, "span_end": end, "confidence": 1.0, "model": None}
         candidates = retrieve(f"{quote} {claim.subject or ''}", ctx.facts, k=5)
+        kind = _kind(quote, claim.kind)
 
         # Numbers are verified in code, one by one, each against the fact that
         # matches the thing it counts. Only number-free claims go to the judge.
-        numbers = parse_numbers(quote) if claim.kind in ("numeric", "factual") else []
+        numbers = parse_numbers(quote) if kind in ("numeric", "factual") else []
         if numbers:
             finding = _numeric_finding(base, quote, _verify_numbers(quote, numbers, candidates, ctx), ctx)
             if finding is not None:
@@ -393,10 +407,81 @@ async def check_claims(ctx: CheckContext, llm: LLMProvider, judge: JudgeProvider
                 title="Claim conflicts with an approved fact",
                 explanation=f'The approved fact says "{fact.statement}" ({fact.source_ref}).',
             ))
-        elif claim.kind in ("numeric", "superlative", "comparative") or fact is not None:
+        # A plain factual claim is reported only when an approved fact covers its
+        # subject. That is decided on the quote alone: the model's subject line
+        # varies between reviews, and with it whether anything was retrieved.
+        elif kind in ("numeric", "superlative", "comparative") or retrieve(quote, ctx.facts):
             findings.append(RawFinding(
-                **base, rule_code="CLAIM-UNSUPPORTED", title=f"Unsupported {claim.kind} claim",
+                **base, rule_code="CLAIM-UNSUPPORTED", title=f"Unsupported {kind} claim",
                 explanation="No approved fact backs this claim. Add a source to the fact library or soften it.",
                 needs_explanation=True,
             ))
     return findings
+
+
+RESOLVE_UNSUPPORTED = ("To resolve it, add an approved fact that backs it, reword it so it no longer states a fact, "
+                       "or dismiss it with a reason.")
+
+
+async def drop_fixes_that_keep_claims(findings: list[RawFinding], ctx: CheckContext, llm: LLMProvider,
+                                      judge: JudgeProvider) -> None:
+    """Re-check AI-written claim fixes the way the next review will, and drop the
+    ones that don't settle the claim.
+
+    Softening "Sign-in takes seconds." into "Sign-in is fast." still states an
+    unbacked claim, so accepting it would only bring the same finding back on the
+    next version. The fixes are applied to the whole draft and the draft is
+    claim-checked once: judged alone, a sentence can read differently than it
+    does in the draft the next review sees.
+    """
+    for f in findings:
+        if f.category == "claims" and f.rule_code == "CLAIM-UNSUPPORTED":
+            # Rewording can't back a claim that has no approved fact ("next month"
+            # -> "soon" is the same claim), so say what does settle it instead.
+            if f.suggestion is not None and f.suggestion.model is not None:
+                f.suggestion = None
+            if not f.explanation.endswith(RESOLVE_UNSUPPORTED):
+                f.explanation = f"{f.explanation.rstrip()} {RESOLVE_UNSUPPORTED}".strip()
+
+    # Fixes taken from the fact library (model None) are exact; only AI-written
+    # ones are re-checked, and only in the body: other sources' spans index
+    # attachment text.
+    pending = []
+    for f in findings:
+        s = f.suggestion
+        if (f.category != "claims" or s is None or s.model is None or f.source != "body"
+                or f.span_start is None or f.span_end is None):
+            continue
+        at = ctx.body.find(s.original, f.span_start, f.span_end)
+        if at < 0:
+            f.suggestion = None  # apply-fixes couldn't place it either
+            continue
+        pending.append((at, at + len(s.original), f))
+    if not pending:
+        return
+
+    # Build the revised draft left to right, remembering where each fix lands.
+    pending.sort(key=lambda p: p[0])
+    parts: list[str] = []
+    landed: list[tuple[int, int, RawFinding]] = []
+    cursor = shift = 0
+    for start, end, f in pending:
+        if start < cursor:
+            continue  # overlaps an earlier fix; its own re-check would be meaningless
+        proposed = f.suggestion.proposed
+        parts.append(ctx.body[cursor:start])
+        parts.append(proposed)
+        landed.append((start + shift, start + shift + len(proposed), f))
+        shift += len(proposed) - (end - start)
+        cursor = end
+    parts.append(ctx.body[cursor:])
+    revised = "".join(parts)
+
+    check = CheckContext(body=revised, units=segment(revised), rules=[], facts=ctx.facts,
+                         channel=ctx.channel, today=ctx.today)
+    flagged = [(r.span_start, r.span_end) for r in await check_claims(check, llm, judge)
+               if r.span_start is not None and r.span_end is not None]
+    for start, end, f in landed:
+        # A claim finding touching the replaced text means the fix didn't settle it.
+        if any(fs < max(end, start + 1) and start < fe for fs, fe in flagged):
+            f.suggestion = None
