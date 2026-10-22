@@ -4,6 +4,7 @@ import { type KeyboardEvent, useMemo, useState } from "react";
 import { FINISHED, relativeTime, STATUS_LABEL } from "@/lib/review-client";
 import type { ContentRow } from "@/lib/types";
 import { DashboardIcon, PanelIcon, PlusIcon } from "../Icons";
+import { channelName } from "@/lib/channels";
 
 // What GET /contents returns by default; past this the list says it is partial.
 const LIST_CAP = 200;
@@ -110,7 +111,7 @@ export function ReviewHistory({ rows, loading, selected, scopes, scope, demo, on
                   ) : null}
                 </span>
                 <span className="flex items-center gap-1.5 text-[11px] text-subtle">
-                  <span className="truncate capitalize">{r.channel.replace("_", " ")}</span>
+                  <span className="truncate">{channelName(r.channel)}</span>
                   <span aria-hidden>·</span>
                   <span className="shrink-0">{STATUS_LABEL[r.status]}</span>
                   <span className="ml-auto shrink-0">{relativeTime(r.updated_at)}</span>

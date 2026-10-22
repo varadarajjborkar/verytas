@@ -12,6 +12,7 @@ import { REASONS } from "../review/DecisionControls";
 import { useToast } from "../Toaster";
 import { tabKeys } from "../ui";
 import { useViewer } from "../Viewer";
+import { channelName } from "@/lib/channels";
 
 const FLAG_TONE: Record<string, string> = {
   pressure: "bg-[var(--vt-warning-bg)] text-[var(--vt-warning)]",
@@ -125,7 +126,7 @@ function Row({ r, focused, approver, decider, onDone }: {
       <Cell label="The content">
         <Link href={`/review?id=${r.content.id}`} className="block truncate text-sm font-semibold hover:text-accent">{r.content.title}</Link>
         <p className="mt-0.5 truncate text-[11px] text-subtle">
-          {r.content.author?.name ?? "Creator"} · <span className="capitalize">{r.content.channel.replace("_", " ")}</span>
+          {r.content.author?.name ?? "Creator"} · {channelName(r.content.channel)}
           {r.version ? ` · v${r.version.version_no}` : ""}
         </p>
         <div className="mt-3 flex items-start gap-2">

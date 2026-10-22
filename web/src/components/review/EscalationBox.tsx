@@ -36,7 +36,7 @@ export function EscalationBox({ f, request, onEscalate, onChanged, side }: {
     const state = { open: "With the brand team", cleared: "Cleared by the brand team", upheld: "The finding stands",
       withdrawn: "Withdrawn" }[request.status];
     return (
-      <div className="rounded-lg border border-line p-2.5 text-xs">
+      <div className="border-t border-line pt-3 text-xs">
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className={`font-semibold ${tone}`}>{state}</span>
           <span className="text-subtle">
@@ -104,7 +104,7 @@ export function EscalationBox({ f, request, onEscalate, onChanged, side }: {
   };
   const left = MIN - text.trim().length;
   return (
-    <div className="vt-pop flex flex-col gap-2 rounded-lg border border-line p-2.5">
+    <div className="vt-pop flex flex-col gap-2 border-t border-line pt-3">
       <label htmlFor={`esc-${f.id}`} className="text-xs font-medium">What should the brand team look at, and why?</label>
       <textarea id={`esc-${f.id}`} value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} autoFocus
         placeholder="e.g. The client's brief asks for this line. Is it allowed for their campaign?"

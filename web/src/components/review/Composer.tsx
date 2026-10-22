@@ -5,23 +5,9 @@ import { fmtBytes, listEvents, precheck, upload } from "@/lib/review-client";
 import { ChevronIcon, UploadIcon } from "../Icons";
 import { today } from "../library/parts";
 import { useToast } from "../Toaster";
+import { CHANNELS } from "@/lib/channels";
 import type { BrandEvent, Precheck, UploadedMedia } from "@/lib/types";
 
-export const CHANNELS: { value: string; label: string; limit?: number }[] = [
-  { value: "instagram", label: "Instagram", limit: 2200 },
-  { value: "tiktok", label: "TikTok", limit: 2200 },
-  { value: "x", label: "X (Twitter)", limit: 280 },
-  { value: "linkedin", label: "LinkedIn", limit: 3000 },
-  { value: "youtube", label: "YouTube", limit: 5000 },
-  { value: "youtube_shorts", label: "YouTube Shorts", limit: 5000 },
-  { value: "facebook", label: "Facebook" },
-  { value: "threads", label: "Threads", limit: 500 },
-  { value: "whatsapp", label: "WhatsApp" },
-  { value: "email", label: "Email newsletter" },
-  { value: "blog", label: "Blog or website" },
-  { value: "press", label: "Press release" },
-  { value: "other", label: "Other…" },
-];
 
 export type Attachment = UploadedMedia & { kind: "image" | "document" | "video"; alt: string; localId: string };
 

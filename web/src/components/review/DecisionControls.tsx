@@ -70,7 +70,7 @@ export function DecisionControls({ f, decide, canDismissBlockers, people }: {
   };
 
   return (
-    <div className="rounded-lg border border-line p-2.5">
+    <div className="border-t border-line pt-3">
       <p className="text-xs font-medium text-muted">Brand team decision</p>
       {f.decisions.length > 0 && (
         <ul className="mt-1.5 flex flex-col gap-1">

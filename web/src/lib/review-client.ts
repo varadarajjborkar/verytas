@@ -181,7 +181,7 @@ export function whereLabel(f: Pick<Finding, "source" | "locator">): string {
   const src = f.source ?? "body";
   const loc = f.locator ?? {};
   const time = loc.time ? ` at ${fmtTime(loc.time[0])}` : "";
-  if (src === "body") return "Caption / text";
+  if (src === "body") return "In the text";
   if (src === "intake") return "The upload itself";
   if (src === "disclosure") return "Whole post";
   const parts = src.split(":");
