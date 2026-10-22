@@ -29,8 +29,10 @@ jobs:
         with:
           python-version: "3.12" # the server's interpreter
           cache: pip
-          cache-dependency-path: backend/pyproject.toml
-      - run: pip install -e ".[dev]"
+          cache-dependency-path: backend/requirements-dev.lock
+      # Exactly the locked versions, each checked against its hash; then our own package on top.
+      - run: pip install --require-hashes -r requirements-dev.lock
+      - run: pip install --no-deps --no-build-isolation -e .
       - run: ruff check verytas tests
       - run: pytest -q
 
@@ -86,8 +88,9 @@ jobs:
           python-version: "3.12"
       - name: Known vulnerabilities in backend dependencies
         run: |
-          pip install -q pip-audit ./backend
-          pip-audit -l # our own package isn't on PyPI; pip-audit skips it and still exits 0
+          # Audits the lock the server installs, not whatever resolves today.
+          pip install -q pip-audit
+          pip-audit --require-hashes --disable-pip -r backend/requirements.lock
 
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
