@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+:root {
+  --vt-bg: #f7f8fa;
+  --vt-surface: #ffffff;
+  --vt-ink: #14161a;
+  --vt-muted: #5b6270;
+  --vt-line: #e3e6eb;
+  --vt-accent: #4f46e5;
+  --vt-accent-ink: #ffffff;
+  /* Level colours are always paired with an icon and a text label. */
+  --vt-blocker: #b42318;
+  --vt-blocker-bg: #fee4e2;
+  --vt-warning: #93370d;
+  --vt-warning-bg: #fef0c7;
+  --vt-advisory: #175cd3;
+  --vt-advisory-bg: #d1e9ff;
+  --vt-ok: #067647;
+}
+
+@theme inline {
+  --color-bg: var(--vt-bg);
+  --color-surface: var(--vt-surface);
+  --color-ink: var(--vt-ink);
+  --color-muted: var(--vt-muted);
+  --color-line: var(--vt-line);
+  --color-accent: var(--vt-accent);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--vt-bg);
+  color: var(--vt-ink);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Visible focus everywhere, never just a colour change. */
+:focus-visible {
+  outline: 2px solid var(--vt-accent);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+}
+.skip-link:focus {
+  left: 1rem;
+  top: 1rem;
+  z-index: 50;
+  background: var(--vt-surface);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+}
+
+mark[data-level] {
+  border-radius: 3px;
+  padding: 0 2px;
+  color: inherit;
+  cursor: pointer;
+}
+mark[data-level="blocker"] { background: var(--vt-blocker-bg); box-shadow: inset 0 -2px 0 var(--vt-blocker); }
+mark[data-level="warning"] { background: var(--vt-warning-bg); box-shadow: inset 0 -2px 0 var(--vt-warning); }
+mark[data-level="advisory"] { background: var(--vt-advisory-bg); box-shadow: inset 0 -2px 0 var(--vt-advisory); }
+mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
