@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from tests.test_api_flow import _auth, world  # noqa: F401, the fixture is used by name
+from tests.test_api_flow import _auth
+from tests.test_api_flow import world as world  # noqa: F401, the fixture is used by name
 
 PNG = "data:image/png;base64,iVBORw0KGgo="
 
