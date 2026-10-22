@@ -1,0 +1,53 @@
+"""Operator commands that need the database itself, not the API.
+
+    python -m verytas.cli issue-token admin@acme.io
+
+Tokens are stored only as hashes, so a lost one can't be read back. This
+replaces it with a new one (the old one stops working) and prints it once.
+Whoever can run this can already read the database; it grants nothing more.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import sys
+
+from sqlalchemy import select
+
+from verytas.api.deps import new_token
+from verytas.config import Settings
+from verytas.db import Database
+from verytas.models import User
+from verytas.security.audit import append
+
+
+async def issue_token(email: str) -> str:
+    db = Database(Settings().database_url)
+    try:
+        async with db.sessionmaker() as session:
+            user = await session.scalar(select(User).where(User.email == email))
+            if user is None:
+                raise SystemExit(f"no user with email {email}")
+            token, token_hash = new_token()
+            user.token_hash = token_hash
+            await append(session, workspace_id=user.workspace_id, actor="operator:cli", action="user.token_issued",
+                         object_type="user", object_id=user.id, detail={})
+            await session.commit()
+            return token
+    finally:
+        await db.dispose()
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(prog="verytas.cli")
+    sub = parser.add_subparsers(dest="command", required=True)
+    issue = sub.add_parser("issue-token", help="replace a user's API token and print the new one")
+    issue.add_argument("email")
+    args = parser.parse_args(argv)
+    if args.command == "issue-token":
+        sys.stdout.write(asyncio.run(issue_token(args.email)) + "\n")
+
+
+if __name__ == "__main__":
+    main()

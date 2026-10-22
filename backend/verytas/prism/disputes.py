@@ -132,7 +132,7 @@ async def _evaluate(prism, session: AsyncSession, dispute: Dispute) -> None:
     version = await session.get(ContentVersion, review.version_id)
     content = await session.get(Content, version.content_id)
     rule = await session.get(Rule, finding.rule_id) if finding.rule_id else None
-    redactor = await _redactor(session, content.workspace_id)
+    redactor = await workspace_redactor(session, content.workspace_id)
     await session.commit()  # no transaction held across model calls
 
     if is_mechanical(finding):
@@ -282,7 +282,8 @@ async def ai_edit(prism, session: AsyncSession, content: Content, version: Conte
     return result, remaining, llm.name
 
 
-async def _redactor(session: AsyncSession, workspace_id: int) -> Redactor:
+async def workspace_redactor(session: AsyncSession, workspace_id: int) -> Redactor:
+    """Every confidential term of the workspace, embargoed or not, as Prism redacts on egress."""
     terms = (await session.scalars(
         select(ConfidentialTerm.term).where(ConfidentialTerm.workspace_id == workspace_id))).all()
     return Redactor(list(terms))

@@ -484,6 +484,54 @@ async def list_events(content_id: int, session: Session, user: CurrentUser) -> l
 
 
 
+@router.get("/contents/{content_id}/timeline")
+async def timeline(content_id: int, session: Session, user: CurrentUser) -> dict:
+    """The piece's whole story in time order, like a pull request's history: each version saved, what
+    its check found, every status move, comment and human decision on a finding. The review map and
+    the activity feed both read this, so the two parties always see the same record."""
+    content = await _content(session, user, content_id)
+    versions = (await session.scalars(select(ContentVersion).where(ContentVersion.content_id == content_id)
+                                      .order_by(ContentVersion.version_no))).all()
+    version_no = {v.id: v.version_no for v in versions}
+    reviews = (await session.scalars(select(Review).where(Review.version_id.in_(list(version_no)))
+                                     .order_by(Review.id))).all()
+    events = (await session.scalars(select(WorkflowEvent).where(WorkflowEvent.content_id == content_id)
+                                    .order_by(WorkflowEvent.id))).all()
+    comments = (await session.scalars(select(Comment).where(Comment.content_id == content_id)
+                                      .order_by(Comment.id))).all()
+    decisions = (await session.execute(
+        select(Decision, Finding.title, Finding.level, Review.version_id)
+        .join(Finding, Decision.finding_id == Finding.id).join(Review, Finding.review_id == Review.id)
+        .where(Review.version_id.in_(list(version_no))).order_by(Decision.id))).all()
+    actor_ids = ({v.created_by for v in versions} | {e.actor_id for e in events} | {c.actor_id for c in comments}
+                 | {d.actor_id for d, *_ in decisions} | {content.created_by})
+    people = {u.id: {"id": u.id, "name": u.name, "role": u.role} for u in (await session.scalars(
+        select(User).where(User.id.in_(actor_ids), User.workspace_id == user.workspace_id))).all()}
+
+    items: list[dict] = [{"type": "version", "at": v.created_at, "actor": people.get(v.created_by),
+                          "version": v.version_no} for v in versions]
+    for r in reviews:
+        s = r.summary or {}
+        items.append({"type": "review", "at": r.finished_at or r.started_at or versions[0].created_at,
+                      "actor": None, "version": version_no[r.version_id], "review_id": r.id, "status": r.status,
+                      "score": s.get("overall"), "blockers": s.get("blockers", 0), "warnings": s.get("warnings", 0),
+                      "advisories": s.get("advisories", 0)})
+    items += [{"type": "status", "at": e.created_at, "actor": people.get(e.actor_id), "from": e.from_status,
+               "to": e.to_status, "note": e.note} for e in events]
+    items += [{"type": "comment", "at": c.created_at, "actor": people.get(c.actor_id), "id": c.id,
+               "parent_id": c.parent_id, "version": version_no.get(c.version_id), "body": c.body,
+               "span": [c.span_start, c.span_end] if c.span_start is not None else None} for c in comments]
+    items += [{"type": "decision", "at": d.created_at, "actor": people.get(d.actor_id), "finding": title,
+               "level": level, "version": version_no[vid], "action": d.action, "reason_code": d.reason_code,
+               "reason": d.reason_text} for d, title, level, vid in decisions]
+    # Stable order for equal timestamps: a version comes before its review, a move after both.
+    rank = {"version": 0, "review": 1, "decision": 2, "status": 3, "comment": 4}
+    items.sort(key=lambda i: (_aware(i["at"]), rank[i["type"]]))
+    for i in items:
+        i["at"] = _aware(i["at"]).isoformat()
+    return {"status": content.status, "author": people.get(content.created_by), "items": items}
+
+
 # --- disputes, resubmission and AI edits ---------------------------------------------------------
 
 DISPUTE_LIMIT = 50
