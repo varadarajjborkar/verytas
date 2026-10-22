@@ -66,11 +66,12 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect }:
             const fixable = Boolean(s) && (f.source ?? "body") === "body";
             return (
               <li key={f.id} className={`border-b border-line transition-colors last:border-0 ${active === f.id ? "bg-accent/[0.06]" : "hover:bg-sunken/40"}`}>
-                <div className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1 px-3 py-2.5 md:grid-cols-[2.5rem_6.5rem_minmax(0,1fr)]">
+                <div className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-x-3 px-3 py-3">
                   <input type="checkbox" checked={row.done} onChange={(e) => onRow(f.id, { done: e.target.checked })}
-                    aria-label={`Mark "${f.title}" as done`} className="mt-1 h-4 w-4 accent-[var(--vt-accent)]" />
-                  <div className="md:contents">
-                    <div className="mb-1 md:mb-0 md:pt-0.5"><PriorityPill level={f.level} /></div>
+                    aria-label={`Mark "${f.title}" as done`} className="mt-0.5 h-4 w-4 accent-[var(--vt-accent)]" />
+                  {/* Stacked: the list sits in a narrow column beside the text. */}
+                  <div className="min-w-0">
+                    <div className="mb-1.5"><PriorityPill level={f.level} /></div>
                     <button type="button" onClick={() => { setOpen(isOpen ? null : f.id); onSelect(f.id); }}
                       aria-expanded={isOpen} className="group min-w-0 text-left">
                       <span className={`line-clamp-2 text-sm font-medium group-hover:text-accent ${row.done ? "text-muted line-through" : ""}`}>{f.title}</span>
@@ -83,7 +84,7 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect }:
                   </div>
                 </div>
                 {isOpen && (
-                  <div className="vt-pop flex flex-col gap-3 border-t border-line px-4 py-3 md:pl-[3.25rem]">
+                  <div className="vt-pop flex flex-col gap-3 border-t border-line py-3 pl-11 pr-4">
                     <p className="text-sm leading-6 text-ink/90">{f.explanation}</p>
                     {f.quote && <p className="rounded-lg bg-sunken px-3 py-2 text-sm text-muted">“{f.quote}”</p>}
                     <p className="text-xs text-subtle">

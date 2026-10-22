@@ -1,7 +1,7 @@
 // Browser-side calls for the review workspace. Everything goes through the
 // server proxy (app/api/v), which holds the API token and an allowlist.
 
-import type { Dispute, Finding, Level, Precheck, Review, UploadedMedia } from "./types";
+import type { ContentDetail, ContentRow, ContentStatus, Dispute, Finding, Level, Me, Precheck, Review, UploadedMedia } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public detail?: unknown) {
@@ -42,13 +42,18 @@ export function upload(file: File): Promise<UploadedMedia> {
 
 export const precheck = (body: unknown) => api<Precheck>("contents/precheck", json(body));
 
-type SubmitOut = { content: { id: number }; version: { id: number; body: string }; review_id: number };
+type SubmitOut = { content: { id: number }; version: { id: number; version_no: number; body: string }; review_id: number };
 export const submit = (body: unknown) => api<SubmitOut>("contents", json(body));
 export const getReview = (id: number) => api<Review>(`reviews/${id}`);
 export const listDisputes = (contentId: number) => api<Dispute[]>(`contents/${contentId}/disputes`);
 export const resubmit = (contentId: number, body: unknown) =>
   api<{ submit: SubmitOut; disputes: number[]; applied: number; skipped: string[] }>(`contents/${contentId}/resubmit`,
     json(body));
+export const listContents = (mine: boolean) => api<ContentRow[]>(`contents${mine ? "?mine=true" : ""}`);
+export const getContent = (id: number) => api<ContentDetail>(`contents/${id}`);
+export const getMe = () => api<Me>("me");
+export const transition = (contentId: number, to: ContentStatus, note?: string, override = false) =>
+  api<ContentRow>(`contents/${contentId}/transition`, json({ to, note: note || null, override_blockers: override }));
 export const aiEdit = (contentId: number, instruction: string) =>
   api<{ body: string; changes: string[]; remaining: string[]; model: string }>(`contents/${contentId}/ai-edit`,
     json({ instruction }));
@@ -67,6 +72,42 @@ export async function waitForReview(id: number, onTick?: (seconds: number) => vo
 }
 
 // --- presentation helpers -------------------------------------------------------------------
+
+export const STATUS_LABEL: Record<ContentStatus, string> = {
+  draft: "Draft",
+  in_review: "In review",
+  changes_requested: "Changes requested",
+  approved: "Approved",
+  published: "Published",
+  withdrawn: "Withdrawn",
+};
+/** Finished pieces: shown struck through in the history, and read-only once published or withdrawn. */
+export const FINISHED: ContentStatus[] = ["approved", "published", "withdrawn"];
+
+/** The next steps a role may take from a status (mirrors the API's _TRANSITIONS; the API still decides). */
+export function nextSteps(status: ContentStatus, role: string): { to: ContentStatus; label: string; primary?: boolean }[] {
+  const admin = role === "brand_admin";
+  const approver = admin || role === "approver";
+  const reviewer = approver || role === "reviewer";
+  const steps: { to: ContentStatus; label: string; primary?: boolean }[] = [];
+  if (status === "draft" || status === "changes_requested") steps.push({ to: "in_review", label: "Send for approval", primary: true });
+  if (status === "in_review" && approver) steps.push({ to: "approved", label: "Approve", primary: true });
+  if (status === "in_review" && reviewer) steps.push({ to: "changes_requested", label: "Request changes" });
+  if (status === "approved" && approver) steps.push({ to: "published", label: "Mark published", primary: true });
+  if (status === "approved" && approver) steps.push({ to: "changes_requested", label: "Request changes" });
+  if (status !== "published" && status !== "withdrawn") steps.push({ to: "withdrawn", label: "Withdraw" });
+  return steps;
+}
+
+export function relativeTime(iso: string | null): string {
+  if (!iso) return "";
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString([], { day: "numeric", month: "short" });
+}
 
 export const PRIORITY: Record<Level, { code: string; label: string }> = {
   blocker: { code: "P1", label: "Must fix" },

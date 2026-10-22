@@ -18,6 +18,7 @@ const ALLOWED: [string, RegExp][] = [
   ["GET", /^brand-assets$/],
   ["GET", /^me$/],
   ["GET", /^contents$/],
+  ["POST", /^contents\/\d+\/transition$/],
   ["GET", /^chats$/],
   ["POST", /^chats$/],
   ["GET", /^chats\/\d+$/],
