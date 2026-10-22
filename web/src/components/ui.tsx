@@ -43,6 +43,11 @@ export function LevelPill({ level }: { level: Level }) {
   );
 }
 
+/** A rule's code, set wide enough for the longest built-in ones (CLAIM-CONTRADICTED). */
+export function RuleCode({ code, className = "" }: { code: string; className?: string }) {
+  return <code title={code} className={`shrink-0 truncate font-mono text-[11px] text-muted ${className}`}>{code}</code>;
+}
+
 export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
   return (
     <div className="vt-card vt-lift p-4">

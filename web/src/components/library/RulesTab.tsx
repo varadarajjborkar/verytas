@@ -5,10 +5,12 @@ import { createRule, updateRule } from "@/lib/review-client";
 import type { Rule, RuleCategory, RuleDraft } from "@/lib/types";
 import { PlusIcon } from "../Icons";
 import { useToast } from "../Toaster";
+import { RuleCode } from "../ui";
 import { Badge, Empty, Field, fromList, toList } from "./parts";
 
 export const CATEGORIES: RuleCategory[] = ["tone", "terminology", "messaging", "visual", "accessibility", "legal", "claims", "confidentiality"];
 const SEVERITY = { must: { label: "Must", tone: "blocker" }, should: { label: "Should", tone: "warning" }, may: { label: "May", tone: "muted" } } as const;
+const SEVERITY_ORDER = ["must", "should", "may"];
 const STATES = [{ k: "active", l: "Active" }, { k: "draft", l: "Drafts" }, { k: "retired", l: "Retired" }, { k: "all", l: "All" }] as const;
 // The matchers a person can configure from a word list. Others (palette, readability) are shown as set.
 const TERM_PATTERNS = ["banned_terms", "preferred_terms", "casing"];
@@ -32,6 +34,10 @@ export function RulesTab({ rules, editable, onChanged, initialState, initialQuer
   }, [rules]);
   const shown = latest.filter((r) => (state === "all" || r.status === state) && (category === "all" || r.category === category)
     && (!query.trim() || `${r.code} ${r.title} ${r.text}`.toLowerCase().includes(query.trim().toLowerCase())));
+  // Grouped by category in a fixed order, strictest first inside each, so a long library scans by topic.
+  const groups = CATEGORIES.map((c) => [c, shown.filter((r) => r.category === c)
+    .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) || a.code.localeCompare(b.code))] as const)
+    .filter(([, rs]) => rs.length > 0);
   const count = (k: string) => latest.filter((r) => k === "all" || r.status === k).length;
 
   return (
@@ -62,26 +68,36 @@ export function RulesTab({ rules, editable, onChanged, initialState, initialQuer
       {creating && <RuleForm onDone={() => { setCreating(false); onChanged(); }} onCancel={() => setCreating(false)} taken={latest.map((r) => r.code)} />}
 
       {shown.length === 0 ? <Empty>No rules match.</Empty> : (
-        <ul className="overflow-hidden rounded-xl border border-line bg-raised">
-          {shown.map((r) => (
-            <li key={r.id} className="border-b border-line last:border-0">
-              <button type="button" onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-sunken/50">
-                <code className="w-28 shrink-0 truncate text-[11px] text-subtle">{r.code}</code>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{r.title}</span>
-                  <span className="block truncate text-[11px] text-subtle">
-                    {r.category[0].toUpperCase() + r.category.slice(1)} · {r.kind === "deterministic" ? "exact match" : "judged by the model"}{r.version > 1 ? ` · v${r.version}` : ""}
-                    {r.source_ref ? ` · ${r.source_ref}` : ""}
-                  </span>
-                </span>
-                <Badge tone={SEVERITY[r.severity].tone}>{SEVERITY[r.severity].label}</Badge>
-                {r.status !== "active" && <Badge tone={r.status === "draft" ? "accent" : "muted"}>{r.status === "draft" ? "Draft" : "Retired"}</Badge>}
-              </button>
-              {open === r.id && <RuleDetail rule={r} editable={editable} onChanged={onChanged} />}
-            </li>
+        <div className="overflow-hidden rounded-xl border border-line bg-raised">
+          {groups.map(([cat, rs]) => (
+            <section key={cat} aria-label={cat}>
+              <h3 className="flex items-baseline gap-2 border-b border-line bg-sunken/50 px-4 py-1.5 text-xs font-semibold capitalize">
+                {cat} <span className="font-normal tabular-nums text-subtle">{rs.length}</span>
+              </h3>
+              <ul>
+                {rs.map((r) => (
+                  <li key={r.id} className="border-b border-line last:border-0">
+                    <button type="button" onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-sunken/50">
+                      <RuleCode code={r.code} className="hidden w-40 sm:block" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{r.title}</span>
+                        <span className="block truncate text-xs text-subtle">
+                          <span className="font-mono sm:hidden">{r.code} · </span>
+                          {r.kind === "deterministic" ? "Checked by rules" : "Judged by the model"}{r.version > 1 ? ` · v${r.version}` : ""}
+                          {r.source_ref ? ` · ${r.source_ref}` : ""}
+                        </span>
+                      </span>
+                      <Badge tone={SEVERITY[r.severity].tone}>{SEVERITY[r.severity].label}</Badge>
+                      {r.status !== "active" && <Badge tone={r.status === "draft" ? "accent" : "muted"}>{r.status === "draft" ? "Draft" : "Retired"}</Badge>}
+                    </button>
+                    {open === r.id && <RuleDetail rule={r} editable={editable} onChanged={onChanged} />}
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
