@@ -173,7 +173,7 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
             <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-2">
               {THEMES.map((th) => (
                 <button key={th.value} type="button" role="radio" aria-checked={choice === th.value}
-                  onClick={() => { setChoice(th.value); toast({ kind: "info", title: `Theme: ${th.label}` }); }}
+                  onClick={() => setChoice(th.value)}
                   className={`flex flex-col items-center gap-1.5 rounded-lg border p-2 text-xs transition ${choice === th.value ? "border-accent bg-accent/10 font-medium" : "border-line hover:border-accent/50"}`}>
                   <ThemeSwatch kind={th.value} />
                   {th.label}
