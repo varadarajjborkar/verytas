@@ -211,16 +211,19 @@ async def rule_thresholds(session: AsyncSession, workspace_id: int, base: float)
     (down to -0.05). Bounded on purpose: feedback tunes the system, it does
     not get to switch a rule off.
     """
+    # One finding is one observation however many times it is disputed or re-decided: counting rows
+    # would let one person outvote the rest of the workspace by repeating themselves.
     fp_dispute = await session.execute(
-        select(Rule.code, func.count()).join(Dispute, Dispute.rule_id == Rule.id)
+        select(Rule.code, func.count(func.distinct(Dispute.finding_id))).join(Dispute, Dispute.rule_id == Rule.id)
         .where(Rule.workspace_id == workspace_id, Dispute.status == "overturned").group_by(Rule.code))
     tp_dispute = await session.execute(
-        select(Rule.code, func.count()).join(Dispute, Dispute.rule_id == Rule.id)
+        select(Rule.code, func.count(func.distinct(Dispute.finding_id))).join(Dispute, Dispute.rule_id == Rule.id)
         .where(Rule.workspace_id == workspace_id, Dispute.status == "upheld").group_by(Rule.code))
+    last = select(func.max(Decision.id)).group_by(Decision.finding_id).scalar_subquery()
     decisions = await session.execute(
         select(Rule.code, Decision.action, Decision.reason_code, func.count())
         .join(Finding, Finding.rule_id == Rule.id).join(Decision, Decision.finding_id == Finding.id)
-        .where(Rule.workspace_id == workspace_id, Finding.model.is_not(None))
+        .where(Rule.workspace_id == workspace_id, Finding.model.is_not(None), Decision.id.in_(last))
         .group_by(Rule.code, Decision.action, Decision.reason_code))
     fp: dict[str, int] = dict(fp_dispute.all())
     tp: dict[str, int] = dict(tp_dispute.all())
