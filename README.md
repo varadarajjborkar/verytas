@@ -13,6 +13,17 @@ Built for the Inkloom AI brand-governance challenge. Brief: [`docs/problem-state
 - **Explains, fixes and keeps humans in charge.** Every finding cites its rule or fact. Creators work through a P1/P2/P3 checklist, apply fixes, dispute misreadings and resubmit; blockers and unread content need a noted override.
 - **Learns from the people using it.** Disputes and reviewer decisions tune how sure each model-judged rule must be, and guideline health shows which rules are unclear.
 
+## The console
+
+| Screen | What you do there |
+| --- | --- |
+| **Dashboard** | See review volume, open blockers, the trend over 30 days and the rules that fire most. |
+| **Review** | Start a new review, or reopen any earlier one from the history rail (finished pieces are greyed and struck through). The text is shown with every issue marked in place and a checklist beside it. Edit, apply fixes, dispute and re-check from there; workflow buttons only offer the steps your role may take. |
+| **Guideline health** | Find the rules reviewers override or disagree on most, with advice on what to clarify. |
+| **Ask Verytas** | Ask about your own pieces and the workspace's review data. Answers come as charts and tables. Chats are saved to your account, and you can attach images. The context and your questions are redacted together before they reach the model, and confidential-tier content is left out. |
+
+Both the main sidebar and each history rail collapse to icons and come back with one click; each browser remembers your choice.
+
 ## Architecture
 
 ```mermaid
