@@ -1,0 +1,20 @@
+{
+	email 1ms23ad006@msrit.edu
+}
+
+15-252-228-168.sslip.io {
+	encode zstd gzip
+	# Uploads (video) go to 150 MB in the app; a little headroom for the multipart envelope.
+	request_body {
+		max_size 160MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+	reverse_proxy 127.0.0.1:3000
+}

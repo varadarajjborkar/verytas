@@ -1,0 +1,7 @@
+[Unit]
+Description=Reseed the Verytas demo when it is 14 days old
+
+[Service]
+Type=oneshot
+User=verytas
+ExecStart=/srv/verytas/bin/reset-demo.sh
