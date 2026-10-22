@@ -316,3 +316,13 @@ def test_a_restricted_asset_is_reported_without_its_name():
     [leak] = run.findings
     assert "Falcon" not in leak.title + leak.explanation
 
+
+
+def test_a_damaged_word_part_costs_only_that_part():
+    body = f'<w:document {_W}><w:body><w:p><w:r><w:t>Body survives</w:t></w:r></w:p></w:body></w:document>'
+    raw = _docx(body, {"word/header1.xml": f'<w:hdr {_W}><w:p><w:r><w:t>HEADERMARK</w:t></w:r></w:p></w:hdr>'})
+    # Flip a byte inside the stored header so its CRC no longer matches.
+    raw = raw.replace(b"HEADERMARK", b"HEADERMARX", 1)
+    out = documents.extract_docx(raw)
+    assert "Body survives" in out.pages[0].text
+    assert out.partial and any("damaged" in n for n in out.notes)

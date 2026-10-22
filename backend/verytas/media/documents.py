@@ -19,6 +19,7 @@ from __future__ import annotations
 import io
 import threading
 import zipfile
+import zlib
 from dataclasses import dataclass, field
 
 from PIL import Image
@@ -241,9 +242,16 @@ def extract_docx(raw: bytes) -> Extracted:
                     out.notes.append(f"{name} is over {MAX_DOCX_PART // 1024 // 1024} MB and was not read")
                     out.partial = True
                     continue
-                body, deleted = _docx_text(zf.read(name))
+                if budget.chars == 0:
+                    break  # already noted when the budget ran out
+                try:
+                    body, deleted = _docx_text(zf.read(name))
+                except (zipfile.BadZipFile, zlib.error, EOFError) as exc:
+                    out.notes.append(f"{name} is damaged and was not read ({type(exc).__name__})")
+                    out.partial = True
+                    continue
                 for text, tag in ((body, label), (deleted, "Deleted text (tracked change)")):
-                    if not text.strip():
+                    if not text.strip() or budget.chars == 0:
                         continue
                     kept, cut = budget.text(text)
                     sections.append(kept if tag is None else f"[{tag}] {kept}")
