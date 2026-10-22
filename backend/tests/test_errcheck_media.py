@@ -326,3 +326,22 @@ def test_a_damaged_word_part_costs_only_that_part():
     out = documents.extract_docx(raw)
     assert "Body survives" in out.pages[0].text
     assert out.partial and any("damaged" in n for n in out.notes)
+
+
+def test_reading_order_keeps_a_tall_heading_on_the_row_beside_it():
+    from verytas.media.ocr import OcrLine, _reading_order
+
+    heading = OcrLine("SALE", 0.9, (0, 90, 200, 150))     # 60 px tall, centre 120
+    beside = OcrLine("ends Friday", 0.9, (220, 110, 400, 130))  # 20 px tall, centre 120
+    below = OcrLine("Terms apply", 0.9, (0, 200, 180, 220))
+    assert [ln.text for ln in _reading_order([below, beside, heading])] == ["SALE", "ends Friday", "Terms apply"]
+
+
+def test_damaged_animation_is_a_media_error_and_base64_is_strict():
+    from verytas.media.files import MediaError, animation_frames, decode_b64
+
+    with pytest.raises(MediaError):
+        animation_frames(b"GIF89a" + b"\x00" * 20)
+    assert decode_b64("aGVs\nbG8=", 1024) == b"hello"  # line-wrapped is fine
+    with pytest.raises(MediaError):
+        decode_b64("aGVs*bG8=", 1024)

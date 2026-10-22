@@ -314,7 +314,13 @@ async def _attached_image(run: ReviewRun, node: AgentNode, img: dict[str, Any], 
 
 async def _animation(run: ReviewRun, node: AgentNode, raw: bytes, image_id: str, locator: dict[str, Any]) -> None:
     """Later frames of an animated image can carry their own text; read a sample of them."""
-    count, extra = await run.blocking(animation_frames, raw)
+    try:
+        count, extra = await run.blocking(animation_frames, raw)
+    except MediaError as exc:
+        # The first frame was already checked; only the later frames are lost.
+        run.notes.append(f"{image_id}: later animation frames not read ({exc})")
+        run.partial.add("visual")
+        return
     if count <= 1:
         return
     node.detail["frames"] = count

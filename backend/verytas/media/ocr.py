@@ -75,9 +75,29 @@ def read(img: Image.Image) -> OcrResult:
                        [(w, _bbox(b, scale)) for w, _, b in (words_per_line[i] if i < len(words_per_line) else ())
                         if w.strip()])
         (lines if _meaningful(text, float(score)) else noise).append(line)
-    # Reading order: top to bottom, then left to right within a row.
-    lines.sort(key=lambda ln: (round(ln.box[1] / max(1, ln.box[3] - ln.box[1])), ln.box[0]))
-    return OcrResult(lines, noise=noise)
+    return OcrResult(_reading_order(lines), noise=noise)
+
+
+def _reading_order(lines: list[OcrLine]) -> list[OcrLine]:
+    """Top to bottom, then left to right within a row.
+
+    A row is lines whose vertical centres sit within half a typical line height
+    of the row's first line. Bucketing each line by its own height instead put
+    a heading and the body text beside it into different rows.
+    """
+    if not lines:
+        return lines
+    heights = sorted(max(1, ln.box[3] - ln.box[1]) for ln in lines)
+    tolerance = heights[len(heights) // 2] / 2
+    rows: list[list[OcrLine]] = []
+    anchor = None
+    for ln in sorted(lines, key=lambda ln: ln.box[1] + ln.box[3]):
+        mid = (ln.box[1] + ln.box[3]) / 2
+        if anchor is None or mid - anchor > tolerance:
+            rows.append([])
+            anchor = mid
+        rows[-1].append(ln)
+    return [ln for row in rows for ln in sorted(row, key=lambda ln: ln.box[0])]
 
 
 def _bbox(points, scale: float) -> tuple[int, int, int, int]:
