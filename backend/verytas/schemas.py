@@ -278,6 +278,13 @@ class MediaOut(BaseModel):
     metrics: dict[str, Any] = {}
 
 
+class ImageRefOut(BaseModel):
+    id: str
+    alt: str | None = None
+    decorative: bool = False
+    media_type: str = "image/png"
+
+
 class VersionOut(ORM):
     id: int
     version_no: int
@@ -285,6 +292,7 @@ class VersionOut(ORM):
     body: str
     created_by: int
     created_at: datetime
+    images: list[ImageRefOut] = []
 
 
 class ContentOut(ORM):
