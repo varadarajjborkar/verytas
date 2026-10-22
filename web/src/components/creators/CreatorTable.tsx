@@ -24,23 +24,26 @@ export function CreatorTable({ rows, compact = false }: { rows: CreatorRow[]; co
       </colgroup>
       <thead>
         <tr className={`text-left text-[11px] font-medium uppercase tracking-wide text-subtle ${compact ? "" : "border-b border-line"}`}>
-          <th scope="col" className={`font-medium ${compact ? "pb-2" : "px-4 py-2.5"}`}>Creator</th>
+          <th scope="col" className={`font-medium ${compact ? "pb-2 pl-2" : "px-4 py-2.5"}`}>Creator</th>
           {!compact && <>
             <th scope="col" className="px-2 py-2.5 text-right font-medium">Pieces</th>
             <th scope="col" className="px-2 py-2.5 text-right font-medium" title="Pieces with nothing to fix when first sent">On brand</th>
           </>}
           <th scope="col" className={`text-right font-medium ${compact ? "pb-2" : "px-2 py-2.5"}`}>Waiting</th>
           {!compact && <th scope="col" className="px-2 py-2.5 text-right font-medium">Asked</th>}
-          <th scope="col" className={`text-right font-medium ${compact ? "pb-2" : "px-4 py-2.5"}`} title="Distance from the brand, piece by piece">Drift</th>
+          <th scope="col" className={`text-right font-medium ${compact ? "pb-2 pr-2" : "px-4 py-2.5"}`} title="Distance from the brand, piece by piece">Drift</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-line">
         {rows.map((c) => {
           const back = c.by_status.changes_requested ?? 0;
           return (
-            <tr key={c.id} className={compact ? "" : "transition-colors hover:bg-sunken/60"}>
-              <td className={`truncate ${cell} ${compact ? "" : "px-4"}`}>
-                <Link href={`/creators?id=${c.id}`} className="font-medium hover:text-accent">{c.name}</Link>
+            // The whole row opens the creator: the name's link stretches over it (after:inset-0), so it
+            // stays one real link for keyboards and screen readers rather than a clickable row.
+            <tr key={c.id} className="group relative transition-colors hover:bg-sunken/60">
+              <td className={`truncate ${cell} ${compact ? "pl-2" : "px-4"}`}>
+                <Link href={`/creators?id=${c.id}`}
+                  className="font-medium after:absolute after:inset-0 after:content-[''] group-hover:text-accent focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-[var(--vt-accent)] focus-visible:after:outline">{c.name}</Link>
                 <span className="block truncate text-[11px] text-subtle">
                   {back ? <span className="text-[var(--vt-warning)]">{back} sent back · </span> : null}
                   {c.last_at ? `active ${relativeTime(c.last_at)}` : c.above_clearance ? "above your clearance" : "nothing yet"}
@@ -56,7 +59,7 @@ export function CreatorTable({ rows, compact = false }: { rows: CreatorRow[]; co
               {!compact && (
                 <td className={`${cell} px-2 text-right tabular-nums ${c.open_escalations ? "font-semibold text-accent" : "text-subtle"}`}>{c.open_escalations}</td>
               )}
-              <td className={`${cell} ${compact ? "" : "px-4"}`}>
+              <td className={`${cell} ${compact ? "pr-2" : "px-4"}`}>
                 <span className="flex items-center justify-end gap-2.5">
                   <Sparkline values={c.recent} />
                   <span className="w-8 text-right text-xs tabular-nums text-muted" title="Average distance from the brand">

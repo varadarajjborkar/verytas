@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, getTimeline, listContents, relativeTime, STATUS_LABEL } from "@/lib/review-client";
 import type { ContentRow, Person, TimelineItem } from "@/lib/types";
 import { ArrowRightIcon, ChatIcon, PlusIcon } from "../Icons";
 import { StageDots } from "../Journey";
 import { useViewer } from "../Viewer";
 import { Panel } from "../ui";
+import { useOnRefresh } from "@/lib/refresh";
 
 // Timelines are one request each, so the feed reads only the most recently active pieces.
 const FEED_PIECES = 6;
@@ -22,12 +23,14 @@ export function CreatorHome() {
   const [demo, setDemo] = useState(false);
   const [notes, setNotes] = useState<Note[] | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     listContents(true).then(setRows).catch((err) => {
       if (err instanceof ApiError && err.status === 503) setDemo(true);
-      setRows([]);
+      setRows((had) => had ?? []);
     });
   }, []);
+  useEffect(() => { load(); }, [load]);
+  useOnRefresh(load);
 
   useEffect(() => {
     if (!rows || !me) return;

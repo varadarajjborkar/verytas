@@ -7,6 +7,7 @@ import { PlusIcon } from "../Icons";
 import { useToast } from "../Toaster";
 import { RuleCode } from "../ui";
 import { Badge, Empty, Field, fromList, toList } from "./parts";
+import { SearchField } from "../SearchField";
 
 export const CATEGORIES: RuleCategory[] = ["tone", "terminology", "messaging", "visual", "accessibility", "legal", "claims", "confidentiality"];
 const SEVERITY = { must: { label: "Must", tone: "blocker" }, should: { label: "Should", tone: "warning" }, may: { label: "May", tone: "muted" } } as const;
@@ -52,12 +53,12 @@ export function RulesTab({ rules, editable, onChanged, initialState, initialQuer
           ))}
         </div>
         <select value={category} onChange={(e) => setCategory(e.target.value as RuleCategory | "all")} aria-label="Category"
-          className="vt-input w-auto py-1.5 text-xs">
+          className="vt-input h-9 w-auto py-0 text-[13px]">
           <option value="all">All categories</option>
           {CATEGORIES.map((c) => <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>)}
         </select>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search rules" aria-label="Search rules"
-          className="vt-input w-48 py-1.5 text-xs" />
+        <SearchField value={query} onChange={setQuery} placeholder="Search rules by code or words" label="Search rules"
+          className="w-full sm:w-72" />
         {editable && (
           <button type="button" onClick={() => setCreating(true)} className="vt-btn vt-btn-primary ml-auto py-1.5">
             <PlusIcon size={14} /> New rule

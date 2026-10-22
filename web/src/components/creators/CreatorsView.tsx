@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useOnRefresh } from "@/lib/refresh";
 import { ApiError, creatorTrack, listCreators, relativeTime } from "@/lib/review-client";
 import type { CreatorRow, CreatorTrack } from "@/lib/types";
-import { ChevronIcon } from "../Icons";
+import { BackButton } from "../BackButton";
 import { Panel } from "../ui";
 import { byWaiting, CreatorTable } from "./CreatorTable";
 import { DriftChart } from "./DriftChart";
@@ -35,7 +36,9 @@ function Failure({ err }: { err: Error }) {
 function Roster() {
   const [rows, setRows] = useState<CreatorRow[] | null>(null);
   const [err, setErr] = useState<Error | null>(null);
-  useEffect(() => { listCreators().then(setRows).catch(setErr); }, []);
+  const load = useCallback(() => { listCreators().then(setRows).catch(setErr); }, []);
+  useEffect(() => { load(); }, [load]);
+  useOnRefresh(load);
   if (err) return <Failure err={err} />;
   if (!rows) return <div className="h-64 animate-pulse rounded-[14px] bg-sunken" aria-busy="true" aria-label="Loading" />;
   if (!rows.length) return <p className="rounded-xl bg-sunken px-4 py-6 text-center text-sm text-muted">No creators yet.</p>;
@@ -45,13 +48,11 @@ function Roster() {
 function Profile({ id }: { id: number }) {
   const [track, setTrack] = useState<CreatorTrack | null>(null);
   const [err, setErr] = useState<Error | null>(null);
-  useEffect(() => { creatorTrack(id).then(setTrack).catch(setErr); }, [id]);
+  const load = useCallback(() => { creatorTrack(id).then(setTrack).catch(setErr); }, [id]);
+  useEffect(() => { load(); }, [load]);
+  useOnRefresh(load);
 
-  const back = (
-    <Link href="/creators" className="inline-flex items-center gap-1 text-xs font-medium text-subtle hover:text-ink">
-      <ChevronIcon size={13} className="rotate-90" /> All creators
-    </Link>
-  );
+  const back = <BackButton href="/creators" label="All creators" />;
   if (err) return <div className="flex flex-col gap-4">{back}<Failure err={err} /></div>;
   if (!track) return <div className="flex flex-col gap-4">{back}<div className="h-80 animate-pulse rounded-[14px] bg-sunken" aria-busy="true" aria-label="Loading" /></div>;
 
@@ -67,10 +68,8 @@ function Profile({ id }: { id: number }) {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-2">
-          {back}
-          <h2 className="text-xl font-semibold tracking-tight">{person.name}</h2>
-        </div>
+        {back}
+        <h2 className="text-xl font-semibold tracking-tight">{person.name}</h2>
         <Link href={`/review?queue=all&creator=${person.id}`} className="vt-btn vt-btn-quiet py-1.5 text-xs">Their pieces in the queue</Link>
       </div>
 

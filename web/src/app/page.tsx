@@ -13,7 +13,7 @@ async function Home() {
   if (viewer && sideOf(viewer.role) === "creator") {
     return (
       <>
-        <PageHeader title="My work" lead="Your pieces, what each one needs next, and what the brand team said." />
+        <PageHeader title="My work" lead="Your pieces, what each one needs next, and what the brand team said." refresh />
         <CreatorHome />
       </>
     );
@@ -22,7 +22,7 @@ async function Home() {
   const source = [overview, recurring, health].every((s) => s.source === "live") ? "live" : "demo";
   return (
     <>
-      <PageHeader title="Dashboard" lead="What needs a decision, how work is flowing, and what Verytas caught."
+      <PageHeader title="Dashboard" lead="What needs a decision, how work is flowing, and what Verytas caught." refresh
         aside={<div className="flex items-center gap-2"><SourceBadge source={source} /><CustomizeButton /></div>} />
       <ManagerDashboard overview={overview.data} recurring={recurring.data} health={health.data} />
     </>

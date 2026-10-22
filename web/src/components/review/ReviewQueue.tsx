@@ -8,12 +8,15 @@ import {
 } from "@/lib/queue";
 import { ApiError, listContents, listEvents, listPeople, relativeTime, STATUS_LABEL } from "@/lib/review-client";
 import type { BrandEvent, ContentRow, Person } from "@/lib/types";
-import { ArrowRightIcon, ChevronIcon, CloseIcon, InboxIcon, RefreshIcon } from "../Icons";
+import { BackButton } from "../BackButton";
+import { ArrowRightIcon, CloseIcon, InboxIcon, RefreshIcon } from "../Icons";
 import { StageDots } from "../Journey";
 import { tabKeys } from "../ui";
 import { useViewer } from "../Viewer";
 import { ReviewView } from "./ReviewView";
 import { channelName } from "@/lib/channels";
+import { useOnRefresh } from "@/lib/refresh";
+import { SearchField } from "../SearchField";
 
 const STAGE_ORDER: ContentRow["status"][] = ["in_review", "changes_requested", "draft", "approved", "published", "withdrawn"];
 
@@ -86,6 +89,7 @@ export function ReviewQueue() {
     listPeople().then((ps) => setPeople(new Map(ps.map((p) => [p.id, p])))).catch(() => {});
     listEvents().then(setEvents).catch(() => {});
   }, [refresh]);
+  useOnRefresh(refresh);
   // Reviews still running keep the list fresh, one request at a time, and none in a background tab.
   const pending = (rows ?? []).some((r) => r.latest_review && (r.latest_review.status === "queued" || r.latest_review.status === "running"));
   useEffect(() => {
@@ -110,7 +114,8 @@ export function ReviewQueue() {
       && (channel === "all" || r.channel === channel)
       && (event === "all" || (event === "none" ? r.event_id == null : String(r.event_id) === event))
       && (!signal || SIGNALS[signal].test(r))
-      && (!q || r.title.toLowerCase().includes(q) || nameOf(r.created_by).toLowerCase().includes(q))), sort, nameOf);
+      && (!q || r.title.toLowerCase().includes(q) || nameOf(r.created_by).toLowerCase().includes(q)
+        || channelName(r.channel).toLowerCase().includes(q))), sort, nameOf);
   }, [all, queue, creator, channel, event, signal, query, sort, nameOf]);
 
   const creators = useMemo(() => [...new Set(all.map((r) => r.created_by))].map((id) => ({ id, name: nameOf(id) }))
@@ -126,9 +131,7 @@ export function ReviewQueue() {
     return (
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => set({ id: null })} className="vt-btn vt-btn-quiet py-1.5">
-            <ChevronIcon size={14} className="rotate-90" /> {QUEUES[queue].label}
-          </button>
+          <BackButton onClick={() => set({ id: null })} label={QUEUES[queue].label} />
           {at >= 0 && <span className="text-xs tabular-nums text-subtle">{at + 1} of {order.length}</span>}
           <div className="ml-auto flex gap-1.5">
             <button type="button" disabled={prev == null} onClick={() => prev != null && set({ id: prev })} className="vt-btn vt-btn-quiet py-1.5"
@@ -167,28 +170,28 @@ export function ReviewQueue() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Search pieces or creators" aria-label="Search"
-          className="vt-input min-w-0 flex-1 py-1.5 text-xs md:w-56 md:flex-none" />
+        <SearchField value={typed} onChange={setTyped} placeholder="Search pieces, creators or channels" label="Search the queue"
+          className="flex-1 md:min-w-72 md:max-w-md" />
         {/* Phones fold the filters behind one button; there is no room for five selects in a row. */}
         <button type="button" onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters} aria-controls="queue-filters"
-          className="vt-btn vt-btn-quiet py-1.5 text-xs md:hidden">
+          className="vt-btn vt-btn-quiet h-9 text-xs md:hidden">
           Filters{filters ? <span className="rounded-full bg-accent/12 px-1.5 tabular-nums text-accent">{filters}</span> : null}
         </button>
         <div id="queue-filters" className={`${showFilters ? "flex" : "hidden"} w-full flex-wrap items-center gap-2 md:flex md:w-auto`}>
-          <select value={creator} onChange={(e) => set({ creator: e.target.value })} aria-label="Creator" className="vt-input w-auto py-1.5 text-xs">
+          <select value={creator} onChange={(e) => set({ creator: e.target.value })} aria-label="Creator" className="vt-input h-9 w-auto py-0 text-[13px]">
             <option value="all">Every creator</option>
             {creators.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <select value={channel} onChange={(e) => set({ channel: e.target.value })} aria-label="Channel" className="vt-input w-auto py-1.5 text-xs">
+          <select value={channel} onChange={(e) => set({ channel: e.target.value })} aria-label="Channel" className="vt-input h-9 w-auto py-0 text-[13px]">
             <option value="all">Every channel</option>
             {channels.map((c) => <option key={c} value={c}>{channelName(c)}</option>)}
           </select>
-          <select value={event} onChange={(e) => set({ event: e.target.value })} aria-label="Event" className="vt-input w-auto max-w-48 py-1.5 text-xs">
+          <select value={event} onChange={(e) => set({ event: e.target.value })} aria-label="Event" className="vt-input h-9 w-auto max-w-48 py-0 text-[13px]">
             <option value="all">Any event</option>
             <option value="none">Not for an event</option>
             {events.map((e) => <option key={e.id} value={e.id}>{e.name}{e.live ? " (running)" : e.status === "cancelled" ? " (cancelled)" : ""}</option>)}
           </select>
-          <select value={signal ?? "all"} onChange={(e) => set({ signal: e.target.value })} aria-label="Signal" className="vt-input w-auto max-w-48 py-1.5 text-xs">
+          <select value={signal ?? "all"} onChange={(e) => set({ signal: e.target.value })} aria-label="Signal" className="vt-input h-9 w-auto max-w-48 py-0 text-[13px]">
             <option value="all">Any signal</option>
             {(Object.keys(SIGNALS) as Signal[]).map((k) => <option key={k} value={k}>{SIGNALS[k].label}</option>)}
           </select>

@@ -13,6 +13,7 @@ import { useToast } from "../Toaster";
 import { tabKeys } from "../ui";
 import { useViewer } from "../Viewer";
 import { channelName } from "@/lib/channels";
+import { useOnRefresh } from "@/lib/refresh";
 
 const FLAG_TONE: Record<string, string> = {
   pressure: "bg-[var(--vt-warning-bg)] text-[var(--vt-warning)]",
@@ -54,6 +55,7 @@ export function EscalationsInbox() {
     });
   }, [tab]);
   useEffect(() => { load(); }, [load]);
+  useOnRefresh(load);
   useEffect(() => {
     if (!focus || !rows) return;
     document.getElementById(`esc-${focus}`)?.scrollIntoView({ block: "center", behavior: "smooth" });

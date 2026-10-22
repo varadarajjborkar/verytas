@@ -11,8 +11,8 @@ export default function Page() {
   return (
     <>
       {APP === "manager"
-        ? <PageHeader title="Review queue" lead="Every creator's pieces, ranked by what needs you first." />
-        : <PageHeader title={APP === "creator" ? "My reviews" : "Review"} />}
+        ? <PageHeader title="Review queue" lead="Every creator's pieces, ranked by what needs you first." refresh />
+        : <PageHeader title={APP === "creator" ? "My reviews" : "Review"} refresh />}
       {/* The open review is read from the URL, which needs a Suspense boundary to prerender. */}
       <Suspense fallback={<PageSkeleton />}>
         <ReviewWorkspace initialBody={demoBody} />

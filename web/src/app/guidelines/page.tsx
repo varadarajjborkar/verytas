@@ -19,7 +19,7 @@ async function Health() {
   const health = await getGuidelineHealth();
   return (
     <>
-      <PageHeader title="Guideline health" lead="Rules reviewers keep overriding are the ones to rewrite."
+      <PageHeader title="Guideline health" lead="Rules reviewers keep overriding are the ones to rewrite." refresh
         aside={<SourceBadge source={health.source} />} />
       <GuidelineHealthView health={health.data} />
     </>

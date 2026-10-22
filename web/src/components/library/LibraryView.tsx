@@ -16,6 +16,7 @@ import { ImportTab } from "./ImportTab";
 import { ListSkeleton, ReadOnlyNote, today } from "./parts";
 import { RulesTab } from "./RulesTab";
 import { TermsTab } from "./TermsTab";
+import { useOnRefresh } from "@/lib/refresh";
 
 type Tab = "rules" | "facts" | "events" | "contacts" | "terms" | "assets" | "import";
 const TABS: Tab[] = ["rules", "facts", "events", "contacts", "terms", "assets", "import"];
@@ -50,6 +51,7 @@ export function LibraryView() {
         : (err as Error).message));
   }, [admin]);
   useEffect(() => { if (!viewerLoading && side === "manager") load(); }, [load, viewerLoading, side]);
+  useOnRefresh(useCallback(() => { if (side === "manager") load(); }, [load, side]));
 
   if (viewerLoading) return <ListSkeleton />;
   if (side === "creator") return <ForBrandTeam />;

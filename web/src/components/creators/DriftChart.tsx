@@ -30,8 +30,11 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 
  */
 export function DriftChart({ points }: { points: TrackPoint[] }) {
   const box = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(640);
   const [active, setActive] = useState<number | null>(null);
+  // The last point pointed at, where the crosshair rests while it fades, so it never sweeps in from the left.
+  const [shown, setShown] = useState(0);
+  const pick = (i: number | null) => { setActive(i); if (i != null) setShown(i); };
+  const [width, setWidth] = useState(640);
   const [focused, setFocused] = useState<number | null>(null);
   const [touch, setTouch] = useState(false);
   const router = useRouter();
@@ -59,8 +62,8 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div ref={box} className="relative" onMouseLeave={() => setActive(null)}
-        onKeyDown={(e) => { if (e.key === "Escape") setActive(null); }}>
+      <div ref={box} className="relative" onMouseLeave={() => pick(null)}
+        onKeyDown={(e) => { if (e.key === "Escape") pick(null); }}>
         {/* A group, not an image: the points inside are links that assistive tech must reach. */}
         <svg width={width} height={H} role="group" aria-label={`Distance from the brand across ${points.length} pieces`} className="block overflow-visible">
           {[0, 50, 100].map((v) => (
@@ -69,7 +72,9 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
               <text x={PAD.left - 8} y={y(v)} dy="0.32em" textAnchor="end" className="fill-[var(--vt-subtle)] text-[11px] tabular-nums">{v}</text>
             </g>
           ))}
-          {a && <line x1={x(active!)} x2={x(active!)} y1={PAD.top} y2={PAD.top + plotH} stroke="var(--vt-line-strong)" />}
+          {/* Drawn at x=0 and moved by transform, so it glides from point to point (attributes don't animate). */}
+          <line x1={0} x2={0} y1={PAD.top} y2={PAD.top + plotH} stroke="var(--vt-line-strong)" className="vt-glide"
+            style={{ transform: `translateX(${x(shown)}px)`, opacity: a ? 1 : 0 }} />
           <path d={path} fill="none" stroke="var(--vt-accent)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" pathLength={1} className="vt-draw" />
           {points.map((p, i) => {
             const lv = LEVEL[worst(p)];
@@ -80,11 +85,11 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
                 onClick={(e) => {
                   if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // a new tab or window, as any link
                   e.preventDefault();
-                  if (touch && active !== i) { setActive(i); return; }
+                  if (touch && active !== i) { pick(i); return; }
                   router.push(href);
                 }}
-                onMouseEnter={() => setActive(i)} onFocus={() => { setActive(i); setFocused(i); }}
-                onBlur={() => { setActive(null); setFocused(null); }}
+                onMouseEnter={() => pick(i)} onFocus={() => { pick(i); setFocused(i); }}
+                onBlur={() => { pick(null); setFocused(null); }}
                 className="cursor-pointer outline-none">
                 <circle cx={x(i)} cy={y(p.distance)} r={hit} fill="transparent" />
                 {focused === i && <circle cx={x(i)} cy={y(p.distance)} r={12} fill="none" stroke="var(--vt-accent)" strokeWidth={2} />}
@@ -101,7 +106,7 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
           ))}
         </svg>
         {a && (
-          <div role="tooltip" className="vt-pop pointer-events-none absolute z-10 w-[min(18rem,calc(100%-1rem))] rounded-xl border border-line bg-raised p-3 text-xs shadow-[var(--vt-shadow-pop)]"
+          <div role="tooltip" className="vt-pop vt-glide pointer-events-none absolute z-10 w-[min(18rem,calc(100%-1rem))] rounded-xl border border-line bg-raised p-3 text-xs shadow-[var(--vt-shadow-pop)]"
             // Placed by top or bottom, never by transform: the pop-in animation owns transform and would undo it.
             style={{
               left: Math.min(Math.max(0, x(active!) - 144), width - Math.min(288, width - 16)),

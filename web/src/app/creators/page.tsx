@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Creators" };
 export default function Page() {
   return (
     <>
-      <PageHeader title="Creators" lead="Everyone writing for the brand. Open a creator to see how their work tracks against it." />
+      <PageHeader title="Creators" lead="Everyone writing for the brand. Open a creator to see how their work tracks against it." refresh />
       {/* The creator being viewed is read from the URL, which needs a Suspense boundary to prerender. */}
       <Suspense fallback={<PageSkeleton />}>
         <CreatorsView />
