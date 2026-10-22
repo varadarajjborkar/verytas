@@ -64,7 +64,7 @@ const subscribeSystem = (cb: () => void) => {
   return () => q.removeEventListener("change", cb);
 };
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({ children, app }: { children: ReactNode; app: "manager" | "creator" | null }) {
   const stored = useStored(KEY);
   const choice: ThemeChoice = stored === "light" || stored === "dark" ? stored : "system";
   const systemDark = useSyncExternalStore(subscribeSystem, () => darkQuery().matches, () => false);
@@ -80,7 +80,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeContext.Provider value={{ choice, setChoice }}>
       <ThemeProvider mode={mode} lightTheme={OPENUI_THEME} darkTheme={OPENUI_THEME}>
-        <ToastProvider><ViewerProvider>{children}</ViewerProvider></ToastProvider>
+        <ToastProvider><ViewerProvider app={app}>{children}</ViewerProvider></ToastProvider>
       </ThemeProvider>
     </ThemeContext.Provider>
   );

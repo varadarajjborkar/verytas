@@ -7,7 +7,7 @@ import type { ContentRow, Overview, Person, RuleHealth } from "@/lib/types";
 import { UNCLEAR } from "../DashboardView";
 import { AlertIcon, ArrowRightIcon, GaugeIcon, OctagonIcon, ReviewIcon } from "../Icons";
 import { StageDots } from "../Journey";
-import { sinceOf } from "../review/QueueOverview";
+import { sinceOf } from "@/lib/queue";
 import { Panel } from "../ui";
 import { PipelineFlow } from "./PipelineFlow";
 

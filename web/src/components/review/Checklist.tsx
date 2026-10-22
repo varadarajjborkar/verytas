@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { PRIORITY, whereLabel } from "@/lib/review-client";
-import type { Dispute, Finding, Level, Person } from "@/lib/types";
+import type { Dispute, EscalationRequest, Finding, Level, Person } from "@/lib/types";
 import { type DecideFn, DecisionControls, DecisionTag } from "./DecisionControls";
+import { type EscalateFn, EscalationBox } from "./EscalationBox";
 
 export type RowState = { done: boolean; apply: boolean; dispute: string; language: string; disputing: boolean };
 export const emptyRow = (): RowState => ({ done: false, apply: false, dispute: "", language: "", disputing: false });
@@ -38,7 +39,7 @@ export function PriorityPill({ level }: { level: Level }) {
 }
 
 export function Checklist({ findings, rows, onRow, disputes, active, onSelect, decide, canDismissBlockers = false,
-  people = new Map(), creator = true }: {
+  people = new Map(), creator = true, escalations = {}, onEscalate, onEscalationChanged = () => {} }: {
   findings: Finding[];
   rows: Record<number, RowState>;
   onRow: (id: number, patch: Partial<RowState>) => void;
@@ -51,6 +52,10 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
   people?: Map<number, Person>;
   /** The creator's own tools: ticking done, applying fixes, disputing. Hidden for the brand team. */
   creator?: boolean;
+  /** Requests for a person to review a finding, by finding id. */
+  escalations?: Record<number, EscalationRequest>;
+  onEscalate?: EscalateFn;
+  onEscalationChanged?: () => void;
 }) {
   const [open, setOpen] = useState<number | null>(null);
   const counts = LEVEL_ORDER.map((l) => findings.filter((f) => f.level === l).length);
@@ -90,6 +95,7 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                         {d && <span className="text-accent">· {DISPUTE_TEXT[d.status]}</span>}
                         {f.assessment?.outcome && <span>· {f.assessment.outcome}</span>}
                         <DecisionTag f={f} />
+                        {escalations[f.id]?.status === "open" && <span className="font-medium text-accent">· With the brand team</span>}
                       </span>
                     </button>
                   </div>
@@ -134,6 +140,8 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                       </p>
                     )}
                     <DecisionControls f={f} decide={decide} canDismissBlockers={canDismissBlockers} people={people} />
+                    <EscalationBox f={f} request={escalations[f.id]} side={creator ? "creator" : "manager"}
+                      onEscalate={creator && f.level !== "advisory" ? onEscalate : undefined} onChanged={onEscalationChanged} />
                     {creator && !d && (row.disputing ? (
                       <div className="flex flex-col gap-2">
                         <label className="text-xs font-medium" htmlFor={`dispute-${f.id}`}>What does it actually mean, and why is this reading wrong?</label>

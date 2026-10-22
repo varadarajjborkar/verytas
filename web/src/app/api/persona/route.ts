@@ -1,9 +1,10 @@
 import { cookies } from "next/headers";
+import { backendConfigured } from "@/lib/backend";
 import { cookieOptions, currentPersona, PERSONA_COOKIE, personasAvailable } from "@/lib/session";
 
 /** Which side of the console this browser is viewing, and whether it can switch (sign-in off only). */
 export async function GET() {
-  return Response.json({ available: personasAvailable, persona: await currentPersona() });
+  return Response.json({ available: personasAvailable, persona: await currentPersona(), demo: !backendConfigured });
 }
 
 export async function POST(request: Request) {

@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { journey } from "@/lib/journey";
 import {
-  ApiError, decide as decideFinding, FINISHED, getContent, getReview, getTimeline, listDisputes, listPeople, nextSteps,
+  ApiError, decide as decideFinding, escalate, FINISHED, getContent, getReview, getTimeline, listDisputes,
+  listEscalations, listPeople, nextSteps,
   relativeTime, resubmit, STATUS_LABEL, transition, waitForReview,
 } from "@/lib/review-client";
 import { canDecide, sideOf } from "@/lib/roles";
-import type { ContentDetail, ContentStatus, Dispute, Person, Review, Timeline } from "@/lib/types";
+import type { ContentDetail, ContentStatus, Dispute, EscalationRequest, Person, Review, Timeline } from "@/lib/types";
 import { JourneyMap } from "../Journey";
 import { useToast } from "../Toaster";
 import { Details, Meter, tabKeys } from "../ui";
@@ -64,6 +65,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
   const [pane, setPane] = useState<"issues" | "activity">("issues");
   const [docView, setDocView] = useState<"text" | "compare">("text");
   const [sendingBack, setSendingBack] = useState(false);
+  const [requests, setRequests] = useState<Record<number, EscalationRequest>>({});
   const textRef = useRef<HTMLElement | null>(null);
   const live = useRef(contentId);
   // Stops polling a review nobody is looking at any more.
@@ -73,6 +75,13 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
 
   const loadTimeline = useCallback(() => {
     getTimeline(contentId).then((t) => { if (live.current === contentId) setTimeline(t); }).catch(() => {});
+    // The latest request per finding: a withdrawn one may be followed by a new ask.
+    listEscalations("all", contentId).then((rows) => {
+      if (live.current !== contentId) return;
+      const by: Record<number, EscalationRequest> = {};
+      for (const r of [...rows].sort((a, b) => a.id - b.id)) by[r.finding.id] = r;
+      setRequests(by);
+    }).catch(() => {});
   }, [contentId]);
   useEffect(() => {
     loadTimeline();
@@ -417,7 +426,13 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
             ) : (
               <Checklist findings={findings} rows={rows} disputes={disputeByFinding} active={active} onSelect={setActive}
                 onRow={(id, patch) => setRows((r) => ({ ...r, [id]: { ...(r[id] ?? emptyRow()), ...patch } }))}
-                creator={creatorTools} people={people}
+                creator={creatorTools} people={people} escalations={requests} onEscalationChanged={loadTimeline}
+                onEscalate={creatorTools && !readOnly ? async (f, message) => {
+                  await escalate(f.id, message);
+                  toast({ kind: "success", title: "Sent to the brand team", detail: "A person will review it by hand." });
+                  loadTimeline();
+                  onChanged();
+                } : undefined}
                 decide={manager && canDecide(role) && !readOnly ? decide : undefined}
                 canDismissBlockers={role === "approver" || role === "brand_admin"} />
             )}

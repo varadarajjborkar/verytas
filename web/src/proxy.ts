@@ -9,9 +9,17 @@ const backendConfigured = Boolean(process.env.VERYTAS_API_URL);
 const signinRequired = process.env.VERYTAS_REQUIRE_SIGNIN === "1";
 const devAutologin = process.env.NODE_ENV !== "production" && process.env.VERYTAS_DEV_AUTOLOGIN === "1";
 
+// Mirrors lib/app.ts; middleware can't import server modules that read cookies.
+const APP = process.env.VERYTAS_APP === "manager" || process.env.VERYTAS_APP === "creator" ? process.env.VERYTAS_APP : null;
+const ONLY_FOR: Record<string, string> = { "/library": "manager", "/guidelines": "manager", "/escalations": "manager" };
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const api = pathname.startsWith("/api/");
+
+  // Each app serves only its own side's screens.
+  const owner = Object.entries(ONLY_FOR).find(([p]) => pathname === p || pathname.startsWith(`${p}/`))?.[1];
+  if (APP && owner && owner !== APP) return NextResponse.redirect(new URL("/", request.url));
 
   // Defence in depth for state-changing calls: they must come from this site.
   if (api && request.method !== "GET" && request.method !== "HEAD") {
