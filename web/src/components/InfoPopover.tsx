@@ -3,7 +3,9 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { InfoIcon } from "./Icons";
 
-/** A small "how is this worked out" note, opened from a button next to what it explains. */
+/** A small "how is this worked out" note, opened from a button next to what it explains.
+ * It is a disclosure rather than a dialog: the note comes right after its button
+ * in reading order, so focus never has to move into it. */
 export function InfoPopover({ label, children }: { label: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -23,12 +25,12 @@ export function InfoPopover({ label, children }: { label: string; children: Reac
 
   return (
     <div ref={root} className="relative">
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls={id}
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls={open ? id : undefined}
         className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-muted transition hover:bg-sunken hover:text-ink">
         <InfoIcon size={14} /> {label}
       </button>
       {open && (
-        <div id={id} role="dialog" aria-label={label}
+        <div id={id} role="region" aria-label={label}
           className="vt-pop absolute right-0 top-full z-30 mt-2 w-[min(26rem,calc(100vw-2.5rem))] rounded-xl border border-line bg-raised p-4 text-sm shadow-[var(--vt-shadow-pop)]">
           {children}
         </div>

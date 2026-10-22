@@ -4,7 +4,9 @@ import { type ActionEvent, type ParseResult, Renderer } from "@openuidev/react-l
 import { openuiLibrary } from "@openuidev/react-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ChatStore, imageToDataUrl, openChatStore, type StoredMessage, type ThreadSummary } from "@/lib/chat-store";
-import { ArrowUpIcon, ChatIcon, CloseIcon, HistoryIcon, PaperclipIcon, PlusIcon, SparkIcon, TrashIcon } from "./Icons";
+import { usePersistedFlag } from "@/lib/persisted-flag";
+import { Drawer } from "./Drawer";
+import { ArrowUpIcon, ChatIcon, CloseIcon, HistoryIcon, PanelIcon, PaperclipIcon, PlusIcon, SparkIcon, TrashIcon } from "./Icons";
 import { useToast } from "./Toaster";
 
 // Ask Verytas, full page. The model answers in OpenUI Lang (charts, tables,
@@ -14,6 +16,11 @@ import { useToast } from "./Toaster";
 // conversation; the current model can't see them and is told so.
 
 type Message = StoredMessage & { id: number; error?: boolean; note?: string };
+// One open conversation. Saves are chained on it, so a second save waits for the
+// first one's id instead of creating a duplicate, and a save that finishes after
+// the person moved on still lands on the conversation it belongs to.
+type Conversation = { id: number | null; saving: Promise<void> };
+const fresh = (id: number | null = null): Conversation => ({ id, saving: Promise.resolve() });
 
 const MAX_IMAGES = 4;
 const STARTERS = [
@@ -84,6 +91,9 @@ export function AskVerytas() {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [threadId, setThreadId] = useState<number | null>(null);
   const [railOpen, setRailOpen] = useState(false);
+  const [railHidden, setRailHidden] = usePersistedFlag("vt-ask-rail-collapsed", false);
+  const conversation = useRef<Conversation>(fresh());
+  const opening = useRef(0);
   const abort = useRef<AbortController | null>(null);
   const nextId = useRef(1);
   const end = useRef<HTMLDivElement>(null);
@@ -106,19 +116,21 @@ export function AskVerytas() {
   }, [messages]);
   useEffect(() => () => abort.current?.abort(), []);
 
-  async function persist(all: Message[], id: number | null) {
-    if (!store) return id;
+  function persist(all: Message[], conv: Conversation) {
+    if (!store) return;
     const kept = all.filter((m) => !m.error && (m.content || m.images?.length))
       .map(({ role, content, images: imgs }) => (imgs?.length ? { role, content, images: imgs } : { role, content }));
-    if (!kept.length) return id;
-    try {
-      const saved = await store.save(id, titleOf(kept.find((m) => m.role === "user")?.content ?? ""), kept);
-      setThreads((ts) => [saved, ...ts.filter((t) => t.id !== saved.id)]);
-      return saved.id;
-    } catch {
-      toast({ kind: "warning", title: "Couldn't save this chat" });
-      return id;
-    }
+    if (!kept.length) return;
+    conv.saving = conv.saving.then(async () => {
+      try {
+        const saved = await store.save(conv.id, titleOf(kept.find((m) => m.role === "user")?.content ?? ""), kept);
+        conv.id = saved.id;
+        if (conversation.current === conv) setThreadId(saved.id);
+        setThreads((ts) => [saved, ...ts.filter((t) => t.id !== saved.id)]);
+      } catch (err) {
+        toast({ kind: "warning", title: "Couldn't save this chat", detail: (err as Error).message });
+      }
+    });
   }
 
   const send = useCallback(async (text: string, attach: string[] = []) => {
@@ -140,6 +152,7 @@ export function AskVerytas() {
     };
     const controller = new AbortController();
     abort.current = controller;
+    const conv = conversation.current;
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -168,12 +181,13 @@ export function AskVerytas() {
       if (abort.current === controller) {
         setStreaming(false);
         abort.current = null;
-        setThreadId(await persist([...history, answer], threadId));
       }
+      // Saved even when the person left mid-answer: it goes to the conversation it was asked in.
+      persist([...history, answer], conv);
     }
-  // persist reads the store and thread id through this render's closure, which is what send needs.
+  // persist reads the store through this render's closure, which is what send needs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, streaming, store, threadId]);
+  }, [messages, streaming, store]);
 
   const onAction = useCallback((event: ActionEvent) => {
     if (event.type === "continue_conversation") void send(event.humanFriendlyMessage);
@@ -193,6 +207,8 @@ export function AskVerytas() {
 
   function newChat() {
     stopAndClear();
+    opening.current++;
+    conversation.current = fresh();
     setMessages([]);
     setThreadId(null);
     setRailOpen(false);
@@ -202,12 +218,22 @@ export function AskVerytas() {
   async function open(id: number) {
     if (!store || id === threadId) return setRailOpen(false);
     stopAndClear();
-    const thread = await store.get(id);
+    // Only the last click counts when several opens are in flight.
+    const ticket = ++opening.current;
+    let thread;
+    try {
+      thread = await store.get(id);
+    } catch (err) {
+      if (ticket === opening.current) toast({ kind: "error", title: "Couldn't open that chat", detail: (err as Error).message });
+      return;
+    }
+    if (ticket !== opening.current) return;
     if (!thread) {
       toast({ kind: "error", title: "That chat is no longer available" });
       setThreads((ts) => ts.filter((t) => t.id !== id));
       return;
     }
+    conversation.current = fresh(id);
     setMessages(thread.messages.map((m) => ({ ...m, id: nextId.current++ })));
     setThreadId(id);
     setRailOpen(false);
@@ -244,9 +270,13 @@ export function AskVerytas() {
 
   const rail = (
     <nav aria-label="Conversations" className="flex h-full min-h-0 flex-col">
-      <div className="p-3">
-        <button type="button" onClick={newChat} className="vt-btn vt-btn-quiet w-full justify-start">
+      <div className="flex items-center gap-1.5 p-3">
+        <button type="button" onClick={newChat} className="vt-btn vt-btn-quiet flex-1 justify-start">
           <PlusIcon size={15} /> New chat
+        </button>
+        <button type="button" onClick={() => setRailHidden(true)} aria-label="Collapse history" title="Collapse history"
+          className="hidden h-9 w-9 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-sunken hover:text-ink md:grid">
+          <PanelIcon size={16} />
         </button>
       </div>
       <p className="px-4 pb-1.5 text-xs font-medium text-subtle">Recent</p>
@@ -259,10 +289,10 @@ export function AskVerytas() {
                 t.id === threadId ? "bg-accent/12 text-ink" : "text-muted hover:bg-sunken hover:text-ink"}`}>
               <ChatIcon size={14} className="shrink-0 opacity-70" />
               <span className="min-w-0 flex-1 truncate">{t.title}</span>
-              <span className="shrink-0 text-[11px] text-subtle group-hover:hidden">{when(t.updated_at)}</span>
+              <span className="shrink-0 text-[11px] text-subtle group-focus-within:invisible group-hover:invisible [@media(hover:none)]:invisible">{when(t.updated_at)}</span>
             </button>
             <button type="button" onClick={() => remove(t.id)} aria-label={`Delete "${t.title}"`}
-              className="absolute right-1.5 top-1/2 hidden h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-subtle transition hover:bg-line hover:text-ink group-hover:grid focus-visible:grid">
+              className="absolute right-1.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-subtle opacity-0 transition hover:bg-line hover:text-ink focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
               <TrashIcon size={13} />
             </button>
           </li>
@@ -285,18 +315,21 @@ export function AskVerytas() {
       </div>
 
       <div className="vt-card flex min-h-0 flex-1 overflow-hidden">
-        <aside className="hidden w-64 shrink-0 border-r border-line md:block">{rail}</aside>
-        {railOpen && (
-          <div className="fixed inset-0 z-40 md:hidden">
-            <div className="vt-backdrop absolute inset-0 bg-[color-mix(in_srgb,var(--vt-bg)_45%,transparent)] backdrop-blur-[6px]"
-              onClick={() => setRailOpen(false)} aria-hidden />
-            <div className="vt-pop absolute inset-y-3 left-3 w-[min(18rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-line bg-raised shadow-[var(--vt-shadow-pop)]">
-              <button type="button" onClick={() => setRailOpen(false)} aria-label="Close history"
-                className="absolute right-2 top-3 grid h-8 w-8 place-items-center rounded-lg text-muted hover:bg-sunken"><CloseIcon size={15} /></button>
-              <div className="h-full pt-10">{rail}</div>
-            </div>
+        {railHidden ? (
+          <div className="hidden w-14 shrink-0 flex-col items-center gap-1.5 border-r border-line py-3 md:flex">
+            <button type="button" onClick={() => setRailHidden(false)} aria-label="Show history" title="Show history"
+              className="grid h-9 w-9 place-items-center rounded-lg text-muted transition hover:bg-sunken hover:text-ink">
+              <PanelIcon size={16} />
+            </button>
+            <button type="button" onClick={newChat} aria-label="New chat" title="New chat"
+              className="grid h-9 w-9 place-items-center rounded-lg text-muted transition hover:bg-sunken hover:text-ink">
+              <PlusIcon size={16} />
+            </button>
           </div>
+        ) : (
+          <aside className="vt-rail hidden w-64 shrink-0 border-r border-line md:block">{rail}</aside>
         )}
+        {railOpen && <div className="md:hidden"><Drawer label="History" onClose={() => setRailOpen(false)}>{rail}</Drawer></div>}
 
         <div className="flex min-w-0 flex-1 flex-col">
           <p className="sr-only" role="status" aria-live="polite">{status}</p>

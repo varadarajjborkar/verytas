@@ -1,10 +1,12 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePersistedFlag } from "@/lib/persisted-flag";
 import { ApiError, getMe, listContents, submit } from "@/lib/review-client";
-import type { ContentRow, Review } from "@/lib/types";
-import { CloseIcon, HistoryIcon, PlusIcon } from "./Icons";
+import type { ContentRow, Me, Review } from "@/lib/types";
+import { Drawer } from "./Drawer";
+import { HistoryIcon, PanelIcon, PlusIcon } from "./Icons";
 import { Checklist, emptyRow, type RowState, sortFindings } from "./review/Checklist";
 import { attachmentsPayload, channelOf, Composer, type Draft, emptyDraft } from "./review/Composer";
 import { HighlightedBody } from "./review/parts";
@@ -16,6 +18,8 @@ import { useToast } from "./Toaster";
  * The review workspace: a history of every piece on the left (like a chat
  * list), and on the right either a focused "new review" form or one opened
  * review. The open review lives in the URL (?id=), so links and Back work.
+ * The new-review form stays mounted while a review is open, so a half-written
+ * draft survives a look at an older piece.
  */
 export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
   const params = useSearchParams();
@@ -25,23 +29,36 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
   const [rows, setRows] = useState<ContentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [mine, setMine] = useState(true);
-  const [role, setRole] = useState("creator");
+  const [me, setMe] = useState<Me | null>(null);
   const [demo, setDemo] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
+  const [collapsed, setCollapsed] = usePersistedFlag("vt-review-rail-collapsed", false);
+  // Only the newest request may write the list, so flipping Mine/Everyone can't be undone by a slow reply.
+  const seq = useRef(0);
 
-  const refresh = useCallback(() => listContents(mine)
-    .then(setRows)
-    .catch((err) => { if (err instanceof ApiError && err.status === 503) setDemo(true); })
-    .finally(() => setLoading(false)), [mine]);
+  const refresh = useCallback(() => {
+    const ticket = ++seq.current;
+    return listContents(mine)
+      .then((r) => { if (ticket === seq.current) setRows(r); })
+      .catch((err) => { if (err instanceof ApiError && err.status === 503) setDemo(true); })
+      .finally(() => { if (ticket === seq.current) setLoading(false); });
+  }, [mine]);
 
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => { getMe().then((me) => setRole(me.role)).catch(() => {}); }, []);
-  // Keep the list fresh while anything in it is still being checked.
+  useEffect(() => { getMe().then(setMe).catch(() => {}); }, []);
+  // Keep the list fresh while anything in it is still being checked: one request
+  // at a time, and none while the tab is in the background.
   const pending = rows.some((r) => r.latest_review && (r.latest_review.status === "queued" || r.latest_review.status === "running"));
   useEffect(() => {
     if (!pending) return;
-    const t = setInterval(() => void refresh(), 4000);
-    return () => clearInterval(t);
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      if (!document.hidden) await refresh();
+      if (!stop) timer = setTimeout(tick, 4000);
+    };
+    timer = setTimeout(tick, 4000);
+    return () => { stop = true; clearTimeout(timer); };
   }, [pending, refresh]);
 
   const go = (id: number | null) => {
@@ -49,36 +66,40 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
     router.push(id == null ? pathname : `${pathname}?id=${id}`, { scroll: false });
   };
 
-  const rail = (
+  const rail = (collapsible: boolean) => (
     <ReviewHistory rows={rows} loading={loading} selected={selected} mine={mine} demo={demo}
-      onMine={(m) => { setLoading(true); setMine(m); }} onSelect={go} onNew={() => go(null)} />
+      onMine={(m) => { setLoading(true); setMine(m); }} onSelect={go} onNew={() => go(null)}
+      onCollapse={collapsible ? () => setCollapsed(true) : undefined} />
   );
+  const showing = selected != null && !demo;
 
   return (
-    <div className="grid items-start gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
-      <aside className="vt-card hidden overflow-hidden lg:sticky lg:top-6 lg:block lg:h-[calc(100dvh-7.5rem)]">{rail}</aside>
+    <div className={`grid items-start gap-5 ${collapsed ? "lg:grid-cols-[3.25rem_minmax(0,1fr)]" : "lg:grid-cols-[17rem_minmax(0,1fr)]"}`}>
+      {collapsed ? (
+        <div className="vt-card hidden flex-col items-center gap-1.5 py-2.5 lg:sticky lg:top-6 lg:flex">
+          <button type="button" onClick={() => setCollapsed(false)} aria-label="Show reviews" title="Show reviews"
+            className="grid h-9 w-9 place-items-center rounded-lg text-muted transition hover:bg-sunken hover:text-ink">
+            <PanelIcon size={16} />
+          </button>
+          <button type="button" onClick={() => go(null)} aria-label="New review" title="New review"
+            className="grid h-9 w-9 place-items-center rounded-lg text-muted transition hover:bg-sunken hover:text-ink">
+            <PlusIcon size={16} />
+          </button>
+        </div>
+      ) : (
+        <aside className="vt-card vt-rail hidden overflow-hidden lg:sticky lg:top-6 lg:block lg:h-[calc(100dvh-7.5rem)]">{rail(true)}</aside>
+      )}
       <div className="flex gap-2 lg:hidden">
         <button type="button" onClick={() => setRailOpen(true)} className="vt-btn vt-btn-quiet"><HistoryIcon size={15} /> Reviews</button>
         {selected != null && <button type="button" onClick={() => go(null)} className="vt-btn vt-btn-quiet"><PlusIcon size={15} /> New</button>}
       </div>
-      {railOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="vt-backdrop absolute inset-0 bg-[color-mix(in_srgb,var(--vt-bg)_45%,transparent)] backdrop-blur-[6px]"
-            onClick={() => setRailOpen(false)} aria-hidden />
-          <div className="vt-pop absolute inset-y-3 left-3 w-[min(19rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-line bg-raised shadow-[var(--vt-shadow-pop)]">
-            <button type="button" onClick={() => setRailOpen(false)} aria-label="Close reviews"
-              className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-lg text-muted hover:bg-sunken"><CloseIcon size={15} /></button>
-            <div className="h-full pt-9">{rail}</div>
-          </div>
-        </div>
-      )}
+      {railOpen && <div className="lg:hidden"><Drawer label="Reviews" onClose={() => setRailOpen(false)}>{rail(false)}</Drawer></div>}
 
       <div className="min-w-0">
-        {selected != null && !demo ? (
-          <ReviewView key={selected} contentId={selected} role={role} onChanged={refresh} />
-        ) : (
+        {showing && <ReviewView key={selected} contentId={selected} role={me?.role ?? "creator"} userId={me?.id ?? null} onChanged={refresh} />}
+        <div hidden={showing}>
           <NewReview initialBody={initialBody} demo={demo} onCreated={(id) => { void refresh(); go(id); }} />
-        )}
+        </div>
       </div>
     </div>
   );

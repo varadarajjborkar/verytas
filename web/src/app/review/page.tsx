@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { ReviewWorkspace } from "@/components/ReviewWorkspace";
 import { Suspense } from "react";
+import { ReviewWorkspace } from "@/components/ReviewWorkspace";
 import { PageHeader, PageSkeleton } from "@/components/ui";
 import { demoBody } from "@/lib/demo-data";
 
@@ -12,10 +12,7 @@ export default function Page() {
       <PageHeader title="Review" />
       {/* The open review is read from the URL, which needs a Suspense boundary to prerender. */}
       <Suspense fallback={<PageSkeleton />}>
-        {/* The open review is read from the URL, which needs a Suspense boundary to prerender. */}
-      <Suspense fallback={<PageSkeleton />}>
         <ReviewWorkspace initialBody={demoBody} />
-      </Suspense>
       </Suspense>
     </>
   );

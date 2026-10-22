@@ -66,3 +66,6 @@ export const HistoryIcon = (p: IconProps) => (
 export const ChatIcon = (p: IconProps) => (
   <Icon {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></Icon>
 );
+export const PanelIcon = (p: IconProps) => (
+  <Icon {...p}><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /></Icon>
+);

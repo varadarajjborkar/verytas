@@ -1,12 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type KeyboardEvent, useMemo, useState } from "react";
 import { FINISHED, relativeTime, STATUS_LABEL } from "@/lib/review-client";
 import type { ContentRow } from "@/lib/types";
-import { PlusIcon } from "../Icons";
+import { PanelIcon, PlusIcon } from "../Icons";
+
+// What GET /contents returns by default; past this the list says it is partial.
+const LIST_CAP = 200;
+const WHOSE = [{ v: true, l: "Mine" }, { v: false, l: "Everyone" }];
 
 /** Every review the person can open, newest activity first. Finished pieces stay listed, struck through. */
-export function ReviewHistory({ rows, loading, selected, mine, demo, onMine, onSelect, onNew }: {
+export function ReviewHistory({ rows, loading, selected, mine, demo, onMine, onSelect, onNew, onCollapse }: {
   rows: ContentRow[];
   loading: boolean;
   selected: number | null;
@@ -15,6 +19,7 @@ export function ReviewHistory({ rows, loading, selected, mine, demo, onMine, onS
   onMine: (mine: boolean) => void;
   onSelect: (id: number) => void;
   onNew: () => void;
+  onCollapse?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const shown = useMemo(() => {
@@ -22,16 +27,33 @@ export function ReviewHistory({ rows, loading, selected, mine, demo, onMine, onS
     return q ? rows.filter((r) => r.title.toLowerCase().includes(q) || r.channel.toLowerCase().includes(q)) : rows;
   }, [rows, query]);
 
+  // Radio keys: arrows move the choice, and only the checked option is a tab stop.
+  const onRadioKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+    e.preventDefault();
+    onMine(!mine);
+    requestAnimationFrame(() => e.currentTarget?.querySelector<HTMLElement>("[aria-checked='true']")?.focus());
+  };
+
   return (
     <nav aria-label="Reviews" className="flex h-full min-h-0 flex-col">
       <div className="flex flex-col gap-3 p-3">
-        <button type="button" onClick={onNew} aria-current={selected == null ? "page" : undefined}
-          className="vt-btn vt-btn-primary w-full">
-          <PlusIcon size={15} /> New review
-        </button>
-        <div role="radiogroup" aria-label="Whose reviews" className="grid grid-cols-2 gap-1 rounded-lg bg-sunken p-0.5 text-xs font-medium">
-          {[{ v: true, l: "Mine" }, { v: false, l: "Everyone" }].map(({ v, l }) => (
-            <button key={l} type="button" role="radio" aria-checked={mine === v} onClick={() => onMine(v)}
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={onNew} aria-current={selected == null ? "page" : undefined}
+            className="vt-btn vt-btn-primary flex-1">
+            <PlusIcon size={15} /> New review
+          </button>
+          {onCollapse && (
+            <button type="button" onClick={onCollapse} aria-label="Collapse reviews" title="Collapse reviews"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-sunken hover:text-ink">
+              <PanelIcon size={16} />
+            </button>
+          )}
+        </div>
+        <div role="radiogroup" aria-label="Whose reviews" onKeyDown={onRadioKey}
+          className="grid grid-cols-2 gap-1 rounded-lg bg-sunken p-0.5 text-xs font-medium">
+          {WHOSE.map(({ v, l }) => (
+            <button key={l} type="button" role="radio" aria-checked={mine === v} tabIndex={mine === v ? 0 : -1} onClick={() => onMine(v)}
               className={`rounded-md py-1.5 transition ${mine === v ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
               {l}
             </button>
@@ -63,9 +85,9 @@ export function ReviewHistory({ rows, loading, selected, mine, demo, onMine, onS
                     {r.title}
                   </span>
                   {running ? (
-                    <span aria-label="Checking" className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-accent border-t-transparent" />
+                    <span role="img" aria-label="Checking" className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-accent border-t-transparent" />
                   ) : !finished && lr && lr.blockers > 0 ? (
-                    <span title={`${lr.blockers} blocker${lr.blockers === 1 ? "" : "s"}`}
+                    <span title={`${lr.blockers} blocker${lr.blockers === 1 ? "" : "s"}`} role="img" aria-label={`${lr.blockers} must fix`}
                       className="shrink-0 rounded-full bg-[var(--vt-blocker-bg)] px-1.5 text-[11px] font-semibold tabular-nums text-[var(--vt-blocker)]">
                       {lr.blockers}
                     </span>
@@ -81,6 +103,9 @@ export function ReviewHistory({ rows, loading, selected, mine, demo, onMine, onS
             </li>
           );
         })}
+        {rows.length >= LIST_CAP && (
+          <li className="px-2 py-2 text-[11px] text-subtle">Showing the {LIST_CAP} most recent. Search narrows within these.</li>
+        )}
       </ul>
     </nav>
   );
