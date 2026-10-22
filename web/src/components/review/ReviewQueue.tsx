@@ -192,7 +192,9 @@ export function ReviewQueue() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
+            {/* relative: the header's screen-reader label is absolutely positioned and would otherwise escape
+                this scroller and widen the whole page on a phone. */}
             <table className="w-full min-w-[56rem] table-fixed text-sm">
               <colgroup>
                 <col className="w-[7.5rem]" /><col /><col className="w-[14.5rem]" /><col className="w-[11rem]" />

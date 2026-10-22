@@ -9,7 +9,10 @@ import { APP, APP_NAME } from "@/lib/app";
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
-const THEME_BOOT = `try{var t=localStorage.getItem("vt-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
+// Also claims OpenUI's development inspector flag before the library loads: its floating button sat on
+// top of page content in dev and widened phone layouts. Production builds never include it.
+const THEME_BOOT = `try{var t=localStorage.getItem("vt-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`
+  + `globalThis[Symbol.for("openui.devtools.autoMount")]=true;`;
 
 const PRODUCT = APP ? `Verytas ${APP_NAME[APP]}` : "Verytas";
 
