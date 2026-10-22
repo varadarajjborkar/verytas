@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# Pull-based deploys: main is production. A timer runs this every few minutes as the verytas user; when
-# origin/main has moved, it builds the new commit in its own release folder, switches the app symlink,
+# Pull-based deploys. main is production, but the server follows `live`, which CI moves to a main commit
+# only after every check passes. A timer runs this every few minutes as the verytas user; when `live`
+# has moved, it builds the new commit in its own release folder, switches the app symlink,
 # restarts, and rolls back if the new release doesn't answer its health checks.
 #
 # Pulling (rather than GitHub pushing over SSH) keeps port 22 closed to everyone but the team, and the
 # server only ever holds a read-only deploy key.
 #
-# Usage: autodeploy.sh [--force]   (--force rebuilds main even if it is already live, or failed before)
+# Usage: autodeploy.sh [--force]   (--force rebuilds `live` even if it is already deployed, or failed before)
 set -euo pipefail
 ROOT=/srv/verytas
 REPO=$ROOT/repo.git
 REL=$ROOT/releases
 KEEP=3
+BRANCH=live
 
 exec 9>"$ROOT/.autodeploy.lock"
 flock -n 9 || exit 0
@@ -20,8 +22,8 @@ export HOME=$ROOT NEXT_TELEMETRY_DISABLED=1 CI=1
 export GIT_SSH_COMMAND="ssh -i $ROOT/etc/deploy_key -o IdentitiesOnly=yes -o UserKnownHostsFile=$ROOT/etc/github_known_hosts -o StrictHostKeyChecking=yes"
 log() { echo "$(date -u +%FT%TZ) $*"; }
 
-git -C "$REPO" fetch -q origin +refs/heads/main:refs/heads/main
-new=$(git -C "$REPO" rev-parse main)
+git -C "$REPO" fetch -q origin "+refs/heads/$BRANCH:refs/heads/$BRANCH"
+new=$(git -C "$REPO" rev-parse "$BRANCH")
 live=$(cat "$ROOT/app/REVISION" 2>/dev/null || true)
 if [ "${1:-}" != "--force" ]; then
   [ "$new" = "$live" ] && exit 0
