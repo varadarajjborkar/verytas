@@ -6,7 +6,7 @@ system under test misses and spends more of each generation on them.
 
 Expectations come from what a careful human reviewer holding the brand book
 would say, never from how the tool is built: "game-changer" written with a
-Cyrillic "а" is still the banned word to a reader, so it should be flagged.
+Cyrillic "\u0430" is still the banned word to a reader, so it should be flagged.
 Controls (expect="clean") are things a reviewer would let through; flagging
 them is a false positive.
 """
@@ -22,7 +22,7 @@ from dataclasses import dataclass
 # tier "core": ordinary writing a brand checker must handle.
 # tier "evasion": deliberate or accidental obfuscation a human still reads as the term.
 
-_HOMOGLYPH = {"a": "а", "e": "е", "o": "о", "c": "с", "p": "р", "i": "і"}
+_HOMOGLYPH = {"a": "\u0430", "e": "\u0435", "o": "\u043e", "c": "\u0441", "p": "\u0440", "i": "\u0456"}
 _LEET = {"a": "4", "e": "3", "i": "1", "o": "0", "s": "5", "t": "7"}
 
 
@@ -58,6 +58,9 @@ TEXT_VARIANTS: dict[str, tuple[str, callable]] = {
     "leet": ("evasion", lambda t: "".join(_LEET.get(ch.lower(), ch) for ch in t)),
     "spaced": ("evasion", lambda t: " ".join(t.replace(" ", ""))),
     "line_break": ("evasion", lambda t: t.replace(" ", "\n", 1) if " " in t else t),
+    # An emoji dropped into the phrase: "Project\U0001f525Lumen", "game\U0001f680changer".
+    "emoji_split": ("evasion", lambda t: t.replace(" ", "\U0001f525", 1) if " " in t
+                    else t[: len(t) // 2] + "\U0001f680" + t[len(t) // 2:]),
 }
 
 # A slug in a URL still names the project. (A tease like "Project K." was
@@ -147,6 +150,13 @@ APPENDED: dict[str, dict[str, tuple[str, str, list[str]]]] = {
     "hype": {
         "brand_forbidden": ("flag", "tone", []),  # filled from the reality's own hype examples
     },
+    "emoji": {
+        "gesture": ("flag", "messaging", ["To everyone who doubted us \U0001f595",
+                                          "Haters gonna hate \U0001f595\U0001f595"]),
+        "spam": ("flag", "accessibility", ["Sale is LIVE \U0001f525\U0001f525\U0001f525\U0001f525\U0001f525\U0001f525",
+                                           "We did it \U0001f389\U0001f389\U0001f389\U0001f389\U0001f389"]),
+        "friendly": ("clean", "messaging", ["Thanks for being here \U0001f60a", "See you there \U0001f44b"]),
+    },
 }
 
 
@@ -161,6 +171,12 @@ class Plant:
     start: int = -1
     end: int = -1
     attachment: str | None = None  # image id or "colors" for attachment plants
+    # Rule codes (prefixes) that count as catching a flag plant. Empty means any
+    # finding in the category. Codes are part of the public output (citations),
+    # so this is still black-box: it stops an unrelated finding in the same
+    # category (a crop warning on a mascot image) from counting as a catch.
+    codes: tuple[str, ...] = ()
+    ref: str | None = None  # the reality term this plant spells, for the adversary
 
     @property
     def arm(self) -> str:
@@ -180,6 +196,10 @@ def arms_for(family: str) -> list[str]:
                 if not (k == "outdated" and f == "plus")]
     if family in APPENDED:
         return [f"{family}:{v}" for v in APPENDED[family]]
+    if family == "media":
+        return [f"media:{v}" for v in MEDIA_VARIANTS]
+    if family == "mascot":
+        return ["mascot:extended", "mascot:recoloured", "mascot:exact", "mascot:other_character"]
     if family == "alt":
         return ["alt:missing", "alt:filename", "alt:decorative", "alt:good"]
     if family == "contrast":
@@ -189,12 +209,16 @@ def arms_for(family: str) -> list[str]:
 
 def term_plant(family: str, variant: str, term: str, adversarial: list[str], rng: random.Random) -> Plant:
     category = "terminology" if family == "banned" else "confidentiality"
+    codes = ("CONF-LEAK",) if family == "codename" else ()
     if variant == "adversarial":
-        text = rng.choice(adversarial) if adversarial else term
-        return Plant(family, variant, "adversarial" if adversarial else "core", "flag", (category,), text)
+        if adversarial:
+            return Plant(family, variant, "adversarial", "flag", (category,), rng.choice(adversarial), codes=codes,
+                         ref=term)
+        # No adversarial spellings yet: this is a plain identity plant, recorded under that arm.
+        variant = "identity"
     table = TEXT_VARIANTS | (CODENAME_EXTRA if family == "codename" else {})
     tier, fn = table[variant]
-    return Plant(family, variant, tier, "flag", (category,), fn(term))
+    return Plant(family, variant, tier, "flag", (category,), fn(term), codes=codes, ref=term)
 
 
 def casing_plant(variant: str, correct: str) -> Plant:
@@ -212,7 +236,9 @@ def stat_plant(variant: str, old: int, new: int, percent: bool) -> Plant:
     value, prefix = stat_value(kind, old, new)
     text = prefix + NUMBER_FORMATS[fmt](value) + ("%" if percent else "")
     expect = STAT_KINDS[kind]
-    return Plant("stat", variant, "control" if expect == "clean" else "core", expect, ("claims",), text)
+    # A wrong figure is caught by the fact check, not by a generic "unsupported".
+    codes = ("CLAIM-OUTDATED", "CLAIM-CONTRADICTED") if expect == "flag" else ()
+    return Plant("stat", variant, "control" if expect == "clean" else "core", expect, ("claims",), text, codes=codes)
 
 
 def appended_plant(family: str, variant: str, ctx: dict[str, str], hype: list[str], rng: random.Random) -> Plant:
@@ -237,3 +263,62 @@ def attachment_plant(arm: str) -> tuple[Plant, dict]:
     expect = "flag" if variant == "low" else "clean"
     return (Plant("contrast", variant, "core" if expect == "flag" else "control", expect, ("accessibility",), "",
                   attachment="colors"), {"colors": [{**pair, "where": "hero banner"}]})
+
+
+# --- media: text a reviewer would see inside an image, a document or a video -----------------------
+# A codename or banned phrase that a person reading the post would plainly see
+# must be flagged wherever it sits. tier "evasion" marks formats that are hard
+# for machines but still legible to people.
+MEDIA_VARIANTS: dict[str, str] = {
+    "image_plain": "core", "image_stylised": "core", "image_low_contrast": "evasion",
+    "pdf_layer": "core", "pdf_scan": "core", "pdf_screenshot": "core", "video_caption": "core",
+}
+
+
+def media_plant(variant: str, needle: str, needle_kind: str, rng: random.Random, case_no: str):
+    """(Plant, attachments fragment, uploads) for one media plant. Uploads are
+    (attachment key, local id, bytes, filename) the runner sends to /media first."""
+    from blackbox import media
+
+    category = "confidentiality" if needle_kind == "codename" else "terminology"
+    lines = [rng.choice(["Coming soon:", "Sneak peek!", "This week only", "Big news"]), needle,
+             rng.choice(["Stay tuned", "Link in bio", "Save the date"])]
+    att_id = f"m{case_no}"
+    tier = MEDIA_VARIANTS[variant]
+    plant = Plant("media", variant, tier, "flag", (category,), needle, attachment=att_id,
+                  codes=("CONF-LEAK",) if needle_kind == "codename" else ())
+    if variant.startswith("image_"):
+        img = media.text_card(lines, variant.split("_", 1)[1], rng)
+        return plant, {"images": [{"id": att_id, "alt": "A promotional card", "media_type": "image/png",
+                                   "data_base64": media.b64(media.png(img))}]}, []
+    if variant == "pdf_layer":
+        raw = media.pdf([{"text": ["Brand update", *lines]}, {"text": ["Thanks for reading."]}])
+    elif variant == "pdf_scan":
+        raw = media.scanned_pdf(media.text_card(lines, "plain", rng))
+    elif variant == "pdf_screenshot":
+        raw = media.pdf([{"text": ["Brand update", "Please see the picture below."],
+                          "image": media.text_card(lines, "plain", rng)}])
+    else:
+        return plant, {}, [("videos", att_id, media.caption_video(lines), f"{att_id}.mp4")]
+    return plant, {"documents": [{"id": att_id, "name": f"{att_id}.pdf", "media_type": "application/pdf",
+                                  "data_base64": media.b64(raw)}]}, []
+
+
+def mascot_plant(variant: str, colour: tuple[int, int, int], case_no: str):
+    from blackbox import media
+
+    att_id = f"k{case_no}"
+    if variant == "other_character":
+        img, expect, tier = media.other_character(), "clean", "control"
+    elif variant == "exact":
+        img, expect, tier = media.mascot_post(media.mascot(colour), colour, body=False), "clean", "control"
+    elif variant == "recoloured":
+        img, expect, tier = (media.mascot_post(media.mascot(colour, eye=(30, 140, 220)), colour, body=False),
+                             "flag", "core")
+    else:
+        img, expect, tier = media.mascot_post(media.mascot(colour), colour, body=True), "flag", "core"
+    # Only asset findings speak to the mascot, either way: a crop or safe-zone
+    # note on the same image is neither a catch nor a false positive.
+    plant = Plant("mascot", variant, tier, expect, ("visual",), "", attachment=att_id, codes=("VIS-ASSET",))
+    return plant, {"images": [{"id": att_id, "alt": "Our mascot in a new post", "media_type": "image/png",
+                               "data_base64": media.b64(media.png(img))}]}
