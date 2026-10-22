@@ -46,7 +46,7 @@ export function JourneyMap({ journey, status }: { journey: Journey; status: Cont
               <div className="min-w-0 md:pr-3">
                 <p className={`text-[13px] font-medium ${m.state === "todo" ? "text-subtle" : ""}`}>
                   {m.label}
-                  {m.state === "current" && <span className="sr-only"> (current step)</span>}
+                  <span className="sr-only">{m.state === "current" ? " (current step)" : m.state === "done" ? " (done)" : " (not yet)"}</span>
                 </p>
                 {m.at && (
                   <p className="truncate text-[11px] text-subtle" title={new Date(m.at).toLocaleString()}>

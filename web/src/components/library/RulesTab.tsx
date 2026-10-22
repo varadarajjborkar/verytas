@@ -14,8 +14,11 @@ const STATES = [{ k: "active", l: "Active" }, { k: "draft", l: "Drafts" }, { k: 
 const TERM_PATTERNS = ["banned_terms", "preferred_terms", "casing"];
 
 /** Rules as one current version per code; editing makes the next version, so old findings keep their citation. */
-export function RulesTab({ rules, editable, onChanged }: { rules: Rule[]; editable: boolean; onChanged: () => void }) {
-  const [state, setState] = useState<(typeof STATES)[number]["k"]>("active");
+export function RulesTab({ rules, editable, onChanged, initialState }: {
+  rules: Rule[]; editable: boolean; onChanged: () => void; initialState?: string | null;
+}) {
+  const [state, setState] = useState<(typeof STATES)[number]["k"]>(
+    () => STATES.find((s) => s.k === initialState)?.k ?? "active");
   const [category, setCategory] = useState<RuleCategory | "all">("all");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<number | null>(null);

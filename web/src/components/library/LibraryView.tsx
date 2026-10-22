@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, listAssets, listFacts, listRules, listTerms } from "@/lib/review-client";
 import { canEditLibrary } from "@/lib/roles";
 import type { BrandAsset, Fact, Rule, Term } from "@/lib/types";
+import { tabKeys } from "../ui";
 import { useViewer } from "../Viewer";
 import { AssetsTab } from "./AssetsTab";
 import { FactsTab } from "./FactsTab";
@@ -63,13 +64,20 @@ export function LibraryView() {
     { k: "assets", label: "Brand artwork", value: String(data.assets.filter((a) => a.active).length), hint: "official images" },
     ...(admin ? [{ k: "import" as const, label: "Import", value: "+", hint: "from a brand book" }] : []),
   ];
-  const go = (k: Tab) => router.replace(k === "rules" ? pathname : `${pathname}?tab=${k}`, { scroll: false });
+  const go = (k: Tab, state?: string) => {
+    const q = new URLSearchParams();
+    if (k !== "rules") q.set("tab", k);
+    if (state) q.set("state", state);
+    router.replace(q.size ? `${pathname}?${q}` : pathname, { scroll: false });
+  };
+  const onTabKey = tabKeys(tabs.map((t) => t.k), tab, (k) => go(k), "lib-tab");
 
   return (
     <div className="flex flex-col gap-5">
-      <div role="tablist" aria-label="Library" className={`vt-stagger grid grid-cols-2 gap-3 ${tabs.length === 5 ? "lg:grid-cols-5" : "lg:grid-cols-3"}`}>
+      <div role="tablist" aria-label="Library" onKeyDown={onTabKey} className={`vt-stagger grid grid-cols-2 gap-3 ${tabs.length === 5 ? "lg:grid-cols-5" : "lg:grid-cols-3"}`}>
         {tabs.map((t) => (
-          <button key={t.k} type="button" role="tab" aria-selected={tab === t.k} onClick={() => go(t.k)}
+          <button key={t.k} id={`lib-tab-${t.k}`} type="button" role="tab" aria-selected={tab === t.k} aria-controls="lib-panel"
+            tabIndex={tab === t.k ? 0 : -1} onClick={() => go(t.k)}
             className={`vt-card vt-lift p-4 text-left ${tab === t.k ? "border-accent ring-2 ring-accent/20" : ""}`}>
             <p className={`text-xs font-medium ${tab === t.k ? "text-accent" : "text-muted"}`}>{t.label}</p>
             <p className="mt-1.5 text-[1.6rem] font-semibold leading-none tracking-tight tabular-nums">{t.value}</p>
@@ -77,13 +85,14 @@ export function LibraryView() {
           </button>
         ))}
       </div>
-      <div role="tabpanel" aria-label={tabs.find((t) => t.k === tab)?.label}>
+      <div id="lib-panel" role="tabpanel" aria-labelledby={`lib-tab-${tab}`}>
         {!admin && <ReadOnlyNote />}
-        {tab === "rules" && <RulesTab rules={data.rules} editable={admin} onChanged={load} />}
+        {tab === "rules" && <RulesTab key={params.get("state") ?? ""} rules={data.rules} editable={admin} onChanged={load}
+          initialState={params.get("state")} />}
         {tab === "facts" && <FactsTab facts={data.facts} editable={admin} onChanged={load} />}
         {tab === "terms" && data.terms && <TermsTab terms={data.terms} onChanged={load} />}
         {tab === "assets" && <AssetsTab assets={data.assets} editable={admin} onChanged={load} />}
-        {tab === "import" && admin && <ImportTab onAdded={() => { load(); go("rules"); }} />}
+        {tab === "import" && admin && <ImportTab onAdded={(done) => { load(); if (done) go("rules", "draft"); }} />}
       </div>
     </div>
   );

@@ -1,7 +1,9 @@
 // The console has two sides. Creators write and fix their own pieces; the brand
 // team (reviewers, approvers, auditors, brand admins) works a queue, decides on
-// findings and keeps the guideline library. Each side sees only its own screens;
-// the API enforces the same split on every call.
+// findings and keeps the guideline library. Each side sees only its own screens.
+// The API enforces what each role may change (library writes, approvals,
+// dismissing blockers); reading a piece follows clearance, not side, so the
+// workspace stays transparent to everyone in it.
 
 export type Side = "creator" | "manager";
 

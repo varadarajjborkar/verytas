@@ -1,9 +1,12 @@
 import { backendConfigured, forward } from "@/lib/backend";
 import { sessionToken } from "@/lib/session";
 
-// One server-side door to the Verytas API for the review workspace. Calls go
-// out as the signed-in person, and only these get through: anything else
-// (rules, users, audit) stays out of reach of the browser.
+// One server-side door to the Verytas API for the console. Calls go out as the
+// signed-in person, and only these get through; the API then checks that
+// person's role on each one (library writes are brand-admin only). The audit
+// log, account creation and bootstrap stay out of reach of the browser.
+// With sign-in off, every visitor acts as the configured service account,
+// which is why sign-in must be on before this is reachable by anyone else.
 const ALLOWED: [string, RegExp][] = [
   ["POST", /^media$/],
   ["POST", /^contents\/precheck$/],

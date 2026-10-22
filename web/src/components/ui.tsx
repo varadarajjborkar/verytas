@@ -177,3 +177,18 @@ export function PageSkeleton() {
     </div>
   );
 }
+
+/**
+ * Arrow keys for a tablist, as WAI-ARIA expects: move the choice and the focus together.
+ * Each tab needs the id `${idPrefix}-${value}`.
+ */
+export function tabKeys<T extends string>(values: readonly T[], current: T, pick: (v: T) => void, idPrefix: string) {
+  return (e: { key: string; preventDefault: () => void }) => {
+    const step = ({ ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 } as Record<string, number>)[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const next = values[(values.indexOf(current) + step + values.length) % values.length];
+    pick(next);
+    requestAnimationFrame(() => document.getElementById(`${idPrefix}-${next}`)?.focus());
+  };
+}
