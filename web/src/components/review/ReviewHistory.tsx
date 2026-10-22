@@ -3,23 +3,32 @@
 import { type KeyboardEvent, useMemo, useState } from "react";
 import { FINISHED, relativeTime, STATUS_LABEL } from "@/lib/review-client";
 import type { ContentRow } from "@/lib/types";
-import { PanelIcon, PlusIcon } from "../Icons";
+import { DashboardIcon, PanelIcon, PlusIcon } from "../Icons";
 
 // What GET /contents returns by default; past this the list says it is partial.
 const LIST_CAP = 200;
-const WHOSE = [{ v: true, l: "Mine" }, { v: false, l: "Everyone" }];
 
-/** Every review the person can open, newest activity first. Finished pieces stay listed, struck through. */
-export function ReviewHistory({ rows, loading, selected, mine, demo, onMine, onSelect, onNew, onCollapse }: {
+export type Scope = { key: string; label: string; count?: number };
+
+/**
+ * Every review the person can open, newest activity first. Finished pieces stay listed, struck through.
+ * Creators see their own pieces; the brand team gets scopes (waiting, with creator, ...) instead,
+ * and a queue overview in place of the new-review button.
+ */
+export function ReviewHistory({ rows, loading, selected, scopes, scope, demo, onScope, onSelect, onNew, onCollapse,
+  homeLabel }: {
   rows: ContentRow[];
   loading: boolean;
   selected: number | null;
-  mine: boolean;
+  scopes: Scope[];
+  scope: string;
   demo: boolean;
-  onMine: (mine: boolean) => void;
+  onScope: (key: string) => void;
   onSelect: (id: number) => void;
   onNew: () => void;
   onCollapse?: () => void;
+  /** The button that leaves an open review: "New review" for creators, "Queue overview" for the brand team. */
+  homeLabel: { text: string; icon: "plus" | "queue" };
 }) {
   const [query, setQuery] = useState("");
   const shown = useMemo(() => {
@@ -29,9 +38,11 @@ export function ReviewHistory({ rows, loading, selected, mine, demo, onMine, onS
 
   // Radio keys: arrows move the choice, and only the checked option is a tab stop.
   const onRadioKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+    const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+    if (!step) return;
     e.preventDefault();
-    onMine(!mine);
+    const at = scopes.findIndex((x) => x.key === scope);
+    onScope(scopes[(at + step + scopes.length) % scopes.length].key);
     requestAnimationFrame(() => e.currentTarget?.querySelector<HTMLElement>("[aria-checked='true']")?.focus());
   };
 
@@ -40,8 +51,8 @@ export function ReviewHistory({ rows, loading, selected, mine, demo, onMine, onS
       <div className="flex flex-col gap-3 p-3">
         <div className="flex items-center gap-1.5">
           <button type="button" onClick={onNew} aria-current={selected == null ? "page" : undefined}
-            className="vt-btn vt-btn-primary flex-1">
-            <PlusIcon size={15} /> New review
+            className={`vt-btn flex-1 ${homeLabel.icon === "plus" ? "vt-btn-primary" : "vt-btn-quiet"}`}>
+            {homeLabel.icon === "plus" ? <PlusIcon size={15} /> : <DashboardIcon size={15} />} {homeLabel.text}
           </button>
           {onCollapse && (
             <button type="button" onClick={onCollapse} aria-label="Collapse reviews" title="Collapse reviews"
@@ -50,15 +61,20 @@ export function ReviewHistory({ rows, loading, selected, mine, demo, onMine, onS
             </button>
           )}
         </div>
-        <div role="radiogroup" aria-label="Whose reviews" onKeyDown={onRadioKey}
-          className="grid grid-cols-2 gap-1 rounded-lg bg-sunken p-0.5 text-xs font-medium">
-          {WHOSE.map(({ v, l }) => (
-            <button key={l} type="button" role="radio" aria-checked={mine === v} tabIndex={mine === v ? 0 : -1} onClick={() => onMine(v)}
-              className={`rounded-md py-1.5 transition ${mine === v ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
-              {l}
-            </button>
-          ))}
-        </div>
+        {scopes.length > 1 && (
+          <div role="radiogroup" aria-label="Which pieces" onKeyDown={onRadioKey}
+            className="grid grid-cols-2 gap-1 rounded-lg bg-sunken p-0.5 text-xs font-medium">
+            {scopes.map(({ key, label, count }) => (
+              <button key={key} type="button" role="radio" aria-checked={scope === key} tabIndex={scope === key ? 0 : -1}
+                onClick={() => onScope(key)}
+                className={`flex items-center justify-center gap-1.5 rounded-md py-1.5 transition ${
+                  scope === key ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
+                {label}
+                {count != null && <span className="tabular-nums text-subtle">{count}</span>}
+              </button>
+            ))}
+          </div>
+        )}
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search reviews" aria-label="Search reviews"
           className="vt-input py-1.5 text-[13px]" />
       </div>
@@ -69,7 +85,7 @@ export function ReviewHistory({ rows, loading, selected, mine, demo, onMine, onS
           <li key={i} className="mx-1 my-1.5 h-12 animate-pulse rounded-lg bg-sunken" />
         ))}
         {!demo && !loading && shown.length === 0 && (
-          <li className="px-2 py-2 text-xs text-muted">{query ? "No review matches that search." : "No reviews yet."}</li>
+          <li className="px-2 py-2 text-xs text-muted">{query ? "No review matches that search." : "Nothing here."}</li>
         )}
         {shown.map((r) => {
           const finished = FINISHED.includes(r.status);
