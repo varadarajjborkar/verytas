@@ -46,6 +46,8 @@ class Character:
     # Reference id -> differences from it, as media.fidelity names them, for each reference compared.
     # A reference missing here was not compared; an empty list means compared and faithful.
     differences: dict[str, list[dict[str, str]]] = field(default_factory=dict)
+    # Reference ids compared by colour only: the character was too small to count its parts.
+    uncounted: list[str] = field(default_factory=list)
 
 
 def iou(a: list[float], b: list[float]) -> float:
@@ -151,5 +153,7 @@ class Chain:
                 except ValueError:
                     continue  # a cut-out too small to compare: left uncompared, never called faithful
                 ch.differences[r.id] = [{"kind": d.kind, "text": d.text} for d in fid.differences]
+                if not fid.parts_checked:
+                    ch.uncounted.append(r.id)
             out.append(ch)
         return out

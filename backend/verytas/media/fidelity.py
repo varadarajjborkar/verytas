@@ -52,6 +52,9 @@ COUNT_DE = 12.0
 # candidate shape is a part when at least this fraction of the smallest official part's size.
 SIGNIFICANT_PART_SHARE = 0.004
 PART_SIZE_RATIO = 0.4
+# Below this many pixels on its longer side a character is too small to count its parts: an eye is a few
+# pixels and may vanish. Its colours are still compared.
+MIN_COUNT_SIDE = 96
 
 
 @dataclass
@@ -66,6 +69,9 @@ class Difference:
 class Fidelity:
     differences: list[Difference] = field(default_factory=list)
     official_palette: list[tuple[RGB, float]] = field(default_factory=list)
+    # False when the character was too small to count its parts: then only its colours were compared, and
+    # no differences does not mean its parts match.
+    parts_checked: bool = True
 
     @property
     def faithful(self) -> bool:
@@ -98,13 +104,26 @@ def colour_name(rgb: RGB) -> str:
     return name
 
 
-def _normalised(rgb: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Crop to the mask and scale its longer side to SIDE, so two cut-outs compare at one size."""
+def _cropped(rgb: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     ys, xs = np.nonzero(mask)
     if len(ys) < 16:
         raise ValueError("the cut-out is empty or too small to compare")
     y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
-    rgb, mask = rgb[y0:y1, x0:x1], mask[y0:y1, x0:x1]
+    return rgb[y0:y1, x0:x1], mask[y0:y1, x0:x1]
+
+
+def _shrunk(rgb: np.ndarray, mask: np.ndarray, longest: int) -> tuple[np.ndarray, np.ndarray]:
+    """Area-averaged down to `longest` pixels on the longer side; the mask keeps pixels mostly inside."""
+    scale = longest / max(rgb.shape[:2])
+    if scale >= 1:
+        return rgb, mask
+    size = (max(1, round(rgb.shape[1] * scale)), max(1, round(rgb.shape[0] * scale)))
+    small = cv2.resize(mask.astype(np.float32), size, interpolation=cv2.INTER_AREA) >= 0.5
+    return cv2.resize(rgb, size, interpolation=cv2.INTER_AREA), small
+
+
+def _normalised(rgb: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Scale a cropped cut-out's longer side to SIDE, so two cut-outs compare at one size."""
     scale = SIDE / max(rgb.shape[:2])
     size = (max(1, round(rgb.shape[1] * scale)), max(1, round(rgb.shape[0] * scale)))
     small = cv2.resize(mask.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST).astype(bool)
@@ -225,8 +244,19 @@ def official_reference(img: Image.Image) -> tuple[np.ndarray, np.ndarray]:
 
 def compare(official: tuple[np.ndarray, np.ndarray], candidate: tuple[np.ndarray, np.ndarray]) -> Fidelity:
     """Differences between official artwork and a cut-out of the same character, each as (rgb, mask)."""
-    o_rgb, o_mask = _normalised(*official)
-    c_rgb, c_mask = _normalised(*candidate)
+    o, c = _cropped(*official), _cropped(*candidate)
+    o_full = _normalised(*o)
+    # Colours are compared at the coarser of the two resolutions. A character drawn 150 pixels tall has
+    # already lost its thin strokes (a mouth line blurs into the outline), and scaling it up doesn't bring
+    # them back; the artwork is first brought down to that size so both lose the same detail. The cut-out's
+    # size is read from its area, not its box: a missing tail shrinks the box and would shrink the artwork
+    # with it, hiding exactly the parts being checked.
+    drawn = max(o[0].shape[:2]) * (float(c[1].sum()) / max(1.0, float(o[1].sum()))) ** 0.5
+    native = int(min(max(o[0].shape[:2]), drawn))
+    if native < SIDE:
+        o, c = _shrunk(*o, native), _shrunk(*c, native)
+    o_rgb, o_mask = _normalised(*o)
+    c_rgb, c_mask = _normalised(*c)
     palette = _palette(o_rgb, o_mask)
     out = Fidelity(official_palette=palette)
     o_lab, c_lab = _assign(o_rgb, o_mask, palette), _assign(c_rgb, c_mask, palette)
@@ -249,17 +279,40 @@ def compare(official: tuple[np.ndarray, np.ndarray], candidate: tuple[np.ndarray
                     "colour_new", f"{colour_label(colour)} covers {covered:.0%}, a colour the artwork doesn't use",
                     colour, min(1.0, covered * 2)))
 
+    # Parts are counted several ways and a count differs only when every way disagrees in the same
+    # direction. The artwork is counted at full size and at the cut-out's size (shrinking can merge two
+    # tail pieces across a thin gap); the cut-out from pixels clearly of the colour and from all pixels
+    # near it (rotation, JPEG and resampling shift edge colours, losing a part at the strict cut or merging
+    # two at the loose one). A part really added or missing moves every count the same way.
+    if native < MIN_COUNT_SIDE:
+        out.parts_checked = False
+        return out
     gone = {d.colour for d in out.differences if d.kind == "colour_missing"}
-    o_core, c_core = _assign(o_rgb, o_mask, palette, COUNT_DE), _assign(c_rgb, c_mask, palette, COUNT_DE)
+    f_rgb, f_mask = o_full
+    o_counted = [(_assign(f_rgb, f_mask, palette, COUNT_DE), int(f_mask.sum())),
+                 (_assign(o_rgb, o_mask, palette, COUNT_DE), o_area)]
+    c_counted = [(_assign(c_rgb, c_mask, palette, COUNT_DE), c_area), (c_lab, c_area)]
     for i, (colour, _) in enumerate(palette):
         if colour in gone:
             continue  # already reported as missing; counting its shapes would only repeat that
-        counted = _count(_parts(o_core, i, o_area), _parts(c_core, i, c_area))
-        if counted is None or counted[0] > MAX_COUNTED_PARTS:
+        # Which parts matter is decided on the full-size artwork; at the smaller size the artwork's shapes
+        # are then counted by the same relative cut-off as the cut-out's, never by the fixed floor, which
+        # small parts (tail pieces) sit right on.
+        full = [x for x in _parts(*o_counted[0][:1], i, o_counted[0][1]) if x >= SIGNIFICANT_PART_SHARE]
+        if not full or len(full) > MAX_COUNTED_PARTS:
             continue
-        want, got = counted
-        if got != want:
-            out.differences.append(Difference(
-                "parts", f"{got} {colour_label(colour)} shape{'s' if got != 1 else ''} where the artwork has {want}",
-                colour, min(1.0, abs(got - want) / want)))
+        least = min(full)
+        small = sum(x >= PART_SIZE_RATIO * least for x in _parts(o_counted[1][0], i, o_counted[1][1]))
+        want_lo, want_hi = sorted((len(full), small))
+        got = [sum(x >= PART_SIZE_RATIO * least for x in _parts(lab, i, area)) for lab, area in c_counted]
+        got_lo, got_hi = min(got), max(got)
+        if got_hi < want_lo:
+            have, want = got_hi, want_lo
+        elif got_lo > want_hi:
+            have, want = got_lo, want_hi
+        else:
+            continue
+        out.differences.append(Difference(
+            "parts", f"{have} {colour_label(colour)} shape{'s' if have != 1 else ''} where the artwork has {want}",
+            colour, min(1.0, abs(have - want) / want)))
     return out

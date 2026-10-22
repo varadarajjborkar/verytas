@@ -152,3 +152,10 @@ def test_video_frames_cover_the_whole_video_not_just_its_start():
     picked = [t for t, _ in pick_frames(keys, samples)]
     assert len(picked) == MAX_VIDEO_FRAMES and picked == sorted(picked)
     assert picked[-1] >= 290 and sum(t < 40 for t in picked) <= MAX_VIDEO_FRAMES // 2 + 1
+
+
+def test_a_mascot_too_small_to_count_parts_is_not_called_complete():
+    ch = Character([0, 0, 9, 9], 0.9, {"1": 0.95}, {"1": []}, uncounted=["1"])
+    run = _run(FakeClient([[ch]]), [_asset(1, "Kit")])
+    _check(run, IMAGE)
+    assert run.glance == ["Kit appears, in its official colours (too small here to check its parts)"]

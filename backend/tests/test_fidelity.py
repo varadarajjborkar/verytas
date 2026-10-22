@@ -97,3 +97,54 @@ def test_an_empty_or_vanishing_cut_out_is_refused_plainly():
     blank = (np.zeros((50, 50, 3), np.uint8), np.zeros((50, 50), bool))
     with pytest.raises(ValueError, match="too small"):
         cmp(official, blank)
+
+
+def _tail_pieces_kept(keep: int) -> Image.Image:
+    import cv2
+
+    a = np.array(_kit())
+    tail = ((a[..., 0] > 200) & (a[..., 1] > 100) & (a[..., 1] < 160) & (a[..., 2] < 80)).astype(np.uint8)
+    n, comp = cv2.connectedComponents(tail, connectivity=8)
+    pieces = sorted(range(1, n), key=lambda k: -(comp == k).sum())
+    assert len(pieces) >= 4
+    for k in pieces[keep:]:
+        a[comp == k] = 0
+    return Image.fromarray(a, "RGBA")
+
+
+@pytest.mark.parametrize("scale", [1.0, 0.5, 0.35])
+@pytest.mark.parametrize("keep", [1, 2, 3])
+def test_losing_some_tail_pieces_is_reported_at_the_sizes_cut_outs_come_in(keep, scale):
+    # The missing pieces shrink the cut-out's box; the artwork must not shrink with it and hide them.
+    official = official_reference(_kit())
+    found = compare(official, _cut(_tail_pieces_kept(keep), scale=scale))
+    assert any(d.kind == "parts" and "orange" in d.text for d in found.differences), found.differences
+
+
+@pytest.mark.parametrize("scale", [0.5, 0.35, 0.3])
+def test_the_official_artwork_drawn_smaller_is_faithful(scale):
+    # Thin strokes blur away at these sizes; the artwork is compared at the same size, so no false parts.
+    found = compare(official_reference(_kit()), _cut(_kit(), scale=scale))
+    assert found.faithful and found.parts_checked
+
+
+def test_a_tiny_character_is_compared_by_colour_only_and_says_so():
+    found = compare(official_reference(_kit()), _cut(_kit(), scale=0.2))
+    assert not found.parts_checked and not [d for d in found.differences if d.kind == "parts"]
+
+
+def test_a_defect_still_shows_when_drawn_small():
+    official = official_reference(_kit())
+    found = compare(official, _cut(_third_eye(_kit()), scale=0.35))
+    assert any(d.kind == "parts" and d.text.startswith("3 ") for d in found.differences)
+
+
+def test_shifted_edge_colours_do_not_change_the_count():
+    # A softened copy (as JPEG and rotation leave it): edge pixels drift past the strict colour cut, and
+    # the count read at the looser cut keeps the parts.
+    from PIL import ImageFilter
+
+    official = official_reference(_kit())
+    soft = _kit().filter(ImageFilter.GaussianBlur(1.6))
+    for scale in (0.75, 0.5):
+        assert not [d for d in compare(official, _cut(soft, scale=scale)).differences if d.kind == "parts"]

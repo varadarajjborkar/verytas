@@ -51,6 +51,7 @@ class Character:
     likeness: dict[str, float]
     # Reference id -> differences from it; a reference missing here was not compared.
     differences: dict[str, list[dict[str, str]]] = field(default_factory=dict)
+    uncounted: list[str] = field(default_factory=list)  # compared by colour only (too small for parts)
 
     def best(self) -> tuple[str | None, float]:
         if not self.likeness:
@@ -115,7 +116,8 @@ class VisionClient:
                 for (_, scale), found in zip(encoded, answered, strict=True):
                     out.append([Character(box=[round(float(v) / scale, 1) for v in ch["box"]],
                                           score=float(ch["score"]), likeness=dict(ch["likeness"]),
-                                          differences=dict(ch.get("differences") or {})) for ch in found])
+                                          differences=dict(ch.get("differences") or {}),
+                                          uncounted=list(ch.get("uncounted") or [])) for ch in found])
             except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
                 raise VisionUnavailable(f"vision worker unreachable or malformed ({type(exc).__name__})") from exc
         return out

@@ -167,7 +167,11 @@ async def characters_agent(run: Any, node: Any, frames: list[tuple[float | None,
             run.notes.append(f"{media_id}: {asset.name} appears but was too small to compare with its artwork")
             continue
         if not flagged:
-            run.glance.append(f"{asset.name} appears, in its official colours and parts")
+            if all(ref in s.character.uncounted for s in compared):
+                run.glance.append(f"{asset.name} appears, in its official colours (too small here to check "
+                                  "its parts)")
+            else:
+                run.glance.append(f"{asset.name} appears, in its official colours and parts")
             continue
         if altered is None:
             continue
