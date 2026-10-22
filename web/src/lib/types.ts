@@ -80,7 +80,15 @@ export type Finding = {
   signature_valid: boolean;
 };
 
-export type CategoryScore = { checked: boolean; score: number | null; findings: number; blockers: number };
+export type CoverageStatus = "checked" | "not_checked" | "not_configured" | "degraded";
+
+export type CategoryScore = {
+  checked: boolean;
+  status?: CoverageStatus;
+  score: number | null;
+  findings: number;
+  blockers: number;
+};
 
 export type Review = {
   id: number;
