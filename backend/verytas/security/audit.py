@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 from collections import defaultdict
+from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -26,6 +27,21 @@ GENESIS = "0" * 64
 # the same predecessor. A process-local lock is enough for the single-process
 # deployment; a multi-worker Postgres setup would take a row lock instead.
 _locks: defaultdict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+
+def _chain_lock(session: AsyncSession, workspace_id: int) -> AbstractAsyncContextManager[Any]:
+    """The lock that keeps two appends from chaining off one predecessor.
+
+    On SQLite every transaction starts with BEGIN IMMEDIATE (db.py), so the
+    database write lock already serialises appends, and taking the asyncio
+    lock as well would be a second lock taken in the opposite order: a caller
+    whose transaction already holds the write lock waits here, while the lock
+    holder waits for the write lock. The black-box simulator hit exactly that
+    deadlock (30 s stalls, then 500s) under parallel submissions.
+    """
+    if session.get_bind().dialect.name == "sqlite":
+        return nullcontext()
+    return _locks[workspace_id]
 
 
 def canonical(obj: Any) -> bytes:
@@ -60,7 +76,7 @@ async def append(session: AsyncSession, *, workspace_id: int, actor: str, action
     the chain. Committing here also commits the caller's pending change, so the
     entry and the change it describes still land atomically. Call it last.
     """
-    async with _locks[workspace_id]:
+    async with _chain_lock(session, workspace_id):
         prev = await session.scalar(
             select(AuditEntry.hash).where(AuditEntry.workspace_id == workspace_id)
             .order_by(AuditEntry.id.desc()).limit(1)

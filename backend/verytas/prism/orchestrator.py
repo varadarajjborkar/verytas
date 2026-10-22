@@ -115,6 +115,11 @@ class Prism:
         await session.commit()
 
         ctx, redactor = await self._context(session, version)
+        # Close the read transaction before any model call. A live review spends
+        # tens of seconds waiting on providers; holding a transaction that long
+        # starves every other writer on SQLite and pins an old snapshot on
+        # Postgres. The writes at the end run in a fresh, short transaction.
+        await session.commit()
         meter = UsageMeter(self.settings.review_token_budget)
         judge, llm, notes = self._providers(meter, redactor)
 

@@ -12,15 +12,38 @@ class Base(DeclarativeBase):
 
 
 def make_engine(url: str) -> AsyncEngine:
-    engine = create_async_engine(url, future=True)
-    if url.startswith("sqlite"):
+    sqlite = url.startswith("sqlite")
+    # Background reviews write while requests write. SQLite's default is to
+    # fail at once on a held lock ("database is locked" -> 500); wait instead.
+    engine = create_async_engine(url, future=True, connect_args={"timeout": 30} if sqlite else {})
+    if sqlite:
         # SQLite ignores FK and CHECK-adjacent integrity unless asked; we lean on
-        # those constraints (citations, version chain), so turn them on.
+        # those constraints (citations, version chain), so turn them on. WAL keeps
+        # a crashed writer from corrupting the file and makes commits cheaper.
         @event.listens_for(engine.sync_engine, "connect")
         def _sqlite_pragmas(dbapi_conn, _record):  # pragma: no cover - driver hook
+            # Take over BEGIN from the driver (see _begin_immediate).
+            dbapi_conn.isolation_level = None
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA foreign_keys=ON")
+            if ":memory:" not in url:
+                cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=30000")
             cur.close()
+
+        # A deferred transaction that reads first and writes later can't be
+        # upgraded once another writer has committed: SQLite fails it at once
+        # with "database is locked", ignoring busy_timeout, because waiting
+        # could deadlock. Found by the black-box simulator at 8+ parallel
+        # submissions. Taking the write lock up front makes contention wait.
+        #
+        # The price is that SQLite transactions, read-only ones included, run
+        # one at a time. That is acceptable because SQLite is the local and demo
+        # store, every transaction here is short (none spans a model call), and
+        # Postgres in deployment never takes this path.
+        @event.listens_for(engine.sync_engine, "begin")
+        def _begin_immediate(conn):  # pragma: no cover - driver hook
+            conn.exec_driver_sql("BEGIN IMMEDIATE")
 
     return engine
 
