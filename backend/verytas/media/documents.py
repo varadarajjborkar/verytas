@@ -213,6 +213,7 @@ def _read_page(pdf, pdfium, i: int, budget: _Budget, out: Extracted) -> Page:
 # --- Word ---------------------------------------------------------------------------------------
 
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_MC = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
 # Everything a reader of the file can see or recover, not just the body:
 # headers and footers repeat on every page, comments and tracked deletions
 # travel with the file to whoever it is sent to.
@@ -280,6 +281,10 @@ def _docx_text(xml: bytes) -> tuple[str, str]:
         raise MediaError("Word file has a damaged part") from exc
     body, deleted = [], []
     for p in root.iter(f"{_W}p"):
+        # A text box is stored twice, as DrawingML (mc:Choice) and as a VML copy for old readers
+        # (mc:Fallback). Reading both would double its words, and every finding in them.
+        if next(p.iterancestors(f"{_MC}Fallback"), None) is not None:
+            continue
         shown, gone = [], []
         for el in p.iter(f"{_W}t", f"{_W}delText", f"{_W}tab", f"{_W}br"):
             if next(el.iterancestors(f"{_W}p"), None) is not p:
