@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { DashboardView } from "@/components/DashboardView";
-import { PageHeader, SourceBadge } from "@/components/ui";
+import { PageHeader, PageSkeleton, SourceBadge } from "@/components/ui";
 import { getGuidelineHealth, getOverview, getRecurring } from "@/lib/backend";
 
 async function Dashboard() {
@@ -11,11 +11,7 @@ async function Dashboard() {
   const source = [overview, recurring, health].every((s) => s.source === "live") ? "live" : "demo";
   return (
     <>
-      <PageHeader
-        title="Governance dashboard"
-        lead="Everything Verytas checked before it reached your audience, which rules do the work, and where the guidelines themselves need attention."
-        aside={<SourceBadge source={source} />}
-      />
+      <PageHeader title="Dashboard" lead="What Verytas caught before it reached your audience." aside={<SourceBadge source={source} />} />
       <DashboardView overview={overview.data} recurring={recurring.data} health={health.data} />
     </>
   );
@@ -23,7 +19,7 @@ async function Dashboard() {
 
 export default function Page() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading governance data…</p>}>
+    <Suspense fallback={<PageSkeleton />}>
       <Dashboard />
     </Suspense>
   );

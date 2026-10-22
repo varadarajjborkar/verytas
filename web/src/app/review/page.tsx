@@ -8,10 +8,7 @@ export const metadata: Metadata = { title: "Review" };
 export default function Page() {
   return (
     <>
-      <PageHeader
-        title="Review content before it ships"
-        lead="Paste a draft. Verytas checks it against your rules, approved facts and confidential terms, explains every issue with its source, and suggests the smallest fix. You decide what changes."
-      />
+      <PageHeader title="Review" lead="Check a draft against your rules and facts before it ships." />
       <ReviewWorkspace initialBody={demoBody} />
     </>
   );

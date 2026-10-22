@@ -29,8 +29,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Providers>
           <div className="flex min-h-screen w-full flex-col overflow-x-clip md:flex-row">
             <SideNav />
-            <main id="main" className="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-8">
-              {children}
+            <main id="main" className="min-w-0 flex-1 px-4 py-6 md:px-10 md:py-9">
+              <div className="mx-auto w-full max-w-[1320px]">{children}</div>
             </main>
           </div>
         </Providers>
