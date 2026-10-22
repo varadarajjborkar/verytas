@@ -227,6 +227,11 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
                       <p className="font-medium">{past[d.finding_id]?.title ?? `Finding ${d.finding_id}`}</p>
                       <p className="mt-1 text-muted">“{d.claim}”</p>
                       <p className="mt-1"><span className="font-semibold capitalize">{d.status}</span>{d.verdict?.reason ? `: ${d.verdict.reason}` : ""}</p>
+                      {d.verdict?.layers && (
+                        <p className="mt-1 text-subtle">
+                          Reader likelihood: {d.verdict.layers.map((l) => `${l.layer} ${l.p == null ? "n/a" : `${Math.round(l.p * 100)}%`}`).join(", ")}
+                        </p>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -310,12 +315,18 @@ function AiEditBox({ contentId, onUse }: { contentId: number; onUse: (body: stri
         {proposal && (
           <div className="vt-pop flex flex-col gap-3 rounded-xl border border-line bg-raised p-3">
             <p className="whitespace-pre-wrap text-sm leading-6">{proposal.body}</p>
+            {proposal.changes.length > 0 && (
+              <ul className="list-disc pl-4 text-xs text-muted">{proposal.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
+            )}
             {proposal.remaining.length > 0 && (
               <p className="text-xs text-[var(--vt-warning)]">Still flagged: {proposal.remaining.join("; ")}</p>
             )}
-            <button type="button" onClick={() => onUse(proposal.body)} className="vt-btn vt-btn-primary self-start">
-              Use this and re-check
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => onUse(proposal.body)} className="vt-btn vt-btn-primary">
+                Use this and re-check
+              </button>
+              <span className="text-xs text-subtle">Written by {proposal.model}</span>
+            </div>
           </div>
         )}
       </div>

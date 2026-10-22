@@ -2,6 +2,7 @@
 
 import { BarChart } from "@openuidev/react-ui";
 import type { RuleHealth } from "@/lib/types";
+import { UNCLEAR } from "./DashboardView";
 import { Details, Meter, Panel } from "./ui";
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -38,7 +39,7 @@ export function GuidelineHealthView({ health }: { health: RuleHealth[] }) {
                     <code className="shrink-0 text-xs text-subtle">{h.code}</code>
                   </div>
                   <div className="mt-2.5 max-w-sm">
-                    <Meter value={h.ambiguity ?? 0} label={`Ambiguity of ${h.code}`} tone={(h.ambiguity ?? 0) >= 0.4 ? "danger" : "accent"} />
+                    <Meter value={h.ambiguity ?? 0} label={`Ambiguity of ${h.code}`} tone={(h.ambiguity ?? 0) >= UNCLEAR ? "danger" : "accent"} />
                   </div>
                 </div>
                 <dl className="grid grid-cols-3 gap-3 text-xs">
