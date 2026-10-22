@@ -8,10 +8,23 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError
 
 HexColour = Annotated[str, Field(pattern=r"^#?(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$")]
-Term = Annotated[str, Field(min_length=1, max_length=200)]
+
+
+def _has_text(term: str) -> str:
+    from verytas.security.terms import fold
+
+    # Terms are matched on folded text with emoji dropped (emoji have their own
+    # banned_emoji rule); a term with nothing left would match nothing.
+    if not fold(term, "drop")[0].strip():
+        raise ValueError("term has no letters, digits or punctuation once emoji and invisible characters "
+                         "are removed; use a banned_emoji rule for emoji")
+    return term
+
+
+Term = Annotated[str, Field(min_length=1, max_length=200), AfterValidator(_has_text)]
 
 
 class _Pattern(BaseModel):
@@ -68,6 +81,14 @@ class NoConfig(_Pattern):
     pass
 
 
+class EmojiA11y(_Pattern):
+    max_run: int = Field(default=3, ge=1, le=20)
+
+
+class BannedEmoji(_Pattern):
+    emojis: list[Annotated[str, Field(min_length=1, max_length=16)]] = Field(min_length=1, max_length=200)
+
+
 class VoiceScore(_Pattern):
     levels: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(min_length=2, max_length=10)
     min_level: float | None = Field(default=None, ge=0, le=9)
@@ -77,6 +98,11 @@ DETERMINISTIC: dict[str, type[_Pattern]] = {
     "banned_terms": BannedTerms, "preferred_terms": PreferredTerms, "casing": Casing, "palette": Palette,
     "readability": Readability, "link_text": LinkText, "hashtag_case": HashtagCase, "all_caps": AllCaps,
     "alt_text": AltText, "contrast": Contrast, "confidential_terms": NoConfig, "claims": NoConfig,
+    # Built-in families run by their own agents (brand assets, context layers,
+    # media intake); listed so admins can retune severity or retire them.
+    "brand_assets": NoConfig, "context": NoConfig, "media": NoConfig, "input": NoConfig,
+    "captions": NoConfig, "disclosure": NoConfig, "presentation": NoConfig, "emoji_risk": NoConfig,
+    "emoji_a11y": EmojiA11y, "banned_emoji": BannedEmoji,
 }
 SEMANTIC: dict[str, type[_Pattern]] = {"voice_score": VoiceScore}
 

@@ -57,7 +57,7 @@ _WORD = re.compile(r"\w+(?:[-']\w+)*")
 _LATIN = re.compile(r"[A-Za-z]")
 
 
-def fold(text: str) -> tuple[str, tuple[int, ...]]:
+def fold(text: str, emoji: str = "space") -> tuple[str, tuple[int, ...]]:
     """A matching copy of `text` plus, for each of its characters, the index
     of the original character it came from (with one sentinel at the end).
 
@@ -67,13 +67,59 @@ def fold(text: str) -> tuple[str, tuple[int, ...]]:
     so the casing check still sees what was typed. Results are cached: every
     term and rule folds the same body.
     """
-    return _fold(text)
+    return _fold(text, emoji)
 
 
-@lru_cache(maxsize=256)
-def _fold(text: str) -> tuple[str, tuple[int, ...]]:
-    visible = [(i, unicodedata.normalize("NFKC", ch).translate(_DASHES))
-               for i, ch in enumerate(text) if not _invisible(ch)]
+def _emoji(ch: str, following: str) -> bool:
+    from verytas.checks.emoji import is_emoji
+
+    return is_emoji(ch, following)
+
+
+def _letter_symbol(ch: str) -> str | None:
+    """Emoji-range symbols that read as a Latin letter: squared, circled and
+    negative-squared letters and regional indicators. NFKC leaves most of
+    them alone, and dropping them as emoji erased a codename spelled with them."""
+    o = ord(ch)
+    for base in (0x1F130, 0x1F150, 0x1F170):
+        if base <= o < base + 26:
+            return chr(ord("A") + o - base)
+    if 0x1F1E6 <= o <= 0x1F1FF:
+        return chr(ord("A") + o - 0x1F1E6)
+    return None
+
+
+_CACHE_MAX_CHARS = 4096  # longer texts are folded uncached; the cache is for terms and short bodies
+
+
+def _fold(text: str, emoji: str = "space") -> tuple[str, tuple[int, ...]]:
+    if len(text) > _CACHE_MAX_CHARS:
+        return _fold_uncached(text, emoji)
+    return _fold_cached(text, emoji)
+
+
+@lru_cache(maxsize=512)
+def _fold_cached(text: str, emoji: str) -> tuple[str, tuple[int, ...]]:
+    return _fold_uncached(text, emoji)
+
+
+def _fold_uncached(text: str, emoji: str = "space") -> tuple[str, tuple[int, ...]]:
+    # Emoji dropped into a word ("Project\U0001f525Lumen", "Proj\U0001f525ect") would split it for
+    # every matcher. "space" reads an emoji as a word break, "drop" as nothing;
+    # find_folded tries both.
+    visible = []
+    for i, ch in enumerate(text):
+        if _invisible(ch):
+            continue
+        letter = _letter_symbol(ch)
+        if letter:
+            visible.append((i, letter))
+            continue
+        if _emoji(ch, text[i + 1:i + 2]):
+            if emoji == "space":
+                visible.append((i, " "))
+            continue
+        visible.append((i, unicodedata.normalize("NFKC", ch).translate(_DASHES)))
     # Decide mixed-script words on the visible text, so a zero-width space
     # can't split "\u0441\u200bodename" into a "pure Cyrillic" part and a Latin part.
     joined = "".join(piece for _, piece in visible)
@@ -99,10 +145,15 @@ def _fold(text: str) -> tuple[str, tuple[int, ...]]:
 def find_folded(pattern: re.Pattern[str], text: str) -> Iterator[tuple[int, int, str]]:
     """Matches of `pattern` in the folded text as (start, end, folded match),
     with start and end pointing into the original text."""
-    folded, index = fold(text)
-    for m in pattern.finditer(folded):
-        if m.end() > m.start():
-            yield index[m.start()], index[m.end() - 1] + 1, m.group(0)
+    seen: set[tuple[int, int]] = set()
+    for mode in ("space", "drop"):
+        folded, index = fold(text, mode)
+        for m in pattern.finditer(folded):
+            if m.end() > m.start():
+                span = (index[m.start()], index[m.end() - 1] + 1)
+                if span not in seen and not any(a <= span[0] and span[1] <= b for a, b in seen):
+                    seen.add(span)
+                    yield span[0], span[1], m.group(0)
 
 
 def sub_folded(pattern: re.Pattern[str], text: str, repl: Callable[[str], str]) -> str:
@@ -125,15 +176,19 @@ def sub_folded(pattern: re.Pattern[str], text: str, repl: Callable[[str], str]) 
 
 
 _SPLIT = re.compile(r"[\s_\-]+")
+_NEVER = re.compile(r"(?!)")
 _SEP = r"[\s_\-]*"
 
 
 def term_pattern(term: str, *, loose: bool = False) -> re.Pattern[str]:
     # Patterns run against folded text (find_folded), so fold the term too: an
     # admin who typed "Projekt\u2011Lumen" with a non-breaking hyphen still matches.
-    parts = [re.escape(p) for p in _SPLIT.split(fold(term.strip())[0]) if p]
+    parts = [re.escape(p) for p in _SPLIT.split(fold(term.strip(), "drop")[0]) if p]
     if not parts:
-        raise ValueError("empty confidential term")
+        # A term made only of dashes, emoji or invisible characters folds to
+        # nothing. It can't be matched, and raising here used to break every
+        # review and dispute in the workspace; intake now refuses such terms.
+        return _NEVER
     core = _SEP.join(parts) + r"(?:e?s)?"  # tolerate simple plurals
     if loose:
         return re.compile(core, re.IGNORECASE)

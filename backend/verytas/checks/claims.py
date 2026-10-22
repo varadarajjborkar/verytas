@@ -201,6 +201,7 @@ class _NumberResult:
 
 
 _MATCH_FLOOR = 0.5
+_EXACT_TOPIC_FLOOR = 0.2  # with an exact value match, a little topical overlap is enough
 
 
 def _subject(quote: str, n: ParsedNumber) -> str:
@@ -218,10 +219,21 @@ def _verify_numbers(quote: str, numbers: list[ParsedNumber], candidates: list[Fa
     results = []
     for n in numbers:
         subject = _subject(quote, n)
+        # Widening this to words before the number pairs "40" in "800 teams in
+        # 40 countries" with the teams fact; the exact-value fallback below
+        # covers subjects phrased unlike the fact library instead.
         scored = [(relevance(subject, f), f) for f in numeric if (f.unit == "%") == n.percent]
         scored = [(sc, f) for sc, f in scored if sc >= _MATCH_FLOOR]
         if not scored:
-            results.append(_NumberResult(n, "unmatched"))
+            # A figure equal to a currently valid approved value on a related
+            # topic is that fact, worded differently. Found by the black-box
+            # simulator: true statistics were flagged "unsupported" when the post
+            # phrased the subject unlike the fact library.
+            exact = next((f for f in ctx.facts if f.value is not None and f.valid_on(ctx.today)
+                          and (f.unit == "%") == n.percent and compare_numbers(n, f.value) == "supported"
+                          and abs(n.value - f.value) <= 0.02 * max(1.0, abs(f.value))
+                          and relevance(quote, f) >= _EXACT_TOPIC_FLOOR), None)
+            results.append(_NumberResult(n, "supported", exact) if exact else _NumberResult(n, "unmatched"))
             continue
         top = max(sc for sc, _ in scored)
         family = [f for sc, f in scored if sc >= top - 1e-9]  # same subject: e.g. last quarter's and this quarter's

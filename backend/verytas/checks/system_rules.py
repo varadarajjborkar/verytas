@@ -102,4 +102,135 @@ SYSTEM_RULES: list[dict[str, Any]] = [
         "text": "Factual or promotional claims (numbers, superlatives, comparisons) need an approved fact behind them.",
         "pattern": {"type": "claims"},
     },
+    {
+        "code": "VIS-ASSET-ALTERED",
+        "category": "visual",
+        "kind": "deterministic",
+        "severity": "must",
+        "title": "Official assets must not be altered",
+        "text": "Where an official logo or mascot appears, it must match the approved artwork: same shapes, "
+        "features and colours. AI-generated look-alikes often change small details.",
+        "pattern": {"type": "brand_assets"},
+    },
+    {
+        "code": "VIS-ASSET-EXTENDED",
+        "category": "visual",
+        "kind": "deterministic",
+        "severity": "must",
+        "title": "No unapproved additions to official assets",
+        "text": "Only the approved parts of a mascot or logo may be used. Adding a body, outfit, pose or "
+        "features the brand has not approved creates an unofficial character.",
+        "pattern": {"type": "brand_assets"},
+    },
+    {
+        "code": "VIS-ASSET-IMITATION",
+        "category": "visual",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "No off-model imitations of brand characters",
+        "text": "A character or mark that resembles an official asset without matching it reads as the brand "
+        "but is not approved artwork. Use the official asset or none.",
+        "pattern": {"type": "brand_assets"},
+    },
+    {
+        "code": "CTX-IMPLIED",
+        "category": "messaging",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "Watch what the content implies, not just what it says",
+        "text": "Indirect taunts, insinuation, sarcasm, double meanings, coded language and digs at others "
+        "carry the brand's name as much as direct statements do, including across caption and image.",
+        "pattern": {"type": "context"},
+    },
+    {
+        "code": "MEDIA-UNREAD",
+        "category": "visual",
+        "kind": "deterministic",
+        "severity": "must",
+        "title": "Every part of the content must be readable",
+        "text": "Text inside images and documents is checked like any other text. When part of it could not "
+        "be read reliably, it has not been checked and needs a human look.",
+        "pattern": {"type": "media"},
+    },
+    {
+        "code": "INPUT-IRREGULAR",
+        "category": "messaging",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "Content should be shaped for its channel",
+        "text": "Uploads far outside what the channel normally carries (page counts, caption length, image size, "
+        "video length, hidden characters) were accepted with the creator's reason and checked in full, "
+        "but count against the score until someone confirms they are intended.",
+        "pattern": {"type": "input"},
+    },
+    {
+        "code": "A11Y-CAPTIONS",
+        "category": "accessibility",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "Video speech needs captions",
+        "text": "Spoken content needs captions (WCAG 2.2 SC 1.2.2). Captions burned into the picture cannot be "
+        "turned off, resized, translated or read by screen readers, so provide a caption file or transcript too.",
+        "pattern": {"type": "captions"},
+    },
+    {
+        "code": "AI-DISCLOSURE",
+        "category": "legal",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "Label AI-generated content",
+        "text": "Public content made with generative AI should say so, in line with ASCI's draft AI-disclosure "
+        "guidelines and MeitY's draft synthetic-content labelling rules. Configure to match the final rules.",
+        "pattern": {"type": "disclosure"},
+    },
+    {
+        "code": "EMOJI-RISK",
+        "category": "messaging",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "Emoji carry meaning too",
+        "text": "Emoji with common slang readings (innuendo, drugs, violence, mockery, slurs) or political and "
+        "religious weight are read the way the audience reads them. Obscene gestures are never on-brand.",
+        "pattern": {"type": "emoji_risk"},
+    },
+    {
+        "code": "A11Y-EMOJI",
+        "category": "accessibility",
+        "kind": "deterministic",
+        "severity": "may",
+        "title": "Use emoji sparingly and between words",
+        "text": "Screen readers read each emoji's full name aloud, so long runs become noise and an emoji inside "
+        "a word breaks it. Keep runs to three and put emoji between words.",
+        "pattern": {"type": "emoji_a11y", "max_run": 3},
+    },
+    {
+        "code": "PRES-FOLD",
+        "category": "legal",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "Disclosures must be visible without tapping 'more'",
+        "text": "Paid-partnership and AI labels must appear before the platform cuts the caption, so every "
+        "viewer sees them (ASCI asks for upfront disclosure).",
+        "pattern": {"type": "presentation"},
+    },
+    {
+        "code": "PRES-CROP",
+        "category": "visual",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "Key text and logos must survive the feed crop",
+        "text": "Feeds and profile grids crop images to fixed shapes. Text, prices, disclaimers or the logo "
+        "outside the visible area are lost for most viewers.",
+        "pattern": {"type": "presentation"},
+    },
+    {
+        "code": "PRES-SAFEZONE",
+        "category": "accessibility",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "Keep text clear of the app's buttons",
+        "text": "On vertical video and full-screen posts the app overlays its own buttons and caption at the "
+        "edges. Text under them can't be read.",
+        "pattern": {"type": "presentation"},
+    },
 ]
