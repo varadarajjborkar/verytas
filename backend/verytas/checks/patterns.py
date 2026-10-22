@@ -6,7 +6,7 @@ Validated when a rule is created or edited, so a typo in an admin's rule is a
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError
 
@@ -94,11 +94,22 @@ class VoiceScore(_Pattern):
     min_level: float | None = Field(default=None, ge=0, le=9)
 
 
+class ToneShift(_Pattern):
+    # Tone dimensions this brand uses on purpose (a youth brand may well be "slangy").
+    allow: list[Literal["hostile", "slangy", "sarcastic", "stiff", "hyped"]] = Field(default_factory=list)
+
+
+class TopicDrift(_Pattern):
+    # Domains that are this brand's business (a trading app talks about trading tips).
+    allow: list[Literal["politics", "religion", "trading tips", "betting", "celebrity gossip", "personal life"]] = (
+        Field(default_factory=list))
+
+
 DETERMINISTIC: dict[str, type[_Pattern]] = {
     "banned_terms": BannedTerms, "preferred_terms": PreferredTerms, "casing": Casing, "palette": Palette,
     "readability": Readability, "link_text": LinkText, "hashtag_case": HashtagCase, "all_caps": AllCaps,
     "alt_text": AltText, "contrast": Contrast, "confidential_terms": NoConfig, "claims": NoConfig,
-    "public_contacts": NoConfig, "event_hashtags": BannedTerms,
+    "public_contacts": NoConfig, "event_hashtags": BannedTerms, "tone_shift": ToneShift, "topic_drift": TopicDrift,
     # Built-in families run by their own agents (brand assets, context layers,
     # media intake); listed so admins can retune severity or retire them.
     "brand_assets": NoConfig, "context": NoConfig, "media": NoConfig, "input": NoConfig,

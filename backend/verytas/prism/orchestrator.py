@@ -27,7 +27,9 @@ from sqlalchemy.orm import selectinload
 
 from verytas.checks.base import CheckContext, ContactView, FactView, RawFinding, RuleView, TermView
 from verytas.checks.claims import drop_fixes_that_keep_claims
+from verytas.checks.voice import BrandProfile, build_profile
 from verytas.config import Settings
+from verytas.ingest.language import NAMES, WORD_LISTS, Language, detect
 from verytas.ingest.segment import image_units, segment
 from verytas.media import assets as asset_match
 from verytas.media.files import decode_b64, open_image, png_b64, shrink
@@ -35,6 +37,8 @@ from verytas.models import (
     BrandAsset,
     BrandEvent,
     ConfidentialTerm,
+    Content,
+    ContentStatus,
     ContentVersion,
     Dispute,
     Fact,
@@ -175,6 +179,7 @@ class Prism:
         await session.commit()
 
         ctx, redactor, assets = await self._context(session, version)
+        language = detect(version.body)
         blobs = await _load_blobs(session, content.workspace_id, version.attachments or {})
         cleared = await _cleared_disputes(session, content.id)
         # Learned from disputes and reviewer decisions: how sure the judge must
@@ -264,7 +269,7 @@ class Prism:
         degraded |= (gap_degraded | run.partial) & checked
         statuses = {c: ("not_configured" if c not in configured else "not_checked" if c in failed
                         else "degraded" if c in degraded else "checked") for c in CATEGORIES}
-        notes = notes + run.notes + _gap_notes(tree.gaps())
+        notes = notes + run.notes + _gap_notes(tree.gaps()) + _language_notes(language)
 
         levelled = []
         dropped = 0
@@ -307,6 +312,7 @@ class Prism:
                          "locator": s.locator, "parent": s.parent, "chars": len(s.text),
                          "text": s.text[:20_000]} for s in run.sources],
             "scenes": run.scenes,
+            "language": {"code": language.code, "name": language.name, "mixed": list(language.mixed)},
             # Things a person has to look at: notes that steer, concerns, unsure disputes.
             "escalations": escalations,
             "learned_thresholds": thresholds,
@@ -383,6 +389,7 @@ class Prism:
             terms=[TermView(t.id, t.term, t.embargo_until) for t in terms],
             contacts=[ContactView(c.kind, c.value, c.normalized, c.label) for c in contacts],
             attachments=attachments, channel=content.channel,
+            profile=await _brand_profile(session, content, rules, visible_facts, list(events.values())),
         )
         rows = (await session.scalars(
             select(BrandAsset).where(BrandAsset.workspace_id == ws, BrandAsset.active))).all()
@@ -414,6 +421,43 @@ class Prism:
         return (GuardedJudge(judge, self._judge_breaker, self._provider_slots),
                 GuardedLLM(llm, self._llm_breaker, self._provider_slots),
                 GuardedLLM(vision, self._vision_breaker, self._provider_slots), notes + vision_notes)
+
+
+async def _brand_profile(session: AsyncSession, content: Content, rules: list[Rule], facts: list[Fact],
+                         events: list[BrandEvent]) -> BrandProfile:
+    """The brand's own voice and topics (checks/voice.py), learned from what it has approved or published.
+    Same tier ceiling as facts: a public post is never measured against confidential work."""
+    tiers = [t for t in Tier if t.rank <= content.tier.rank]
+    rows = (await session.execute(
+        select(ContentVersion.content_id, ContentVersion.version_no, ContentVersion.body)
+        .join(Content, ContentVersion.content_id == Content.id)
+        .where(Content.workspace_id == content.workspace_id, Content.id != content.id, Content.tier.in_(tiers),
+               Content.status.in_((ContentStatus.approved, ContentStatus.published)))
+        .order_by(Content.created_at.desc()).limit(800))).all()
+    latest: dict[int, tuple[int, str]] = {}
+    for cid, no, body in rows:
+        if cid not in latest or no > latest[cid][0]:
+            latest[cid] = (no, body)
+    voice = [body for _, body in list(latest.values())[:150]]
+    # Rule examples widen the topics but don't count as published voice: the explanation says "N published pieces".
+    topics = [ex for r in rules if r.category in ("tone", "messaging") for ex in (r.good_examples or [])]
+    topics += [f.statement for f in facts] + [f"{e.name}. {e.summary} {e.guidance}" for e in events
+                                             if e.status == "active" and e.tier.rank <= content.tier.rank]
+    return build_profile(voice, topics)
+
+
+def _language_notes(language: Language) -> list[str]:
+    """Say plainly which checks could read the piece, mixes included. Checks that can't stay quiet, not guess."""
+    if language.code == "und" or (language.code == "en" and not language.mixed):
+        return []
+    notes = [f"Written in {language.name}. Names, terms, numbers, contacts and links are checked in any language, "
+             "and the model judge reads all of it."]
+    unread = [NAMES.get(c, c) for c in (language.code, *language.mixed) if c not in WORD_LISTS]
+    if unread:
+        notes.append(f"The tone and topic word lists don't cover {' or '.join(unread)}, so drift in those parts rests "
+                     "on the model judge.")
+    notes.append("The reading-grade check is English only, so it does not grade text in other languages.")
+    return notes
 
 
 def _worker_summary(outcomes) -> dict[str, dict]:

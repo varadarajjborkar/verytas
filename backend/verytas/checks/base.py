@@ -77,6 +77,9 @@ class CheckContext:
     attachments: dict[str, Any] = field(default_factory=dict)
     channel: str = "general"
     today: date = field(default_factory=date.today)
+    # How the brand's published work sounds and what it covers (checks/voice.py BrandProfile). Typed loosely so
+    # this module stays import-free; None falls back to the default voice.
+    profile: Any = None
 
     def rules_with(self, pattern_type: str) -> list[RuleView]:
         return [r for r in self.rules if r.pattern.get("type") == pattern_type]

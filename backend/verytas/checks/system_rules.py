@@ -11,6 +11,26 @@ from typing import Any
 
 SYSTEM_RULES: list[dict[str, Any]] = [
     {
+        "code": "TONE-SHIFT",
+        "category": "tone",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "Stay in the brand's voice",
+        "text": "Posts keep the voice of the brand's published work: no insults, sarcasm, slang, hype or corporate "
+        "stiffness the brand doesn't use, and no change of tone partway through a piece.",
+        "pattern": {"type": "tone_shift"},
+    },
+    {
+        "code": "MSG-OFF-TOPIC",
+        "category": "messaging",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "Stay on the brand's topics",
+        "text": "Posts stay on what the brand talks about. Politics, religion, trading tips, betting, gossip or the "
+        "writer's personal life pull the brand into places it never chose.",
+        "pattern": {"type": "topic_drift"},
+    },
+    {
         "code": "CONTACT-PUBLIC",
         "category": "confidentiality",
         "kind": "deterministic",
