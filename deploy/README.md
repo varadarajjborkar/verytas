@@ -4,6 +4,7 @@ One small ARM server (AWS t4g.medium, Mumbai) runs everything judges touch:
 
 | Piece | Where | Notes |
 |---|---|---|
+| Public address | Cloudflare Pages (`edge/_worker.js`) | `verytas.pages.dev`, free tier; passes every request through to the server |
 | HTTPS | Caddy (`Caddyfile`) | Let's Encrypt certificate for the server's sslip.io name; security headers |
 | Web | `verytas-web.service` | `next start` on 127.0.0.1:3000; sign-in on, with the demo's account picker |
 | API | `verytas-api.service` | uvicorn on 127.0.0.1:8000; SQLite in `/srv/verytas/data` |
@@ -25,3 +26,9 @@ recent releases are kept. A commit that failed is not retried until something ne
 `deploy.sh --force`). `deploy.sh` triggers a deploy now instead of waiting for the timer.
 
 Spend is capped by an AWS budget that stops the server automatically at its limit.
+
+The public address is a Cloudflare Pages project whose only file is a pass-through worker, so it never
+needs redeploying when the app changes. It restates our own Origin as the server's, which keeps the
+app's cross-site write check meaningful, and rewrites redirects back to the public name. Publish it with
+`wrangler pages deploy deploy/edge --project-name verytas --branch main`. Uploads through it are capped
+at Cloudflare's 100 MB; the sslip.io address still takes the app's full 150 MB.
