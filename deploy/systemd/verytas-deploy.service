@@ -1,0 +1,10 @@
+[Unit]
+Description=Deploy origin/main to the Verytas demo when it has moved
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=verytas
+ExecStart=/srv/verytas/bin/autodeploy.sh
+TimeoutStartSec=30min
