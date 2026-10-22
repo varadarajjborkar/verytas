@@ -2,10 +2,16 @@
 
 import { Button, Callout, TextArea } from "@openuidev/react-ui";
 import { useMemo, useRef, useState } from "react";
-import type { Finding, Level, ReviewResult } from "@/lib/types";
+import type { CategoryScore, Finding, Level, ReviewResult } from "@/lib/types";
 import { LevelPill, Meter, Panel, SourceBadge } from "./ui";
 
 const LEVEL_ORDER: Level[] = ["blocker", "warning", "advisory"];
+// How each coverage status reads on the scorecard. Anything other than "checked" is never shown as a pass.
+const COVERAGE_LABEL: Record<string, { text: string; tone: string }> = {
+  not_checked: { text: "Not checked", tone: "text-[var(--vt-blocker)]" },
+  not_configured: { text: "No rules yet", tone: "text-muted" },
+  degraded: { text: "Heuristic only", tone: "text-[var(--vt-warning)]" },
+};
 const CHANNELS = ["general", "blog", "linkedin", "x", "instagram", "email", "press"] as const;
 const REASONS = [
   ["false_positive", "Not actually a problem"],
@@ -135,8 +141,7 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
                 <li key={name}>
                   <div className="mb-1 flex justify-between text-xs">
                     <span className="font-medium capitalize">{name}</span>
-                    {!c.checked ? <span className="font-semibold text-[var(--vt-warning)]">Not checked</span>
-                      : <span className="text-muted">{c.findings} finding{c.findings === 1 ? "" : "s"}</span>}
+                    <CoverageTag category={c} />
                   </div>
                   {c.checked && c.score != null && (
                     <Meter value={c.score} label={`${name} score`} tone={c.blockers ? "danger" : c.score >= 0.9 ? "ok" : "accent"} />
@@ -183,6 +188,12 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
       </div>
     </div>
   );
+}
+
+function CoverageTag({ category: c }: { category: CategoryScore }) {
+  const label = COVERAGE_LABEL[c.status ?? (c.checked ? "checked" : "not_checked")];
+  if (!label) return <span className="text-muted">{c.findings} finding{c.findings === 1 ? "" : "s"}</span>;
+  return <span className={`font-semibold ${label.tone}`}>{label.text}</span>;
 }
 
 function HighlightedBody({ body, findings, active, onSelect }: {
