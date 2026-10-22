@@ -117,7 +117,7 @@ export const demoReview: Review = {
       terminology: { checked: true, score: 0.82, findings: 1, blockers: 0 },
       messaging: { checked: true, score: 1, findings: 0, blockers: 0 },
       visual: { checked: true, score: 1, findings: 0, blockers: 0 },
-      accessibility: { checked: true, score: 0.62, findings: 2, blockers: 1 },
+      accessibility: { checked: true, score: 0.62, findings: 2, blockers: 0 },
       legal: { checked: true, score: 1, findings: 0, blockers: 0 },
       confidentiality: { checked: true, score: 0.5, findings: 1, blockers: 1 },
     },
