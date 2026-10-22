@@ -28,6 +28,7 @@ Writer = Annotated[User, Depends(require(Role.creator, Role.reviewer, Role.appro
 _ACCEPTED = ("image/", "video/", "application/pdf", "application/vnd.openxmlformats-officedocument")
 # Uploads are read whole into memory once, so cap the request before reading.
 _UPLOAD_CAP = 150 * 1024 * 1024
+_METRICS_DEADLINE = 30  # seconds
 
 
 @router.post("/media", response_model=MediaOut, status_code=status.HTTP_201_CREATED)
@@ -51,7 +52,12 @@ async def upload(session: Session, user: Writer, file: Annotated[UploadFile, Fil
                      created_by=user.id)
     session.add(blob)
     await session.commit()
-    metrics = await asyncio.to_thread(_metrics, kind, raw)
+    # The upload is stored by now; its metrics are a courtesy, so a file that is slow to read gets none
+    # rather than holding the request (the review that reads it in full has its own deadline).
+    try:
+        metrics = await asyncio.wait_for(asyncio.to_thread(_metrics, kind, raw), _METRICS_DEADLINE)
+    except TimeoutError:
+        metrics = {"error": "the file took too long to read"}
     return MediaOut(id=blob.id, media_type=kind, name=blob.name, bytes=len(raw), sha256=digest, metrics=metrics)
 
 
