@@ -196,3 +196,16 @@ async def test_fix_keeps_the_claims_own_multiplier():
 def test_indian_multipliers_parse():
     assert parse_number("12 lakh learners").value == pytest.approx(1_200_000)
     assert parse_number("1.5 crore views").value == pytest.approx(15_000_000)
+
+
+def test_fix_numbers_are_written_plainly():
+    from verytas.checks.claims import _format_like
+
+    # errcheck 214: float noise once printed "2.01e+06"; 215: a small fact once read "0.0008 million".
+    assert _format_like("1800000", 2.01 * 1e6) == "2010000"
+    assert _format_like("1,800,000", 2.01 * 1e6) == "2,010,000"
+    assert _format_like("2 million", 2.01 * 1e6) == "2.01 million"
+    assert _format_like("2 million", 800) == "800"
+    assert _format_like("2M", 12_345_678) == "12.345678M"
+    assert _format_like("800+", 1200) == "1200"
+    assert _format_like("12 lakh", 1_500_000) == "15 lakh"

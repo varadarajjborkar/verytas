@@ -184,23 +184,30 @@ def compare_numbers(claim: ParsedNumber, fact_value: float) -> Verdict:
 
 
 def _amount(fact: FactView) -> float:
-    """A fact's value as a plain number: "1.2" with unit "million" is 1,200,000, as a claim's "1.2M" is."""
+    """A fact's value as a plain number: "1.2" with unit "million" is 1,200,000, as a claim's "1.2M" is.
+    Rounded so binary noise (2.01 * 1e6 = 2009999.9999999998) can't leak into a suggested fix."""
     assert fact.value is not None
-    return fact.value * _UNIT_MULT.get((fact.unit or "").strip().lower(), 1)
+    return round(fact.value * _UNIT_MULT.get((fact.unit or "").strip().lower(), 1), 6)
+
+
+def _plain(value: float, grouped: bool) -> str:
+    """A number as people write it: no exponent, no trailing zeros, thousands grouped if the claim did."""
+    value = round(value, 6)
+    if value.is_integer():
+        return f"{int(value):,}" if grouped else str(int(value))
+    return f"{value:,.6f}".rstrip("0") if grouped else f"{value:.6f}".rstrip("0")
 
 
 def _format_like(original: str, value: float) -> str:
-    """`value` written the way the claim wrote its figure: "2 million" becomes "1.2 million", not "1200000"."""
+    """`value` written the way the claim wrote its figure: "2 million" becomes "1.2 million", not "1200000".
+    A value below the claim's multiplier is written out in full: "800", never "0.0008 million"."""
     m = _NUMBER.match(original.strip())
     mult = m.group("mult") if m else None
-    if mult:
-        value /= _MULT[mult.lower()]
-    whole = f"{int(value):,}" if "," in original else str(int(value))
-    text = whole if value.is_integer() else f"{value:g}"
-    if mult:
+    grouped = "," in original
+    if mult and value >= _MULT[mult.lower()]:
         # Keep the claim's own spacing and spelling of the multiplier ("2M", "2 million").
-        text += original[m.end("num"):m.end("mult")]
-    return text
+        return _plain(value / _MULT[mult.lower()], grouped) + original[m.end("num"):m.end("mult")]
+    return _plain(value, grouped or bool(mult))
 
 
 @dataclass
