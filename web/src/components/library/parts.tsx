@@ -42,4 +42,9 @@ export function ListSkeleton() {
 export const toList = (s: string) => s.split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
 export const fromList = (xs: unknown) => (Array.isArray(xs) ? xs.join(", ") : "");
 
-export const today = () => new Date().toISOString().slice(0, 10);
+/** Today on the local calendar, as YYYY-MM-DD. toISOString() gives the UTC date, which is a day off here
+ * for part of every day, while the API judges "valid today" by its local date. */
+export const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};

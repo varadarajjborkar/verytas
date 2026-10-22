@@ -50,6 +50,7 @@ const ALLOWED: [string, RegExp][] = [
   // Escalations to a person, brand events and the public-contacts register.
   ["POST", /^findings\/\d+\/escalations$/],
   ["GET", /^escalations$/],
+  ["GET", /^escalations\/count$/],
   ["GET", /^escalations\/\d+$/],
   ["POST", /^escalations\/\d+\/(?:resolve|withdraw)$/],
   ["GET", /^events$/],

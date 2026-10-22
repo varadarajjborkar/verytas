@@ -68,7 +68,17 @@ export function ContactsTab({ contacts, editable, onChanged }: { contacts: Publi
               </div>
               {editable && (
                 <button type="button" disabled={busy === c.id} className="vt-btn px-2.5 py-1 text-xs text-subtle hover:text-[var(--vt-blocker)]"
-                  onClick={async () => { setBusy(c.id); try { await retireContact(c.id); onChanged(); } finally { setBusy(null); } }}>Retire</button>
+                  onClick={async () => {
+                    setBusy(c.id);
+                    try {
+                      await retireContact(c.id);
+                      onChanged();
+                    } catch (err) {
+                      toast({ kind: "error", title: "Couldn't retire it", detail: (err as Error).message });
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}>Retire</button>
               )}
             </li>
           ))}

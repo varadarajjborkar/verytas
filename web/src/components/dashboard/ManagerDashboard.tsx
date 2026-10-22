@@ -40,7 +40,7 @@ function parse(raw: string | null): Item[] | null {
  * per-browser preference, so it lives in local storage.
  */
 export function ManagerDashboard({ overview, recurring, health }: { overview: Overview; recurring: Recurring[]; health: RuleHealth[] }) {
-  const { me } = useViewer();
+  const { me, loading } = useViewer();
   const key = `vt-dashboard:${me?.id ?? "anon"}`;
   const stored = useStored(key);
   const layout = useMemo(() => parse(stored) ?? DEFAULT_LAYOUT, [stored]);
@@ -98,35 +98,47 @@ export function ManagerDashboard({ overview, recurring, health }: { overview: Ov
   const add = (id: string) => save([...layout, { id, size: WIDGETS[id].size }]);
   const hidden = Object.keys(WIDGETS).filter((id) => !layout.some((i) => i.id === id));
 
-  // Dragging: the widget under the pointer gives up its place to the one being dragged.
+  // Dragging: the widget under the pointer gives up its place to the one being dragged. The moves are
+  // followed on the window, not by pointer capture on the widget: reordering moves the widget's DOM node,
+  // and a moved node loses its capture, which left drags stuck.
   const hold = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSwap = useRef<string | null>(null);
   const onDown = (e: ReactPointerEvent<HTMLElement>, id: string) => {
-    if ((e.target as HTMLElement).closest("button, a, input, select, textarea") && editing) return;
+    const control = (e.target as HTMLElement).closest("button, a, input, select, textarea");
     if (!editing) {
-      if (e.pointerType === "mouse" && e.button !== 0) return;
+      // A long press on a link or button is that control's, not a request to start editing.
+      if (control || (e.pointerType === "mouse" && e.button !== 0)) return;
       hold.current = setTimeout(() => setEditing(true), HOLD_MS);
       return;
     }
-    e.currentTarget.setPointerCapture(e.pointerId);
+    if (control) return;
+    e.preventDefault();
+    lastSwap.current = null;
     setDragging(id);
-    lastSwap.current = null;
   };
-  const onMove = (e: ReactPointerEvent<HTMLElement>) => {
-    if (hold.current && (Math.abs(e.movementX) + Math.abs(e.movementY) > 3)) { clearTimeout(hold.current); hold.current = null; }
+  const cancelHold = () => { if (hold.current) { clearTimeout(hold.current); hold.current = null; } };
+  useEffect(() => {
     if (!dragging) return;
-    const over = document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest<HTMLElement>("[data-widget]"))
-      .find((el) => el && el.dataset.widget !== dragging);
-    const target = over?.dataset.widget;
-    if (!target || target === lastSwap.current) return;
-    lastSwap.current = target;
-    move(dragging, layout.findIndex((i) => i.id === target));
-  };
-  const onUp = () => {
-    if (hold.current) { clearTimeout(hold.current); hold.current = null; }
-    setDragging(null);
-    lastSwap.current = null;
-  };
+    const onMove = (e: PointerEvent) => {
+      const over = document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest<HTMLElement>("[data-widget]"))
+        .find((el) => el && el.dataset.widget !== dragging);
+      const target = over?.dataset.widget;
+      if (!target || target === lastSwap.current) return;
+      lastSwap.current = target;
+      move(dragging, layout.findIndex((i) => i.id === target));
+    };
+    const onUp = () => { setDragging(null); lastSwap.current = null; };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  // move reads the current layout, which this effect already depends on.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragging, layout]);
   useEffect(() => {
     const start = () => setEditing(true);
     window.addEventListener(EDIT_EVENT, start);
@@ -139,6 +151,12 @@ export function ManagerDashboard({ overview, recurring, health }: { overview: Ov
     return () => window.removeEventListener("keydown", onKey);
   }, [editing]);
 
+  // Until the account is known the layout key is too, and the default would flash before the saved one.
+  if (loading) {
+    return <div aria-busy="true" aria-label="Loading" className="grid gap-5 xl:grid-cols-2">
+      {[0, 1, 2, 3].map((i) => <div key={i} className={`h-48 animate-pulse rounded-[14px] bg-sunken ${i === 0 ? "xl:col-span-2" : ""}`} />)}
+    </div>;
+  }
   return (
     <div className="flex flex-col gap-4">
       {editing && (
@@ -156,10 +174,12 @@ export function ManagerDashboard({ overview, recurring, health }: { overview: Ov
             ref={(el) => { if (el) nodes.current.set(item.id, el); else nodes.current.delete(item.id); }}
             className={`relative min-w-0 rounded-[14px] transition-shadow ${item.size === "full" ? "xl:col-span-2" : ""} ${
               editing ? "touch-none select-none" : ""} ${dragging === item.id ? "vt-dragging" : ""}`}
-            onPointerDown={(e) => onDown(e, item.id)} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+            onPointerDown={(e) => onDown(e, item.id)} onPointerMove={(e) => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 3) cancelHold(); }}
+            onPointerUp={cancelHold} onPointerCancel={cancelHold} onPointerLeave={cancelHold}>
             <div className={`h-full rounded-[14px] ${editing ? "vt-wobble cursor-grab outline-dashed outline-1 outline-offset-4 outline-line-strong" : ""}`}
               style={editing ? { ["--vt-wobble-delay" as string]: `${(n * 97) % 380}ms`, animationDirection: n % 2 ? "reverse" : "normal" } : undefined}>
-              <div className={editing ? "pointer-events-none" : ""} aria-hidden={editing || undefined}>
+              {/* inert while editing: nothing inside can be clicked or focused, and the tile reads as one item. */}
+              <div className={editing ? "pointer-events-none" : ""} inert={editing}>
                 <WidgetPanel id={item.id} d={d} editing={editing} />
               </div>
             </div>

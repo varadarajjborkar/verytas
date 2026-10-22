@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, listEscalations, PRIORITY, relativeTime, resolveEscalation } from "@/lib/review-client";
+import { canDecide } from "@/lib/roles";
 import type { EscalationRequest, FactCitation, RuleCitation } from "@/lib/types";
 import { CheckIcon, ChevronIcon } from "../Icons";
 import { PriorityPill } from "../review/Checklist";
 import { REASONS } from "../review/DecisionControls";
 import { useToast } from "../Toaster";
+import { tabKeys } from "../ui";
 import { useViewer } from "../Viewer";
 
 const FLAG_TONE: Record<string, string> = {
@@ -38,9 +40,17 @@ export function EscalationsInbox() {
   const [creator, setCreator] = useState("all");
   const [level, setLevel] = useState("all");
 
+  // Only the newest request may fill the list, so a slow "Waiting" reply can't land on the "Decided" tab.
+  const seq = useRef(0);
   const load = useCallback(() => {
-    listEscalations(tab).then((r) => { setRows(r); setError(null); }).catch((err) =>
-      setError(err instanceof ApiError && err.status === 503 ? "Escalations need the Verytas API." : (err as Error).message));
+    const ticket = ++seq.current;
+    listEscalations(tab).then((r) => {
+      if (ticket !== seq.current) return;
+      setRows(r);
+      setError(null);
+    }).catch((err) => {
+      if (ticket === seq.current) setError(err instanceof ApiError && err.status === 503 ? "Escalations need the Verytas API." : (err as Error).message);
+    });
   }, [tab]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -53,14 +63,18 @@ export function EscalationsInbox() {
   const shown = (rows ?? []).filter((r) => (creator === "all" || String(r.raised_by?.id) === creator)
     && (level === "all" || r.finding.level === level));
   const approver = me?.role === "approver" || me?.role === "brand_admin";
+  // Auditors read the inbox; deciding is for reviewers, approvers and brand admins.
+  const decider = canDecide(me?.role);
   const setTab = (t: string) => router.replace(t === "open" ? pathname : `${pathname}?tab=${t}`, { scroll: false });
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div role="tablist" aria-label="Escalations" className="inline-flex rounded-lg bg-sunken p-0.5 text-xs font-medium">
+        <div role="tablist" aria-label="Escalations" className="inline-flex rounded-lg bg-sunken p-0.5 text-xs font-medium"
+          onKeyDown={tabKeys(["open", "resolved"] as const, tab, setTab, "esc-tab")}>
           {(["open", "resolved"] as const).map((t) => (
-            <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
+            <button key={t} id={`esc-tab-${t}`} type="button" role="tab" aria-selected={tab === t} aria-controls="esc-panel"
+              tabIndex={tab === t ? 0 : -1} onClick={() => setTab(t)}
               className={`rounded-md px-3 py-1.5 transition ${tab === t ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
               {t === "open" ? "Waiting for you" : "Decided"}
               {t === tab && rows ? <span className="ml-1.5 tabular-nums text-subtle">{rows.length}</span> : null}
@@ -89,12 +103,12 @@ export function EscalationsInbox() {
               </p>
             </div>
           ) : (
-            <section className="vt-card overflow-hidden" aria-label={tab === "open" ? "Waiting for you" : "Decided"}>
+            <section id="esc-panel" role="tabpanel" aria-labelledby={`esc-tab-${tab}`} className="vt-card overflow-hidden">
               <div className="hidden grid-cols-[minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1fr)_15rem] gap-5 border-b border-line bg-sunken/50 px-5 py-2.5 text-[11px] font-medium uppercase tracking-wide text-subtle xl:grid">
                 <span>The content</span><span>What the record says</span><span>What the creator said</span><span>Decision</span>
               </div>
               <ul className="divide-y divide-line">
-                {shown.map((r) => <Row key={r.id} r={r} focused={r.id === focus} approver={approver} onDone={load} />)}
+                {shown.map((r) => <Row key={r.id} r={r} focused={r.id === focus} approver={approver} decider={decider} onDone={load} />)}
               </ul>
             </section>
           )}
@@ -102,7 +116,9 @@ export function EscalationsInbox() {
   );
 }
 
-function Row({ r, focused, approver, onDone }: { r: EscalationRequest; focused: boolean; approver: boolean; onDone: () => void }) {
+function Row({ r, focused, approver, decider, onDone }: {
+  r: EscalationRequest; focused: boolean; approver: boolean; decider: boolean; onDone: () => void;
+}) {
   return (
     <li id={`esc-${r.id}`} className={`grid gap-5 px-5 py-5 transition-colors md:grid-cols-2 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1fr)_15rem] ${
       focused ? "bg-accent/[0.05]" : ""}`}>
@@ -154,7 +170,9 @@ function Row({ r, focused, approver, onDone }: { r: EscalationRequest; focused: 
       </Cell>
 
       <Cell label="Decision">
-        {r.status === "open" ? <Decide r={r} approver={approver} onDone={onDone} /> : <Outcome r={r} />}
+        {r.status !== "open" ? <Outcome r={r} />
+          : decider ? <Decide r={r} approver={approver} onDone={onDone} />
+            : <p className="text-xs text-muted">Waiting for a reviewer or approver.</p>}
       </Cell>
     </li>
   );

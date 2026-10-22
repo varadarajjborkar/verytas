@@ -1,17 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { APP, ONLY_FOR, SESSION_COOKIE } from "@/lib/app";
 
 // An optimistic gate in front of every page and API route: no session cookie,
 // no entry. It only checks that a cookie exists; the API checks the token
 // itself on every call, so a forged cookie gets no further than a 401.
-const SESSION_COOKIE = "vt_session";
 const backendConfigured = Boolean(process.env.VERYTAS_API_URL);
 // Off until VERYTAS_REQUIRE_SIGNIN=1 (see lib/session.ts).
 const signinRequired = process.env.VERYTAS_REQUIRE_SIGNIN === "1";
 const devAutologin = process.env.NODE_ENV !== "production" && process.env.VERYTAS_DEV_AUTOLOGIN === "1";
 
-// Mirrors lib/app.ts; middleware can't import server modules that read cookies.
-const APP = process.env.VERYTAS_APP === "manager" || process.env.VERYTAS_APP === "creator" ? process.env.VERYTAS_APP : null;
-const ONLY_FOR: Record<string, string> = { "/library": "manager", "/guidelines": "manager", "/escalations": "manager" };
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

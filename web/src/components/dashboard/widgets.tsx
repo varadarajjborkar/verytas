@@ -12,6 +12,7 @@ import type { BrandEvent, ContentRow, EscalationRequest, Overview, Person, Recur
 import { ArrowRightIcon, GaugeIcon, InboxIcon, OctagonIcon, ReviewIcon } from "../Icons";
 import { StageDots } from "../Journey";
 import { PipelineFlow } from "../home/PipelineFlow";
+import { today } from "../library/parts";
 import { PriorityPill } from "../review/Checklist";
 import { HBars, Meter, Panel, Stat, TrendBars } from "../ui";
 
@@ -194,7 +195,7 @@ export const WIDGETS: Record<string, WidgetDef> = {
     render: (d) => {
       if (d.demo) return <NeedsApi />;
       if (!d.events) return <Skeleton />;
-      const on = new Date().toISOString().slice(0, 10);
+      const on = today();
       const list = d.events.filter((e) => e.status === "active" && (!e.ends_on || e.ends_on >= on))
         .sort((a, b) => Number(b.live) - Number(a.live) || a.starts_on.localeCompare(b.starts_on));
       if (!list.length) return <p className="text-sm text-muted">No events running or scheduled. Add one in the library.</p>;

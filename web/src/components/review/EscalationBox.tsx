@@ -29,7 +29,8 @@ export function EscalationBox({ f, request, onEscalate, onChanged, side }: {
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<{ message: string; labels: string[] } | null>(null);
 
-  if (request) {
+  // A withdrawn request is history: the creator may ask again.
+  if (request && request.status !== "withdrawn") {
     const tone = request.status === "open" ? "text-accent" : request.status === "cleared" ? "text-[var(--vt-ok)]"
       : request.status === "upheld" ? "text-[var(--vt-blocker)]" : "text-subtle";
     const state = { open: "With the brand team", cleared: "Cleared by the brand team", upheld: "The finding stands",
@@ -52,9 +53,23 @@ export function EscalationBox({ f, request, onEscalate, onChanged, side }: {
         )}
         {request.status === "open" && side === "creator" && (
           <button type="button" disabled={busy} className="mt-1.5 text-[11px] font-medium text-subtle hover:text-ink"
-            onClick={async () => { setBusy(true); try { await withdrawEscalation(request.id); onChanged(); } finally { setBusy(false); } }}>
+            onClick={async () => {
+              setBusy(true);
+              setRefusal(null);
+              try {
+                await withdrawEscalation(request.id);
+                onChanged();
+              } catch (err) {
+                setRefusal({ message: (err as Error).message, labels: [] });
+              } finally {
+                setBusy(false);
+              }
+            }}>
             Withdraw request
           </button>
+        )}
+        {refusal && request.status === "open" && (
+          <p role="alert" className="mt-1.5 text-[11px] text-[var(--vt-blocker)]">{refusal.message}</p>
         )}
         {request.status === "open" && side === "manager" && (
           <Link href={`/escalations?id=${request.id}`} className="mt-1.5 inline-block text-[11px] font-medium text-accent hover:underline">

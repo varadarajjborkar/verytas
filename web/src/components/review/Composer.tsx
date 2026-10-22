@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { fmtBytes, listEvents, precheck, upload } from "@/lib/review-client";
 import { ChevronIcon, UploadIcon } from "../Icons";
+import { today } from "../library/parts";
 import { useToast } from "../Toaster";
 import type { BrandEvent, Precheck, UploadedMedia } from "@/lib/types";
 
@@ -312,7 +313,7 @@ function EventPicker({ value, onChange }: { value: number | null; onChange: (id:
   const [events, setEvents] = useState<BrandEvent[]>([]);
   useEffect(() => {
     let live = true;
-    listEvents().then((xs) => { if (live) setEvents(xs.filter((e) => e.status === "active" && (e.live || e.starts_on > new Date().toISOString().slice(0, 10)))); })
+    listEvents().then((xs) => { if (live) setEvents(xs.filter((e) => e.status === "active" && (e.live || e.starts_on > today()))); })
       .catch(() => {});
     return () => { live = false; };
   }, []);
