@@ -89,6 +89,32 @@ CONTACTS = [
 ]
 
 
+# Reviewers' calls on first-round findings, so guideline health has a record to read: the claims rule is
+# overridden again and again (twice as "unclear"), tone and topic calls are upheld, and the rivals rule
+# splits the team. (piece, hours after it was written, rule, who, action, reason, note)
+DECISIONS = [
+    ("r-tip", 3, "CLAIM-UNSUPPORTED", "reviewer", "rejected", "false_positive", "A study tip, not a claim about us."),
+    ("p-sale", 5, "CLAIM-UNSUPPORTED", "approver", "rejected", "guideline_unclear",
+     "\"Best yet\" is chatty, not a comparison. Does the rule mean this?"),
+    ("p-sale", 5, "TONE-SHIFT", "approver", "accepted", None, None),
+    ("p-exam", 5, "TONE-SHIFT", "approver", "accepted", None, None),
+    ("n-swipe", 5, "TONE-SHIFT", "reviewer", "accepted", None, None),
+    ("n-swipe", 5, "MSG-RIVALS", "approver", "accepted", None, None),
+    ("s-brochure", 5, "TONE-SHIFT", "reviewer", "accepted", None, None),
+    ("d-budget", 5, "MSG-OFF-TOPIC", "approver", "accepted", None, None),
+    ("s-gossip", 5, "MSG-OFF-TOPIC", "reviewer", "accepted", None, None),
+    ("s-gossip", 5, "CLAIM-UNSUPPORTED", "reviewer", "rejected", "guideline_unclear",
+     "Celebrity gossip is off topic, but it isn't a claim about Kitepath."),
+    ("d-money", 2, "MSG-OFF-TOPIC", "approver", "accepted", None, None),
+    ("mentor", 2, "CLAIM-UNSUPPORTED", "approver", "rejected", "false_positive",
+     "Ananya's group size is on her profile."),
+    ("support", 2, "CLAIM-UNSUPPORTED", "reviewer", "rejected", "not_applicable",
+     "Support hours are a listed public contact, not a promotion."),
+    ("rivals", 2, "MSG-RIVALS", "approver", "rejected", "guideline_unclear",
+     "\"Some other apps\" names nobody. Is a hint a dig?"),
+]
+
+
 @dataclass
 class Piece:
     key: str
@@ -343,6 +369,10 @@ def seed(db_path: Path, keys_dir: Path, env_out: Path | None) -> dict[str, int]:
                 actions.append((born, create))
                 for hours, act, args in p.flow:
                     actions.append((born + timedelta(hours=hours), _step(c, h, state, p.key, act, args, counts)))
+                for key, hours, code, by, act, reason, note in DECISIONS:
+                    if key == p.key:
+                        args = {"rule": code, "by": by, "action": act, "reason_code": reason, "reason_text": note}
+                        actions.append((born + timedelta(hours=hours), _step(c, h, state, key, "decide", args, counts)))
             for at, run in sorted(actions, key=lambda a: a[0]):
                 _Clock.at = min(at, NOW)
                 run()
@@ -376,6 +406,16 @@ def _step(c, h, state, key: str, act: str, args: dict, counts: dict) -> Callable
             r = c.post(f"/contents/{cid}/versions?wait=true", headers=h(who), json={"body": args["body"]})
             r.raise_for_status()
             s["review"] = r.json()["review_id"]
+        elif act == "decide":
+            # Matched through the citation, which is how a reviewer sees which rule a finding comes from.
+            findings = c.get(f"/reviews/{s['review']}", headers=h(args["by"])).json()["findings"]
+            target = next((f for f in findings if any(x["kind"] == "rule" and x["label"].startswith(args["rule"] + " ")
+                                                      for x in f["citations"])), None)
+            if target is not None:
+                c.post(f"/findings/{target['id']}/decision", headers=h(args["by"]), json={
+                    "action": args["action"], "reason_code": args["reason_code"],
+                    "reason_text": args["reason_text"]}).raise_for_status()
+                counts["decisions"] = counts.get("decisions", 0) + 1
         elif act == "comment":
             c.post(f"/contents/{cid}/comments", headers=h("reviewer"), json={"body": args["body"]}).raise_for_status()
         elif act == "resolve":
