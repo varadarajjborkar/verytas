@@ -167,6 +167,14 @@ def test_an_event_reaches_reviews_and_rechecks_pieces_in_flight(client, world):
     codes = {x["citations"][0]["label"].split(" ")[0] for x in _findings(client, creator, tagged["review_id"])
              if x["citations"]}
     assert f"EVT-{ev['id']}-AVOID" in codes and f"EVT-{ev['id']}-TAGS" in codes
+    # The caption carries the hashtag for the whole post: text inside an attached image need not repeat it.
+    from tests.media_fixtures import b64, png, text_image
+    poster = _post(client, creator, "Learn one thing a day this sale week. #MonsoonSale", title="Poster",
+                   event_id=ev["id"], attachments={"images": [
+                       {"id": "poster", "alt": "Poster reading Learn one thing a day",
+                        "data_base64": b64(png(text_image(["Learn one thing a day"], size=(900, 600))))}]})
+    assert not any(f"EVT-{ev['id']}-TAGS" in str(x["citations"]) for x in _findings(client, creator,
+                                                                                    poster["review_id"]))
     untagged = _post(client, creator, "Learn something new this weekend.", title="Plain")
     assert not any(f"EVT-{ev['id']}-TAGS" in str(x["citations"]) for x in _findings(client, creator,
                                                                                     untagged["review_id"]))
