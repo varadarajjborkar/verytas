@@ -27,3 +27,8 @@ venv/
 .keys/
 .pytest_cache/
 .ruff_cache/
+
+# Never commit credentials handed over in plain files
+cred.txt
+cred*.txt
+*.key
