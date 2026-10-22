@@ -155,67 +155,64 @@ def find_folded(pattern: re.Pattern[str], text: str) -> Iterator[tuple[int, int,
                     yield span[0], span[1], m.group(0)
 
 
-def _readings(text: str) -> Iterator[tuple[str, tuple[int, ...]]]:
-    """The folded forms a pattern is tried against, cheapest first."""
-    yield fold(text, "space")
+@lru_cache(maxsize=4)
+def _readings(text: str) -> tuple[tuple[str, tuple[int, ...]], ...]:
+    """The folded forms a pattern is tried against, cheapest first. Cached: a
+    review matches every term of every rule against the same body."""
     dropped = fold(text, "drop")
-    yield dropped
     spaced = _unspaced(*dropped)
-    yield spaced
+    out = [fold(text, "space"), dropped, spaced]
     # "is a r i s k - f r e e": the lone "a" may be the article, or the first
     # letter of "a m a z i n g". Both readings are tried.
-    article = _unspaced(*dropped, skip_article=True)
-    if article[0] != spaced[0]:
-        yield article
-    yield _unleet(*spaced)
+    lead = _unspaced(*dropped, skip_lead=True)
+    if lead[0] != spaced[0]:
+        out.append(lead)
+    out.append(_unleet(*spaced))
+    return tuple(out)
 
 
 # Letter-spacing ("s y n e r g y", "P.r.o.j.e.c.t", "n e x t - g e n"): four
 # or more single characters, each followed by a separator, optionally padded
 # with spaces. Real prose almost never does it.
 _SPACED = re.compile(r"(?<!\w)\w(?:(?: ?[._\-\u00b7] ?| )\w){3,}(?!\w)")
-_ARTICLE = re.compile(r"[ai] (?=\w(?:(?: ?[._\-\u00b7] ?| )\w){3,}(?!\w))", re.IGNORECASE)
+_LEAD = re.compile(r"\w (?=\w(?:(?: ?[._\-\u00b7] ?| )\w){3,}(?!\w))")
 
 
-def _unspaced(folded: str, index: tuple[int, ...], skip_article: bool = False) -> tuple[str, tuple[int, ...]]:
+def _unspaced(folded: str, index: tuple[int, ...], skip_lead: bool = False) -> tuple[str, tuple[int, ...]]:
     """`folded` with letter-spaced runs closed up, and its map back to the
-    original text. With `skip_article`, a run's leading "a" or "I" is left as a
-    word of its own."""
+    original text. With `skip_lead`, a run's first character is left as a word
+    of its own ("a", "I", or a stray letter before the spaced word)."""
     if not _SPACED.search(folded):
         return folded, index
     keep = [True] * len(folded)
     for m in _SPACED.finditer(folded):
         start = m.start()
-        if skip_article and (a := _ARTICLE.match(folded, start)):
-            start = a.end()
+        if skip_lead and (lead := _LEAD.match(folded, start)):
+            start = lead.end()
         for k in range(start, m.end()):
-            if not folded[k].isalnum() and folded[k] != "_":
+            if not folded[k].isalnum():
                 keep[k] = False
     out = "".join(c for c, k in zip(folded, keep, strict=True) if k)
     return out, tuple(i for i, k in zip(index, [*keep, True], strict=True) if k)
 
 
 # Digits standing in for letters, read that way only inside words that mix
-# the two ("Pr0j3c7", "L4n73rn"), so "4G", "2026" and "B2B" stay as they are
-# unless they also spell a protected term.
+# the two ("Pr0j3c7", "L4n73rn"), so "2026" and "B2B" stay as they are. A
+# number with a short unit ("10x", "4G", "8GB") is a real number, and is kept
+# so a term that contains one ("10x engineer") still matches.
 _LEET = str.maketrans({"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "8": "b", "@": "a", "$": "s"})
 _MIXED = re.compile(r"(?=[\w@$]*[A-Za-z])(?=[\w@$]*[0-9@$])[\w@$]+")
+_NUMBER_UNIT = re.compile(r"[0-9]+[A-Za-z]{1,2}")
 
 
 def _unleet(folded: str, index: tuple[int, ...]) -> tuple[str, tuple[int, ...]]:
     """Leetspeak read as letters; one character in, one out, so the index map holds."""
-    return _MIXED.sub(lambda m: m.group(0).translate(_LEET), folded), index
+    def read(m: re.Match[str]) -> str:
+        word = m.group(0)
+        return word if _NUMBER_UNIT.fullmatch(word) else word.translate(_LEET)
 
+    return _MIXED.sub(read, folded), index
 
-def leet_digits(escaped: str) -> str:
-    """A regex-escaped term with each digit also accepting its leetspeak letter.
-    The leet pass reads "10x" as "iox", so a term that really contains digits
-    ("10x engineer") must accept both readings to survive "10x 3ng1n33r"."""
-    def both(m: re.Match[str]) -> str:
-        letter = _LEET.get(ord(m.group(0)))
-        return f"[{m.group(0)}{letter}]" if letter else m.group(0)
-
-    return re.sub(r"[0-9]", both, escaped)
 
 
 def sub_folded(pattern: re.Pattern[str], text: str, repl: Callable[[str], str]) -> str:
@@ -245,7 +242,7 @@ _SEP = r"[\s_\-]*"
 def term_pattern(term: str, *, loose: bool = False) -> re.Pattern[str]:
     # Patterns run against folded text (find_folded), so fold the term too: an
     # admin who typed "Projekt\u2011Lumen" with a non-breaking hyphen still matches.
-    parts = [leet_digits(re.escape(p)) for p in _SPLIT.split(fold(term.strip(), "drop")[0]) if p]
+    parts = [re.escape(p) for p in _SPLIT.split(fold(term.strip(), "drop")[0]) if p]
     if not parts:
         # A term made only of dashes, emoji or invisible characters folds to
         # nothing. It can't be matched, and raising here used to break every
