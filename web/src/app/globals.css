@@ -151,6 +151,9 @@ table, .tabular-nums { font-variant-numeric: tabular-nums; }
     transition: border-color 140ms ease-out, box-shadow 140ms ease-out;
   }
   .vt-input::placeholder { color: var(--vt-subtle); }
+  /* Search fields stand apart from the filters beside them: a stronger edge and a lift. */
+  .vt-search { border-color: var(--vt-line-strong); box-shadow: var(--vt-shadow); }
+  .vt-search::-webkit-search-cancel-button { cursor: pointer; }
   /* Native selects keep their keyboard and screen-reader behaviour; only the arrow is redrawn, inset from
      the edge like every other control's padding, instead of the platform's arrow pressed against the border. */
   select.vt-input:not(.appearance-none) {
@@ -286,3 +289,8 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
 .vt-signin-sample { transform: rotate(-1deg); transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1); }
 .vt-signin-sample:hover { transform: rotate(0deg) translateY(-2px); }
 @media (prefers-reduced-motion: reduce) { .vt-signin-sample, .vt-signin-sample:hover { transform: none; } }
+
+/* Chart hover layers glide between data points rather than jumping. */
+.vt-glide { transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), left 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+  bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1), top 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .vt-glide { transition: opacity 160ms ease-out; } }

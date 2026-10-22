@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Escalations" };
 export default function Page() {
   return (
     <>
-      <PageHeader title="Escalations" lead="Creators asked a person to look. Decide with the passage, the record and their words side by side." />
+      <PageHeader title="Escalations" lead="Creators asked a person to look. Decide with the passage, the record and their words side by side." refresh />
       {/* The tab and the focused request are read from the URL, which needs a Suspense boundary to prerender. */}
       <Suspense fallback={<PageSkeleton />}>
         <EscalationsInbox />

@@ -5,6 +5,7 @@ import { FINISHED, relativeTime, STATUS_LABEL } from "@/lib/review-client";
 import type { ContentRow } from "@/lib/types";
 import { DashboardIcon, PanelIcon, PlusIcon } from "../Icons";
 import { channelName } from "@/lib/channels";
+import { SearchField } from "../SearchField";
 
 // What GET /contents returns by default; past this the list says it is partial.
 const LIST_CAP = 200;
@@ -76,8 +77,7 @@ export function ReviewHistory({ rows, loading, selected, scopes, scope, demo, on
             ))}
           </div>
         )}
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search reviews" aria-label="Search reviews"
-          className="vt-input py-1.5 text-[13px]" />
+        <SearchField value={query} onChange={setQuery} placeholder="Search reviews" label="Search reviews" />
       </div>
 
       <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
