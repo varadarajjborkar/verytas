@@ -61,10 +61,15 @@ const browserStore: ChatStore = {
   save: async (id, title, messages) => {
     const all = readLocal();
     const thread: Thread = { id: id ?? Date.now(), title, messages, updated_at: new Date().toISOString() };
-    writeLocal([thread, ...all.filter((t) => t.id !== thread.id)]);
+    // Images fill browser storage fast; say so rather than lose the chat quietly.
+    if (!writeLocal([thread, ...all.filter((t) => t.id !== thread.id)])) {
+      throw new Error("Browser storage is full or blocked. Delete an old chat and try again.");
+    }
     return thread;
   },
-  remove: async (id) => { writeLocal(readLocal().filter((t) => t.id !== id)); },
+  remove: async (id) => {
+    if (!writeLocal(readLocal().filter((t) => t.id !== id))) throw new Error("Browser storage is blocked.");
+  },
 };
 
 /** The account store when the API answers, the browser store when it runs in demo mode. */

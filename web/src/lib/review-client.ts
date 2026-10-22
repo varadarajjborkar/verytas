@@ -59,15 +59,21 @@ export const aiEdit = (contentId: number, instruction: string) =>
     json({ instruction }));
 
 /** Poll until the review finishes. Multimodal reviews (video, long PDFs) can take a minute or more. */
-export async function waitForReview(id: number, onTick?: (seconds: number) => void, limitS = 600): Promise<Review> {
+/** Polls until the review finishes. Abort the signal when nobody is watching any more. */
+export async function waitForReview(id: number, onTick?: (seconds: number) => void, signal?: AbortSignal,
+  limitS = 600): Promise<Review> {
   const started = Date.now();
   for (let delay = 700; ; delay = Math.min(delay * 1.4, 3000)) {
+    signal?.throwIfAborted();
     const review = await getReview(id);
     if (review.status === "done" || review.status === "failed") return review;
     const elapsed = (Date.now() - started) / 1000;
     if (elapsed > limitS) throw new Error("The review is taking unusually long. It is still running; reload later.");
     onTick?.(Math.round(elapsed));
-    await new Promise((r) => setTimeout(r, delay));
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(resolve, delay);
+      signal?.addEventListener("abort", () => { clearTimeout(t); reject(signal.reason); }, { once: true });
+    });
   }
 }
 
@@ -84,18 +90,20 @@ export const STATUS_LABEL: Record<ContentStatus, string> = {
 /** Finished pieces: shown struck through in the history, and read-only once published or withdrawn. */
 export const FINISHED: ContentStatus[] = ["approved", "published", "withdrawn"];
 
-/** The next steps a role may take from a status (mirrors the API's _TRANSITIONS; the API still decides). */
-export function nextSteps(status: ContentStatus, role: string): { to: ContentStatus; label: string; primary?: boolean }[] {
+/** The next steps a person may take from a status (mirrors the API's _TRANSITIONS and its
+ * withdraw rule, so nothing is offered that would be refused; the API still decides). */
+export function nextSteps(status: ContentStatus, role: string, author: boolean): { to: ContentStatus; label: string; primary?: boolean }[] {
   const admin = role === "brand_admin";
   const approver = admin || role === "approver";
   const reviewer = approver || role === "reviewer";
+  const submitter = reviewer || role === "creator";
   const steps: { to: ContentStatus; label: string; primary?: boolean }[] = [];
-  if (status === "draft" || status === "changes_requested") steps.push({ to: "in_review", label: "Send for approval", primary: true });
+  if ((status === "draft" || status === "changes_requested") && submitter) steps.push({ to: "in_review", label: "Send for approval", primary: true });
   if (status === "in_review" && approver) steps.push({ to: "approved", label: "Approve", primary: true });
   if (status === "in_review" && reviewer) steps.push({ to: "changes_requested", label: "Request changes" });
   if (status === "approved" && approver) steps.push({ to: "published", label: "Mark published", primary: true });
   if (status === "approved" && approver) steps.push({ to: "changes_requested", label: "Request changes" });
-  if (status !== "published" && status !== "withdrawn") steps.push({ to: "withdrawn", label: "Withdraw" });
+  if (status !== "published" && status !== "withdrawn" && (author || approver)) steps.push({ to: "withdrawn", label: "Withdraw" });
   return steps;
 }
 

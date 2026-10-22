@@ -215,6 +215,12 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
 .vt-stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
 .vt-backdrop { animation: vt-fade 180ms ease-out both; }
 .vt-pop { animation: vt-pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* A side panel being brought back slides in from the left edge it folded into. */
+@keyframes vt-rail-in {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: none; }
+}
+.vt-rail { animation: vt-rail-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .vt-lift { transition: transform 160ms ease-out, border-color 160ms ease-out; }
 .vt-lift:hover { transform: translateY(-1px); border-color: var(--vt-line-strong); }
 

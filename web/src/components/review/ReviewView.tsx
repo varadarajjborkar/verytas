@@ -28,7 +28,9 @@ const STATUS_TONE: Record<ContentStatus, string> = {
  * marked in place, the issues beside it, and the next step in its workflow.
  * Editing happens on the text itself; a re-check makes the next version.
  */
-export function ReviewView({ contentId, role, onChanged }: { contentId: number; role: string; onChanged: () => void }) {
+export function ReviewView({ contentId, role, userId, onChanged }: {
+  contentId: number; role: string; userId: number | null; onChanged: () => void;
+}) {
   const [content, setContent] = useState<ContentDetail | null>(null);
   const [review, setReview] = useState<Review | null>(null);
   const [phase, setPhase] = useState<Phase>("loading");
@@ -45,14 +47,23 @@ export function ReviewView({ contentId, role, onChanged }: { contentId: number; 
   const [editText, setEditText] = useState("");
   const [busy, setBusy] = useState(false);
   const [override, setOverride] = useState<{ to: ContentStatus; message: string } | null>(null);
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false);
+  const [announce, setAnnounce] = useState("");
   const textRef = useRef<HTMLElement | null>(null);
   const live = useRef(contentId);
+  // Stops polling a review nobody is looking at any more.
+  const polling = useRef<AbortController | null>(null);
+  const decidedSeen = useRef(new Set<number>());
   const toast = useToast();
 
   // Starts with a request, not a state change: on mount the initial state is already "loading",
   // and a re-check resets it itself before calling this.
   const load = useCallback(async () => {
     live.current = contentId;
+    polling.current?.abort();
+    const poll = new AbortController();
+    polling.current = poll;
+    let waited = false;
     try {
       const detail = await getContent(contentId);
       if (live.current !== contentId) return;
@@ -63,19 +74,40 @@ export function ReviewView({ contentId, role, onChanged }: { contentId: number; 
         return;
       }
       setPhase("checking");
-      const done = await waitForReview(detail.latest_review_id, (s) => live.current === contentId && setElapsed(s));
+      const done = await waitForReview(detail.latest_review_id, (s) => {
+        waited = true;
+        if (live.current === contentId) setElapsed(s);
+      }, poll.signal);
       if (live.current !== contentId) return;
       setReview(done);
       setRows({});
       setPhase(done.status === "failed" ? "failed" : "ready");
       if (done.status === "failed") setError(done.error ?? "The review failed. Re-check to run it again.");
-      setDisputes(await listDisputes(contentId).catch(() => []));
-    } catch (err) {
+      else if (waited) {
+        // Only a review that finished while the person watched is news; one opened already done is not.
+        const n = done.findings.length;
+        const blockers = done.summary?.blockers ?? 0;
+        const message = n === 0 ? "Review finished: all clear" : `Review finished: ${n} issue${n === 1 ? "" : "s"}${blockers ? `, ${blockers} must fix` : ""}`;
+        setAnnounce(message);
+        toast({ kind: blockers ? "warning" : "success", title: message });
+        const escalated = done.coverage?.escalations?.length ?? 0;
+        if (escalated) toast({ kind: "warning", title: "Escalated to the social media manager", detail: done.coverage?.escalations?.[0]?.reason });
+      }
+      const found = await listDisputes(contentId).catch(() => []);
       if (live.current !== contentId) return;
+      setDisputes(found);
+      const fresh = found.filter((d) => d.status !== "queued" && d.status !== "running" && !decidedSeen.current.has(d.id));
+      fresh.forEach((d) => decidedSeen.current.add(d.id));
+      const decided = fresh.length;
+      if (waited && decided) toast({ kind: "info", title: `${decided} dispute${decided === 1 ? "" : "s"} decided`, detail: "See Disputes for the reasons." });
+    } catch (err) {
+      if (live.current !== contentId || poll.signal.aborted) return;
       const status = err instanceof ApiError ? err.status : 0;
       setPhase(status === 404 ? "missing" : "failed");
       setError((err as Error).message);
     }
+  // toast is stable for the app's lifetime.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentId]);
 
   // The shell keys this view by content id, so another review mounts fresh; only the load runs here.
@@ -83,7 +115,10 @@ export function ReviewView({ contentId, role, onChanged }: { contentId: number; 
     // load() awaits the request before any state change; the rule can't see through async functions.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
-    return () => { live.current = -1; };
+    return () => {
+      live.current = -1;
+      polling.current?.abort();
+    };
   }, [load]);
 
   // Selecting an issue brings its highlight into view.
@@ -129,6 +164,11 @@ export function ReviewView({ contentId, role, onChanged }: { contentId: number; 
         ...out.skipped].filter(Boolean).join(" · "));
       toast({ kind: "success", title: "Re-checking" });
       onChanged();
+      // The old round's findings point into the old text; drop them before the new text shows.
+      setReview(null);
+      setActive(null);
+      setRows({});
+      setElapsed(0);
       setPhase("loading");
       await load();
       onChanged();
@@ -176,10 +216,13 @@ export function ReviewView({ contentId, role, onChanged }: { contentId: number; 
   const coverage = review?.coverage;
   const escalations = coverage?.escalations ?? [];
   const checking = phase === "checking" || phase === "loading";
-  const steps = nextSteps(status, role);
+  const steps = nextSteps(status, role, userId != null && content.created_by === userId);
+  // New text after approval needs a fresh decision; the API moves it back to review.
+  const demotes = status === "approved";
 
   return (
     <div className="flex flex-col gap-5">
+      <p className="sr-only" role="status" aria-live="polite">{announce}</p>
       {/* Header: what this is, where it stands, what to do next. */}
       <header className="vt-card flex flex-col gap-4 p-4 md:flex-row md:items-center md:p-5">
         <div className="min-w-0 flex-1">
@@ -212,12 +255,19 @@ export function ReviewView({ contentId, role, onChanged }: { contentId: number; 
               {s.label}
             </button>
           ))}
-          {steps.some((s) => s.to === "withdrawn") && (
-            <button type="button" disabled={busy} onClick={() => move("withdrawn")}
+          {steps.some((s) => s.to === "withdrawn") && (confirmWithdraw ? (
+            <span className="vt-pop flex items-center gap-1.5 rounded-xl bg-[var(--vt-blocker-bg)] py-1 pl-3 pr-1 text-xs">
+              <span className="font-medium text-[var(--vt-blocker)]">Withdraw for good?</span>
+              <button type="button" disabled={busy} onClick={() => { setConfirmWithdraw(false); void move("withdrawn"); }}
+                className="vt-btn px-2 py-1 text-xs text-[var(--vt-blocker)]">Withdraw</button>
+              <button type="button" onClick={() => setConfirmWithdraw(false)} className="vt-btn vt-btn-quiet px-2 py-1 text-xs">Keep</button>
+            </span>
+          ) : (
+            <button type="button" disabled={busy} onClick={() => setConfirmWithdraw(true)}
               className="vt-btn px-2 text-xs text-subtle hover:text-[var(--vt-blocker)]">
               Withdraw
             </button>
-          )}
+          ))}
         </div>
       </header>
 
@@ -247,7 +297,9 @@ export function ReviewView({ contentId, role, onChanged }: { contentId: number; 
                   {busy ? "Saving…" : "Save and re-check"}
                 </button>
                 <button type="button" onClick={() => setEditing(false)} className="vt-btn vt-btn-quiet">Cancel</button>
-                <span className="text-xs text-subtle">Fixes ticked on the right are applied too.</span>
+                <span className="text-xs text-subtle">
+                  {demotes ? "This is approved: new text goes back for approval." : "Fixes ticked on the right are applied too."}
+                </span>
               </div>
             </div>
           ) : (
@@ -286,7 +338,9 @@ export function ReviewView({ contentId, role, onChanged }: { contentId: number; 
                 <button type="button" disabled={busy} onClick={() => recheck()} className="vt-btn vt-btn-primary">
                   {changes ? `Apply ${changes} and re-check` : "Re-check"}
                 </button>
-                <span className="text-xs text-subtle">{changes ? "Makes a new version" : "Runs every check again"}</span>
+                <span className="text-xs text-subtle">
+                  {demotes ? "Goes back for approval" : changes ? "Makes a new version" : "Runs every check again"}
+                </span>
               </div>
             )}
           </section>
