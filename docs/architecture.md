@@ -427,6 +427,25 @@ Collected by our tooling scout and spot-checked on GitHub. Star counts and dates
 
 ---
 
+## 22. Black-box evaluation (reality simulator)
+
+Unit tests share the developers' assumptions, so Verytas is also tested by an agent that knows it only through the public API (`blackbox/`, see its README). The agent:
+
+- **Builds realities.** Each is a fictional brand with banned phrases, a codename and statistics whose approved value changed on a known date. A fresh server per reality keeps them isolated.
+- **Writes content.** Twenty-six genres of real online content, from roasts and flame wars to Hinglish captions and crisis apologies, with slots where violations are planted at exact offsets. That gives ground truth without hand labelling.
+- **Grades.** Recall per technique, false positives on controls, and contract invariants (span and quote agree, citations, signatures, fix sanity, no 5xx, the approval gate, the audit chain).
+- **Learns.** Thompson sampling over per-technique failure rates (persisted in SQLite) steers each generation toward weak spots. In LLM mode an adversary invents new spellings for terms that got through.
+
+Findings so far, all fixed with regression tests (`backend/tests/test_blackbox_regressions.py`):
+
+- Built-in rules were tiered "internal", so public posts skipped them.
+- Look-alike, invisible and full-width characters, and dash variants, evaded term, leak and redaction checks. Matching now runs on NFKC-folded text with an offset map back to the original.
+- Indian digit grouping was misparsed, and `#1` superlatives were never matched.
+- File-name alt text passed.
+- SQLite returned 500s under parallel load. The fixes were `BEGIN IMMEDIATE`, holding no transaction across model calls, and dropping the second audit lock that deadlocked against the database lock.
+
+On a 216-case offline campaign, core recall rose from 78% to 96% and false positives on controls fell from 7% to 0%.
+
 ## References
 
 - Min et al. (2023). *FActScore: Fine-grained Atomic Evaluation of Factual Precision in Long Form Text Generation.* EMNLP.
