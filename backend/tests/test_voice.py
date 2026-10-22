@@ -136,6 +136,10 @@ def test_reviews_flag_drift_and_the_brand_team_sees_each_creators_line(client, w
     assert "Drifts off topic into politics" in by_title["Drift"]["summary"]
     assert "tone" not in by_title["Rant"]["drift"]
     assert line["stats"]["reviewed"] == 3 and line["stats"]["on_brand_as_sent"] >= 1
+    # The roster carries the same line in short: its recent distances and their average.
+    assert roster[0]["recent"] == [p["distance"] for p in line["points"]]
+    assert roster[0]["average_distance"] == line["stats"]["average_distance"]
+    assert roster[0]["on_brand_as_sent"] == line["stats"]["on_brand_as_sent"]
 
     # Creators don't see each other's lines, or the roster; staff aren't creators.
     assert client.get("/insights/creators", headers=creator).status_code == 403

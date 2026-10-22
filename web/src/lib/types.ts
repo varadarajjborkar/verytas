@@ -342,6 +342,13 @@ export type CreatorRow = {
   /** Pieces above the viewer's clearance: counted, never shown. */
   above_clearance: number;
   last_at: string | null;
+  /** Pieces measured so far, and how many of them arrived with nothing to fix. */
+  reviewed: number;
+  on_brand_as_sent: number;
+  /** Mean distance from the brand (0 on brand, 100 far off); null before the first review. */
+  average_distance: number | null;
+  /** The latest distances, oldest first: the roster's sparkline. */
+  recent: number[];
 };
 
 /** One piece on a creator's line: as sent, scored by its first review. */

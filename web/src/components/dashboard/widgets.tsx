@@ -8,13 +8,14 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { priority, sinceOf } from "@/lib/queue";
 import { relativeTime } from "@/lib/review-client";
-import type { BrandEvent, ContentRow, EscalationRequest, Overview, Person, Recurring, RuleHealth } from "@/lib/types";
+import type { BrandEvent, ContentRow, CreatorRow, EscalationRequest, Overview, Person, Recurring, RuleHealth } from "@/lib/types";
+import { byWaiting, CreatorTable } from "../creators/CreatorTable";
 import { ArrowRightIcon, GaugeIcon, InboxIcon, OctagonIcon, ReviewIcon } from "../Icons";
 import { StageDots } from "../Journey";
 import { PipelineFlow } from "../home/PipelineFlow";
 import { today } from "../library/parts";
 import { PriorityPill } from "../review/Checklist";
-import { HBars, Meter, Panel, Stat, TrendBars } from "../ui";
+import { HBars, Meter, Panel, RuleCode, Stat, TrendBars } from "../ui";
 
 export type DashData = {
   overview: Overview;
@@ -24,6 +25,7 @@ export type DashData = {
   people: Map<number, Person>;
   escalations: EscalationRequest[] | null;
   events: BrandEvent[] | null;
+  creators: CreatorRow[] | null;
   demo: boolean;
 };
 
@@ -120,49 +122,12 @@ export const WIDGETS: Record<string, WidgetDef> = {
     render: (d) => <PipelineFlow counts={d.overview.content} />,
   },
   creators: {
-    title: "Your creators", blurb: "Each creator's pieces, what is waiting and how clean they arrive.", size: "half",
+    title: "Your creators", blurb: "What each creator has waiting, and how far their recent pieces drift.", size: "half",
     link: { href: "/creators", label: "All creators" },
     render: (d) => {
       if (d.demo) return <NeedsApi />;
-      if (!d.rows) return <Skeleton rows={4} />;
-      const by = new Map<number, ContentRow[]>();
-      for (const r of d.rows) by.set(r.created_by, [...(by.get(r.created_by) ?? []), r]);
-      const list = [...by.entries()].map(([id, rows]) => {
-        const checked = rows.filter((r) => r.latest_review?.status === "done");
-        const avg = checked.length ? checked.reduce((n, r) => n + (r.latest_review?.overall ?? 0), 0) / checked.length : null;
-        return { id, name: nameOf(d, id), total: rows.length, waiting: rows.filter((r) => r.status === "in_review").length,
-          back: rows.filter((r) => r.status === "changes_requested").length,
-          mustfix: rows.reduce((n, r) => n + (r.status !== "published" ? r.latest_review?.blockers ?? 0 : 0), 0), avg,
-          last: rows.map((r) => r.updated_at ?? r.created_at).sort().at(-1) ?? null };
-      }).sort((a, b) => b.waiting - a.waiting || b.total - a.total);
-      return (
-        <table className="w-full table-fixed text-sm">
-          <colgroup><col /><col className="w-14" /><col className="w-16" /><col className="w-16" /><col className="w-14" /></colgroup>
-          <thead>
-            <tr className="text-left text-[11px] font-medium uppercase tracking-wide text-subtle">
-              <th scope="col" className="pb-2 font-medium">Creator</th>
-              <th scope="col" className="pb-2 text-right font-medium">Pieces</th>
-              <th scope="col" className="pb-2 text-right font-medium">Waiting</th>
-              <th scope="col" className="pb-2 text-right font-medium">Must-fix</th>
-              <th scope="col" className="pb-2 text-right font-medium">Score</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {list.map((c) => (
-              <tr key={c.id}>
-                <td className="truncate py-2">
-                  <Link href={`/creators?id=${c.id}`} className="font-medium hover:text-accent">{c.name}</Link>
-                  <span className="block text-[11px] text-subtle">{c.back ? `${c.back} sent back · ` : ""}active {relativeTime(c.last)}</span>
-                </td>
-                <td className="py-2 text-right tabular-nums">{c.total}</td>
-                <td className="py-2 text-right tabular-nums">{c.waiting || <span className="text-subtle">0</span>}</td>
-                <td className={`py-2 text-right tabular-nums ${c.mustfix ? "font-semibold text-[var(--vt-blocker)]" : "text-subtle"}`}>{c.mustfix}</td>
-                <td className="py-2 text-right tabular-nums text-muted">{pct(c.avg)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      );
+      if (!d.creators) return <Skeleton rows={4} />;
+      return <CreatorTable rows={byWaiting(d.creators).slice(0, 7)} compact />;
     },
   },
   escalations: {
@@ -274,7 +239,7 @@ export const WIDGETS: Record<string, WidgetDef> = {
       <ul className="divide-y divide-line">
         {d.overview.top_rules.slice(0, 6).map((r) => (
           <li key={r.rule_id} className="flex items-center gap-3 py-2.5 text-sm first:pt-0 last:pb-0">
-            <code className="w-28 shrink-0 truncate text-xs text-muted" title={r.code}>{r.code}</code>
+            <RuleCode code={r.code} className="w-40" />
             <span className="min-w-0 flex-1 truncate" title={r.title}>{r.title}</span>
             <span className="tabular-nums">{r.findings}</span>
           </li>

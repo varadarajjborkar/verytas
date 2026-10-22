@@ -71,6 +71,65 @@ def _summary(issues: list[Finding], status: ContentStatus) -> str:
     return f"{', '.join(parts)}: {'; '.join(titles)}. {tail}"
 
 
+async def _points(session: AsyncSession, viewer: User, creator_ids: list[int]) -> tuple[dict[int, list[dict]], Counter]:
+    """Every reviewed piece of these creators as a point on their line, oldest first, plus how often each
+    category came up across them. One set of queries for the whole roster, not one per person."""
+    tiers = [t for t in Tier if t.rank <= viewer.clearance.rank]
+    contents = (await session.scalars(
+        select(Content).where(Content.workspace_id == viewer.workspace_id, Content.created_by.in_(creator_ids),
+                              Content.tier.in_(tiers)).order_by(Content.created_at, Content.id))).all()
+    ids = [c.id for c in contents]
+    first: dict[int, Review] = {}
+    if ids:
+        reviews = (await session.execute(
+            select(Review, ContentVersion.content_id).join(ContentVersion, Review.version_id == ContentVersion.id)
+            .where(ContentVersion.content_id.in_(ids), Review.status == ReviewStatus.done)
+            .options(selectinload(Review.findings).selectinload(Finding.decisions),
+                     selectinload(Review.findings).selectinload(Finding.rule)).order_by(Review.id))).all()
+        for r, content_id in reviews:
+            first.setdefault(content_id, r)
+    cleared = set((await session.scalars(
+        select(Escalation.finding_id).where(Escalation.workspace_id == viewer.workspace_id,
+                                            Escalation.raised_by.in_(creator_ids),
+                                            Escalation.status == "cleared"))).all())
+    events = {e.id: e.name for e in (await session.scalars(
+        select(BrandEvent).where(BrandEvent.workspace_id == viewer.workspace_id, BrandEvent.tier.in_(tiers)))).all()}
+    staff = set((await session.scalars(select(User.id).where(User.workspace_id == viewer.workspace_id,
+                                                             User.role != Role.creator))).all())
+
+    lines: dict[int, list[dict]] = {i: [] for i in creator_ids}
+    categories: Counter = Counter()
+    for c in contents:
+        review = first.get(c.id)
+        if review is None:
+            continue  # never reviewed: nothing was measured yet
+        issues = [f for f in review.findings if not _dismissed(f, staff) and f.id not in cleared]
+        categories.update(f.category for f in issues)
+        drift = sorted({f.category for f in issues if f.rule and f.rule.code in DRIFT_RULES})
+        lines[c.created_by].append({
+            "content_id": c.id, "title": c.title, "channel": c.channel, "status": c.status.value,
+            "at": (review.finished_at or c.created_at).isoformat(),
+            "distance": min(100, sum(WEIGHT[f.level] for f in issues)),
+            "blockers": sum(f.level is Level.blocker for f in issues),
+            "warnings": sum(f.level is Level.warning for f in issues),
+            "advisories": sum(f.level is Level.advisory for f in issues),
+            "drift": drift,
+            "issues": [{"category": f.category, "title": f.title, "level": f.level.value}
+                       for f in sorted(issues, key=lambda f: (-WEIGHT[f.level], f.id))[:4]],
+            "summary": _summary(issues, c.status),
+            "event": events.get(c.event_id) if c.event_id else None,
+        })
+    return lines, categories
+
+
+def _average(points: list[dict]) -> float | None:
+    return round(sum(p["distance"] for p in points) / len(points), 1) if points else None
+
+
+# The roster's sparkline: enough recent pieces to show a direction, few enough to read at a glance.
+RECENT = 10
+
+
 async def creators(session: AsyncSession, viewer: User) -> list[dict]:
     tiers = [t for t in Tier if t.rank <= viewer.clearance.rank]
     people = (await session.scalars(select(User).where(User.workspace_id == viewer.workspace_id,
@@ -87,79 +146,46 @@ async def creators(session: AsyncSession, viewer: User) -> list[dict]:
         select(Escalation.raised_by, func.count()).join(Content, Escalation.content_id == Content.id)
         .where(Escalation.workspace_id == viewer.workspace_id, Escalation.status == "open", Content.tier.in_(tiers))
         .group_by(Escalation.raised_by))).all())
+    lines, _ = await _points(session, viewer, [p.id for p in people])
     out = []
     for p in people:
         mine = [r for r in rows if r[0] == p.id]
         by_status = {r[1].value: r[2] for r in mine}
         last = max((r[3] for r in mine), default=None)
+        line = lines[p.id]
         out.append({"id": p.id, "name": p.name, "role": p.role.value, "pieces": sum(by_status.values()),
                     "by_status": by_status, "open_escalations": escalations.get(p.id, 0),
                     "above_clearance": above.get(p.id, 0),
-                    "last_at": last.isoformat() if isinstance(last, datetime) else None})
+                    "last_at": last.isoformat() if isinstance(last, datetime) else None,
+                    "reviewed": len(line), "on_brand_as_sent": sum(pt["distance"] == 0 for pt in line),
+                    "average_distance": _average(line),
+                    "recent": [pt["distance"] for pt in line[-RECENT:]]})
     return out
 
 
 async def trajectory(session: AsyncSession, viewer: User, creator: User) -> dict:
     tiers = [t for t in Tier if t.rank <= viewer.clearance.rank]
     contents = (await session.scalars(
-        select(Content).where(Content.workspace_id == viewer.workspace_id, Content.created_by == creator.id,
-                              Content.tier.in_(tiers)).order_by(Content.created_at, Content.id))).all()
-    ids = [c.id for c in contents]
+        select(Content.status).where(Content.workspace_id == viewer.workspace_id, Content.created_by == creator.id,
+                                     Content.tier.in_(tiers)))).all()
     hidden = (await session.scalar(select(func.count()).select_from(Content).where(
         Content.workspace_id == viewer.workspace_id, Content.created_by == creator.id,
         Content.tier.not_in(tiers)))) or 0
-    first: dict[int, Review] = {}
-    if ids:
-        reviews = (await session.execute(
-            select(Review, ContentVersion.content_id).join(ContentVersion, Review.version_id == ContentVersion.id)
-            .where(ContentVersion.content_id.in_(ids), Review.status == ReviewStatus.done)
-            .options(selectinload(Review.findings).selectinload(Finding.decisions),
-                     selectinload(Review.findings).selectinload(Finding.rule)).order_by(Review.id))).all()
-        for r, content_id in reviews:
-            first.setdefault(content_id, r)
-    cleared = set((await session.scalars(
-        select(Escalation.finding_id).where(Escalation.workspace_id == viewer.workspace_id,
-                                            Escalation.raised_by == creator.id, Escalation.status == "cleared"))).all())
-    events = {e.id: e.name for e in (await session.scalars(
-        select(BrandEvent).where(BrandEvent.workspace_id == viewer.workspace_id, BrandEvent.tier.in_(tiers)))).all()}
     open_esc = (await session.scalar(
         select(func.count()).select_from(Escalation).join(Content, Escalation.content_id == Content.id)
         .where(Escalation.raised_by == creator.id, Escalation.status == "open", Content.tier.in_(tiers)))) or 0
-    staff = set((await session.scalars(select(User.id).where(User.workspace_id == viewer.workspace_id,
-                                                             User.role != Role.creator))).all())
-
-    points, categories = [], Counter()
-    for c in contents:
-        review = first.get(c.id)
-        if review is None:
-            continue  # never reviewed: nothing was measured yet
-        issues = [f for f in review.findings if not _dismissed(f, staff) and f.id not in cleared]
-        categories.update(f.category for f in issues)
-        drift = sorted({f.category for f in issues if f.rule and f.rule.code in DRIFT_RULES})
-        points.append({
-            "content_id": c.id, "title": c.title, "channel": c.channel, "status": c.status.value,
-            "at": (review.finished_at or c.created_at).isoformat(),
-            "distance": min(100, sum(WEIGHT[f.level] for f in issues)),
-            "blockers": sum(f.level is Level.blocker for f in issues),
-            "warnings": sum(f.level is Level.warning for f in issues),
-            "advisories": sum(f.level is Level.advisory for f in issues),
-            "drift": drift,
-            "issues": [{"category": f.category, "title": f.title, "level": f.level.value}
-                       for f in sorted(issues, key=lambda f: (-WEIGHT[f.level], f.id))[:4]],
-            "summary": _summary(issues, c.status),
-            "event": events.get(c.event_id) if c.event_id else None,
-        })
-    sent = len(points)
+    lines, categories = await _points(session, viewer, [creator.id])
+    points = lines[creator.id]
     return {
         "person": {"id": creator.id, "name": creator.name, "role": creator.role.value},
         "stats": {
-            "pieces": len(contents), "reviewed": sent, "above_clearance": hidden,
+            "pieces": len(contents), "reviewed": len(points), "above_clearance": hidden,
             "on_brand_as_sent": sum(p["distance"] == 0 for p in points),
-            "published": sum(c.status is ContentStatus.published for c in contents),
-            "in_review": sum(c.status is ContentStatus.in_review for c in contents),
-            "changes_requested": sum(c.status is ContentStatus.changes_requested for c in contents),
+            "published": sum(s is ContentStatus.published for s in contents),
+            "in_review": sum(s is ContentStatus.in_review for s in contents),
+            "changes_requested": sum(s is ContentStatus.changes_requested for s in contents),
             "open_escalations": open_esc,
-            "average_distance": round(sum(p["distance"] for p in points) / sent, 1) if sent else None,
+            "average_distance": _average(points),
         },
         "categories": dict(categories.most_common()),
         "points": points,
