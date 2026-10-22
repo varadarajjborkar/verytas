@@ -144,6 +144,7 @@ class Prism:
         # One pool of provider slots shared by every review, so a long document
         # (one Jev call per paragraph) or a burst of reviews can't flood a provider.
         self._provider_slots = asyncio.Semaphore(settings.max_concurrent_tasks)
+        self._admission = asyncio.Semaphore(settings.max_concurrent_reviews)
         self._background: set[asyncio.Task[None]] = set()
 
     def schedule(self, review_id: int) -> None:
@@ -156,7 +157,7 @@ class Prism:
             await asyncio.gather(*self._background, return_exceptions=True)
 
     async def run(self, review_id: int) -> None:
-        async with self.sessionmaker() as session:
+        async with self._admission, self.sessionmaker() as session:
             try:
                 await self._review(session, review_id)
             except Exception as exc:  # noqa: BLE001, record the failure on the review itself

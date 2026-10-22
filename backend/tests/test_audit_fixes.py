@@ -88,3 +88,36 @@ def test_unterminated_pdf_streams_are_scanned_in_linear_time():
     started = time.perf_counter()
     assert pdf_active_content(raw) == ["JavaScript"]
     assert time.perf_counter() - started < 1
+
+
+async def test_reviews_beyond_the_admission_limit_wait_their_turn(settings, monkeypatch):
+    import asyncio
+
+    from verytas.prism.orchestrator import Prism
+
+    settings.max_concurrent_reviews = 2
+    prism = Prism(settings, sessionmaker=lambda: _NullSession())
+    running, peak, release = 0, 0, asyncio.Event()
+
+    async def held(session, review_id):
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        await release.wait()
+        running -= 1
+
+    monkeypatch.setattr(prism, "_review", held)
+    tasks = [asyncio.create_task(prism.run(i)) for i in range(5)]
+    await asyncio.sleep(0.05)
+    assert running == 2
+    release.set()
+    await asyncio.gather(*tasks)
+    assert peak == 2
+
+
+class _NullSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False

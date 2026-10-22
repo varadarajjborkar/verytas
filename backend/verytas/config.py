@@ -76,6 +76,9 @@ class Settings(BaseSettings):
 
     # Governor limits (architecture section 6.3).
     max_concurrent_tasks: int = 8
+    # Reviews that may run at once. A review holds its attachments in memory from the start, so this is
+    # what bounds memory under a burst; the rest wait their turn in order.
+    max_concurrent_reviews: int = 4
     task_timeout_s: float = 60.0
     # One blocking media step (decode a PDF, OCR an image, transcribe audio).
     # Past it the part is reported as not checked and the review moves on.
