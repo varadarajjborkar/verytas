@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     # Past it the part is reported as not checked and the review moves on.
     media_timeout_s: float = Field(180.0, gt=0)
     review_token_budget: int = 400_000
+    # Upload storage (media/storage.py): what one person and one workspace may hold, and how long an
+    # upload no version uses is kept before the hourly sweep deletes it.
+    upload_quota_user_mb: int = Field(default=1024, ge=1)
+    upload_quota_workspace_mb: int = Field(default=10 * 1024, ge=1)
+    orphan_upload_ttl_h: float = Field(default=24.0, gt=0)
 
     # Judge thresholds (architecture section 8.1). Tuned later by calibration.
     semantic_flag_threshold: float = 0.6
