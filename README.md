@@ -46,8 +46,10 @@ Without backend settings the frontend runs on clearly labelled demo data.
 
 | Service | Used for | When |
 |---|---|---|
-| Ollama Cloud (`gpt-oss:120b`, `gpt-oss:20b`) | claim extraction, explanations, minimal-edit fixes, Ask Verytas | when `OLLAMA_API_KEY` is set |
-| TypeSafe Jev (`jev-1.13.0`) | semantic rule judgement, intent checks | when `TYPESAFE_API_KEY` is set; otherwise an offline heuristic, shown as "degraded" |
+| Ollama Cloud (`gpt-oss:120b`, `gpt-oss:20b`) | claim extraction, explanations, minimal-edit fixes, Ask Verytas; also the semantic judge (`gpt-oss:20b`) when no Jev key is set | when `OLLAMA_API_KEY` is set |
+| TypeSafe Jev (`jev-1.13.0`) | semantic rule judgement, intent checks | when `TYPESAFE_API_KEY` is set (optional) |
+
+With neither key, semantic rules fall back to an offline heuristic and the scorecard shows them as "degraded".
 | Anthropic Claude | optional alternative LLM backend | only with `VERYTAS_LLM_BACKEND=claude` |
 | Sentry | error monitoring (no request bodies, no PII) | only when `SENTRY_DSN` is set |
 
