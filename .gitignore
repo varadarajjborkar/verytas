@@ -33,3 +33,6 @@ cred.txt
 cred*.txt
 *.key
 *.egg-info/
+
+# Black-box simulator memory and reports (local)
+blackbox/.runs/
