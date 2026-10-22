@@ -80,7 +80,7 @@ export const WIDGETS: Record<string, WidgetDef> = {
             <Link key={t.label} href={t.href} className="vt-card vt-lift group p-4">
               <span className="flex items-center gap-1.5 text-xs font-medium text-muted"><t.Icon size={14} className={t.tone} />{t.label}</span>
               <span className="mt-1.5 block text-[1.6rem] font-semibold leading-none tracking-tight tabular-nums">{t.value}</span>
-              <span className="mt-2 block truncate text-xs text-subtle">{t.hint}</span>
+              <span className="mt-2 line-clamp-2 text-xs leading-5 text-subtle">{t.hint}</span>
             </Link>
           ))}
         </div>

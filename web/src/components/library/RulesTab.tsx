@@ -82,11 +82,12 @@ export function RulesTab({ rules, editable, onChanged, initialState, initialQuer
                       className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-sunken/50">
                       <RuleCode code={r.code} className="hidden w-40 sm:block" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{r.title}</span>
-                        <span className="block truncate text-xs text-subtle">
+                        {/* On a phone the title wraps and the source steps aside, so a row reads at a glance. */}
+                        <span className="block text-sm font-medium sm:truncate">{r.title}</span>
+                        <span className="mt-0.5 block truncate text-xs text-subtle">
                           <span className="font-mono sm:hidden">{r.code} · </span>
                           {r.kind === "deterministic" ? "Checked by rules" : "Judged by the model"}{r.version > 1 ? ` · v${r.version}` : ""}
-                          {r.source_ref ? ` · ${r.source_ref}` : ""}
+                          {r.source_ref && <span className="hidden sm:inline"> · {r.source_ref}</span>}
                         </span>
                       </span>
                       <Badge tone={SEVERITY[r.severity].tone}>{SEVERITY[r.severity].label}</Badge>

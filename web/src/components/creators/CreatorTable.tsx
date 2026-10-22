@@ -14,23 +14,24 @@ export function byWaiting(rows: CreatorRow[]): CreatorRow[] {
 export function CreatorTable({ rows, compact = false }: { rows: CreatorRow[]; compact?: boolean }) {
   const cell = compact ? "py-2" : "py-3";
   return (
-    <table className={`w-full table-fixed text-sm ${compact ? "" : "min-w-[40rem]"}`}>
+    // On a phone the full table drops to the compact columns (who, waiting, drift) instead of scrolling sideways.
+    <table className={`w-full table-fixed text-sm ${compact ? "" : "sm:min-w-[40rem]"}`}>
       <colgroup>
         <col />
-        {!compact && <><col className="w-20" /><col className="w-24" /></>}
+        {!compact && <><col className="hidden w-20 sm:table-column" /><col className="hidden w-24 sm:table-column" /></>}
         <col className="w-20" />
-        {!compact && <col className="w-20" />}
-        <col className={compact ? "w-32" : "w-44"} />
+        {!compact && <col className="hidden w-20 sm:table-column" />}
+        <col className={compact ? "w-32" : "w-32 sm:w-44"} />
       </colgroup>
       <thead>
         <tr className={`text-left text-[11px] font-medium uppercase tracking-wide text-subtle ${compact ? "" : "border-b border-line"}`}>
           <th scope="col" className={`font-medium ${compact ? "pb-2 pl-2" : "px-4 py-2.5"}`}>Creator</th>
           {!compact && <>
-            <th scope="col" className="px-2 py-2.5 text-right font-medium">Pieces</th>
-            <th scope="col" className="px-2 py-2.5 text-right font-medium" title="Pieces with nothing to fix when first sent">On brand</th>
+            <th scope="col" className="hidden px-2 py-2.5 text-right font-medium sm:table-cell">Pieces</th>
+            <th scope="col" className="hidden px-2 py-2.5 text-right font-medium sm:table-cell" title="Pieces with nothing to fix when first sent">On brand</th>
           </>}
           <th scope="col" className={`text-right font-medium ${compact ? "pb-2" : "px-2 py-2.5"}`}>Waiting</th>
-          {!compact && <th scope="col" className="px-2 py-2.5 text-right font-medium">Asked</th>}
+          {!compact && <th scope="col" className="hidden px-2 py-2.5 text-right font-medium sm:table-cell">Asked</th>}
           <th scope="col" className={`text-right font-medium ${compact ? "pb-2 pr-2" : "px-4 py-2.5"}`} title="Distance from the brand, piece by piece">Drift</th>
         </tr>
       </thead>
@@ -50,14 +51,14 @@ export function CreatorTable({ rows, compact = false }: { rows: CreatorRow[]; co
                 </span>
               </td>
               {!compact && <>
-                <td className={`${cell} px-2 text-right tabular-nums`}>{c.pieces}</td>
-                <td className={`${cell} px-2 text-right tabular-nums text-muted`}>
+                <td className={`${cell} hidden px-2 text-right tabular-nums sm:table-cell`}>{c.pieces}</td>
+                <td className={`${cell} hidden px-2 text-right tabular-nums text-muted sm:table-cell`}>
                   {c.reviewed ? <>{c.on_brand_as_sent}<span className="text-subtle"> / {c.reviewed}</span></> : <span className="text-subtle">-</span>}
                 </td>
               </>}
               <td className={`${cell} text-right tabular-nums ${compact ? "" : "px-2"}`}>{c.by_status.in_review || <span className="text-subtle">0</span>}</td>
               {!compact && (
-                <td className={`${cell} px-2 text-right tabular-nums ${c.open_escalations ? "font-semibold text-accent" : "text-subtle"}`}>{c.open_escalations}</td>
+                <td className={`${cell} hidden px-2 text-right tabular-nums sm:table-cell ${c.open_escalations ? "font-semibold text-accent" : "text-subtle"}`}>{c.open_escalations}</td>
               )}
               <td className={`${cell} ${compact ? "pr-2" : "px-4"}`}>
                 <span className="flex items-center justify-end gap-2.5">

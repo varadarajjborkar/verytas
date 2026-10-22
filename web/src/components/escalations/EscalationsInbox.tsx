@@ -123,7 +123,7 @@ function Row({ r, focused, approver, decider, onDone }: {
   r: EscalationRequest; focused: boolean; approver: boolean; decider: boolean; onDone: () => void;
 }) {
   return (
-    <li id={`esc-${r.id}`} className={`grid gap-5 px-5 py-5 transition-colors md:grid-cols-2 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1fr)_15rem] ${
+    <li id={`esc-${r.id}`} className={`grid gap-4 px-4 py-5 transition-colors md:grid-cols-2 md:gap-5 md:px-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1fr)_15rem] ${
       focused ? "bg-accent/[0.05]" : ""}`}>
       <Cell label="The content">
         <Link href={`/review?id=${r.content.id}`} className="block truncate text-sm font-semibold hover:text-accent">{r.content.title}</Link>
@@ -183,7 +183,8 @@ function Row({ r, focused, approver, decider, onDone }: {
 
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="min-w-0">
+    // Stacked on a phone, each part gets a rule above it so four sections don't run together.
+    <div className="min-w-0 border-t border-dashed border-line pt-4 first:border-0 first:pt-0 md:border-0 md:pt-0">
       <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-subtle xl:hidden">{label}</p>
       {children}
     </div>

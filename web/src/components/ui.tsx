@@ -63,7 +63,7 @@ export function Stat({ label, value, hint }: { label: string; value: ReactNode; 
     <div className="vt-card vt-lift p-4">
       <p className="text-xs font-medium text-muted">{label}</p>
       <p className="mt-1.5 text-[1.6rem] font-semibold leading-none tracking-tight tabular-nums">{value}</p>
-      {hint && <p className="mt-2 truncate text-xs text-subtle" title={hint}>{hint}</p>}
+      {hint && <p className="mt-2 line-clamp-2 text-xs leading-5 text-subtle" title={hint}>{hint}</p>}
     </div>
   );
 }
