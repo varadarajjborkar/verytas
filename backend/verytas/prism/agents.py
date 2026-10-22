@@ -183,6 +183,8 @@ class ReviewRun:
     # presentation agent's crop and safe-zone checks, and the "at a glance" view.
     layouts: dict[str, dict[str, Any]] = field(default_factory=dict)
     glance: list[str] = field(default_factory=list)
+    # The caption is longer than the channel shows before "...more", so the first screen can read differently.
+    caption_folded: bool = False
     sources: list[Source] = field(default_factory=list)
     findings: list[RawFinding] = field(default_factory=list)
     outcomes: list[TaskOutcome] = field(default_factory=list)

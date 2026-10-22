@@ -6,8 +6,12 @@ in the caption and the punchline in the image, a phrase that is harmless in
 English and rude in Hindi. Each layer starts from a small window and grows:
 
     1. local      two or three paragraphs at a time, per source
-    2. document   the whole post across all its text, with layer 1's candidates
+    2. document   the whole post across all its text
     3. cross-modal caption + text in images + what the images show
+
+The layers are independent reads and run side by side; a layer that would see exactly what another
+sees is skipped (a short post is one window, a text-only post has nothing cross-modal). Every
+candidate, from whichever layer, faces the same judge, so nothing rests on one layer having seen another.
 
 A layer proposes candidates; a candidate survives only if it quotes text that
 exists in the named source and an independent judge question agrees that a
@@ -63,27 +67,23 @@ class LayerTask:
     fast = False
     schema = Implications
 
-    def __init__(self, layer: str, brief: str, blocks: str, prior: list[Implication]) -> None:
+    def __init__(self, layer: str, brief: str, blocks: str) -> None:
         self.name = f"onion_{layer}"
         self.layer = layer
         self.brief = brief
         self.blocks = blocks
-        self.prior = prior
         self.system = _SYSTEM + {
             "local": " This pass reads small windows of a few paragraphs each.",
-            "document": " This pass reads the whole post at once. Earlier passes saw only small windows; their "
-                        "candidates are listed. Confirm the ones the full context supports, and add anything only "
-                        "visible across the whole post (a setup far from its punchline, a running joke at "
-                        "someone's expense).",
+            "document": " This pass reads the whole post at once. Report what the full context supports, "
+                        "including anything only visible across the whole post (a setup far from its punchline, a "
+                        "running joke at someone's expense).",
             "cross_modal": " This pass reads the caption together with the text inside the images and a "
                            "description of each image. Report meaning that comes from the combination, which "
                            "neither part has alone.",
         }[layer]
 
     def user_content(self) -> str:
-        prior = "\n".join(f"- [{p.source}] \"{p.quote}\": {p.meaning}" for p in self.prior) or "none"
-        return (f"<brand>\n{self.brief}\n</brand>\n\n{self.blocks}\n\n<earlier_candidates>\n{prior}\n"
-                "</earlier_candidates>\n\nReturn {\"items\": []} if nothing qualifies.")
+        return f"<brand>\n{self.brief}\n</brand>\n\n{self.blocks}\n\nReturn {{\"items\": []}} if nothing qualifies."
 
     def heuristic(self) -> Implications:
         return Implications(items=[])
@@ -116,9 +116,9 @@ async def onion_agent(run: ReviewRun, node: AgentNode) -> None:
     brief = _brief(run)
     by_id = {s.id: s for s in texts}
 
-    async def layer(name: str, label: str, blocks: str, prior: list[Implication]) -> list[Implication]:
+    async def layer(name: str, label: str, blocks: str) -> list[Implication]:
         async def go(child: AgentNode) -> list[Implication]:
-            result = await run.llm.run(LayerTask(name, brief, blocks, prior))
+            result = await run.llm.run(LayerTask(name, brief, blocks))
             kept = [i for i in result.items if i.confidence >= _MIN_CONFIDENCE and i.source in by_id
                     and i.quote.strip() and i.quote in by_id[i.source].text]
             child.detail = {"proposed": len(result.items), "kept": len(kept)}
@@ -135,19 +135,22 @@ async def onion_agent(run: ReviewRun, node: AgentNode) -> None:
         run.partial.add("messaging")
         run.notes.append("context layers read the first part of long text only"
                          + (f" ({', '.join(long[:3])})" if long else ""))
-    local = await layer("local", "Layer 1: paragraphs", local_blocks, [])
-    whole = await layer("document", "Layer 2: whole post", "\n\n".join(_block(s) for s in texts), local)
-    candidates = _merge(local, whole)
-
-    if run.scenes or run.glance:
+    whole_blocks = "\n\n".join(_block(s) for s in texts)
+    passes = [layer("document", "Layer 2: whole post", whole_blocks)]
+    # Windows add nothing when every source is a single window: layer 1 would read layer 2's text.
+    if any(len(_windows(s)) > 1 for s in texts):
+        passes.append(layer("local", "Layer 1: paragraphs", local_blocks))
+    # The cross-modal read needs something beyond the text: media, or a first screen cut at "...more".
+    if run.scenes or run.layouts or run.caption_folded:
         glance = "<at_a_glance>\n" + "\n".join(run.glance) + "\n</at_a_glance>\n\n" if run.glance else ""
         scenes = glance + "\n\n".join(
             f'<image id="{iid}">\nText in image: {s.get("text_in_image") or "(none)"}\n'
             f'Shows: {s.get("description")}\nTone: {s.get("tone")}\nFlags: {"; ".join(s.get("risky_elements") or [])}'
             f"\n</image>" for iid, s in run.scenes.items())
-        cross = await layer("cross_modal", "Layer 3: caption with images",
-                            "\n\n".join(_block(s) for s in texts) + "\n\n" + scenes, candidates)
-        candidates = _merge(candidates, cross)
+        passes.append(layer("cross_modal", "Layer 3: caption with images", whole_blocks + "\n\n" + scenes))
+    candidates: list[Implication] = []
+    for found in await asyncio.gather(*passes):
+        candidates = _merge(candidates, found)
 
     # The literal checks have all finished by now (plan runs first). A reading that only restates
     # one of them on the same words would be a second finding for one issue: skip it before the judge.
