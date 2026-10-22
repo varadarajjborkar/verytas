@@ -7,6 +7,7 @@ import { ApiError, creatorTrack, listCreators, relativeTime } from "@/lib/review
 import type { CreatorRow, CreatorTrack } from "@/lib/types";
 import { ChevronIcon } from "../Icons";
 import { Panel } from "../ui";
+import { byWaiting, CreatorTable } from "./CreatorTable";
 import { DriftChart } from "./DriftChart";
 
 const CATEGORY: Record<string, string> = {
@@ -38,40 +39,7 @@ function Roster() {
   if (err) return <Failure err={err} />;
   if (!rows) return <div className="h-64 animate-pulse rounded-[14px] bg-sunken" aria-busy="true" aria-label="Loading" />;
   if (!rows.length) return <p className="rounded-xl bg-sunken px-4 py-6 text-center text-sm text-muted">No creators yet.</p>;
-  const sorted = [...rows].sort((a, b) => (b.by_status.in_review ?? 0) - (a.by_status.in_review ?? 0) || b.pieces - a.pieces);
-  return (
-    <div className="vt-card overflow-x-auto">
-      <table className="w-full min-w-[34rem] table-fixed text-sm">
-        <colgroup><col /><col className="w-20" /><col className="w-20" /><col className="w-24" /><col className="w-24" /><col className="w-28" /></colgroup>
-        <thead>
-          <tr className="border-b border-line text-left text-[11px] font-medium uppercase tracking-wide text-subtle">
-            <th scope="col" className="px-4 py-2.5 font-medium">Creator</th>
-            <th scope="col" className="px-2 py-2.5 text-right font-medium">Pieces</th>
-            <th scope="col" className="px-2 py-2.5 text-right font-medium">Waiting</th>
-            <th scope="col" className="px-2 py-2.5 text-right font-medium">Sent back</th>
-            <th scope="col" className="px-2 py-2.5 text-right font-medium">Asked</th>
-            <th scope="col" className="px-4 py-2.5 text-right font-medium">Active</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-line">
-          {sorted.map((c) => (
-            <tr key={c.id} className="transition-colors hover:bg-sunken/60">
-              <td className="truncate px-4 py-3">
-                <Link href={`/creators?id=${c.id}`} className="font-medium hover:text-accent">{c.name}</Link>
-              </td>
-              <td className="px-2 py-3 text-right tabular-nums">{c.pieces}</td>
-              <td className="px-2 py-3 text-right tabular-nums">{c.by_status.in_review || <span className="text-subtle">0</span>}</td>
-              <td className="px-2 py-3 text-right tabular-nums">{c.by_status.changes_requested || <span className="text-subtle">0</span>}</td>
-              <td className={`px-2 py-3 text-right tabular-nums ${c.open_escalations ? "font-semibold text-accent" : "text-subtle"}`}>{c.open_escalations}</td>
-              <td className="px-4 py-3 text-right text-muted">
-                {c.last_at ? relativeTime(c.last_at) : c.above_clearance ? "above your clearance" : "never"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  return <div className="vt-card overflow-x-auto"><CreatorTable rows={byWaiting(rows)} /></div>;
 }
 
 function Profile({ id }: { id: number }) {
@@ -92,7 +60,7 @@ function Profile({ id }: { id: number }) {
   const top = Object.entries(categories).slice(0, 4);
   const tiles = [
     { label: "On brand as sent", value: stats.reviewed ? `${stats.on_brand_as_sent} of ${stats.reviewed}` : "None yet" },
-    { label: "Average distance", value: stats.average_distance == null ? "n/a" : String(stats.average_distance) },
+    { label: "Average distance (0 is on brand)", value: stats.average_distance == null ? "n/a" : `${stats.average_distance} / 100` },
     { label: "Sent back now", value: String(stats.changes_requested) },
     { label: "Asked the brand team", value: String(stats.open_escalations) },
   ];

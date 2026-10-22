@@ -1,7 +1,7 @@
 "use client";
 
 import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ApiError, listContents, listEscalations, listEvents, listPeople } from "@/lib/review-client";
+import { ApiError, listContents, listCreators, listEscalations, listEvents, listPeople } from "@/lib/review-client";
 import { useStored, writeStored } from "@/lib/stored";
 import type { BrandEvent, EscalationRequest, Overview, Person, Recurring, RuleHealth } from "@/lib/types";
 import { CloseIcon, GripIcon, PlusIcon } from "../Icons";
@@ -46,7 +46,7 @@ export function ManagerDashboard({ overview, recurring, health }: { overview: Ov
   const layout = useMemo(() => parse(stored) ?? DEFAULT_LAYOUT, [stored]);
   const [editing, setEditing] = useState(false);
   const [data, setData] = useState<Omit<DashData, "overview" | "recurring" | "health">>({
-    rows: null, people: new Map(), escalations: null, events: null, demo: false });
+    rows: null, people: new Map(), escalations: null, events: null, creators: null, demo: false });
 
   useEffect(() => {
     let live = true;
@@ -58,6 +58,8 @@ export function ManagerDashboard({ overview, recurring, health }: { overview: Ov
       .catch(() => live && setData((d) => ({ ...d, escalations: [] })));
     listEvents().then((e: BrandEvent[]) => live && setData((d) => ({ ...d, events: e })))
       .catch(() => live && setData((d) => ({ ...d, events: [] })));
+    listCreators().then((c) => live && setData((d) => ({ ...d, creators: c })))
+      .catch(() => live && setData((d) => ({ ...d, creators: [] })));
     return () => { live = false; };
   }, []);
   const d: DashData = { overview, recurring, health, ...data };
