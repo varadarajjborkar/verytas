@@ -198,6 +198,25 @@ async def create_content(body: ContentIn, session: Session, user: Writer, prism:
                      review_id=review_id)
 
 
+
+def _splice(text: str, edits: list[tuple[int, int, str, int]]) -> tuple[str, list[tuple[int, int, str, int]]]:
+    """Apply sorted, non-overlapping edits (start, end, replacement, finding id); return the text and the
+    edits as applied.
+
+    A deletion takes one neighbouring space with it, so the sentences around it don't end up two spaces
+    apart (or the text with a trailing space), unless another edit starts right there."""
+    starts = {e[0] for e in edits}
+    done = []
+    for start, end, replacement, fid in reversed(edits):  # right to left keeps earlier offsets valid
+        if not replacement:
+            if text[end:end + 1] == " " and end not in starts:
+                end += 1
+            elif end >= len(text) and text[start - 1:start] == " " and start > 0:
+                start -= 1
+        text = text[:start] + replacement + text[end:]
+        done.append((start, end, replacement, fid))
+    return text, list(reversed(done))
+
 async def _new_version(session, user: User, content: Content, body: str, attachments: dict | None,
                        notes: dict | None = None) -> ContentVersion:
     if content.status in (S.published, S.withdrawn):
@@ -289,11 +308,9 @@ async def apply_fixes(content_id: int, session: Session, user: Writer, prism: Pr
         pairs = ", ".join(f"#{a} and #{b}" for a, b in conflicts)
         raise HTTPException(status.HTTP_409_CONFLICT,
                             f"fixes overlap for findings {pairs}; dismiss one of each pair or edit the text directly")
-    body, applied = version.body, []
-    for start, end, replacement, fid in reversed(ordered):  # right to left keeps earlier offsets valid
-        applied.append({"finding_id": fid, "start": start, "end": end, "before": body[start:end],
-                        "after": replacement})
-        body = body[:start] + replacement + body[end:]
+    body, spliced = _splice(version.body, ordered)
+    applied = [{"finding_id": fid, "start": start, "end": end, "before": version.body[start:end], "after": rep}
+               for start, end, rep, fid in reversed(spliced)]
 
     new = await _new_version(session, user, content, body, None)
     session.add(Change(from_version_id=version.id, to_version_id=new.id, diff=list(reversed(applied))))
@@ -757,9 +774,7 @@ async def resubmit(content_id: int, body: ResubmitIn, session: Session, user: Wr
                 skipped.append(f"finding {e[3]}: overlaps the fix for finding {kept[-1][3]}")
                 continue
             kept.append(e)
-        for start, end, replacement, _ in reversed(kept):
-            text = text[:start] + replacement + text[end:]
-        edits = kept
+        text, edits = _splice(text, kept)
 
     notes = (body.creator_notes.model_dump(exclude_none=True) if body.creator_notes
              else dict(version.creator_notes or {}))

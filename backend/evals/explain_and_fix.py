@@ -32,7 +32,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from verytas.checks.base import RawFinding, RuleView
+from verytas.checks.base import RawFinding, RuleView, SuggestedEdit
 from verytas.config import Settings
 from verytas.prism import suggest
 from verytas.prism.orchestrator import Prism
@@ -67,8 +67,12 @@ GRADE = {
 
 
 def load_cases() -> tuple[list[dict[str, Any]], dict[str, RuleView]]:
-    rules = {r["code"]: RuleView(id=i, code=r["code"], category="eval", kind="semantic", severity="should",
-                                 title=r["title"], text=r["text"])
+    # Category and the brand's examples as the demo brand has them (verytas/showcase.py), since production
+    # shows the examples to the model.
+    rules = {r["code"]: RuleView(id=i, code=r["code"], category=r.get("category", "eval"), kind="semantic",
+                                 severity="should", title=r["title"], text=r["text"],
+                                 good_examples=tuple(r.get("good_examples", ())),
+                                 bad_examples=tuple(r.get("bad_examples", ())))
              for i, r in enumerate(json.loads(RULES.read_text()), start=1)}
     return [json.loads(line) for line in DATA.read_text().splitlines() if line.strip()], rules
 
@@ -135,7 +139,7 @@ class _Fast:
 
 
 def _config(spec: str) -> tuple[str, bool]:
-    model, _, think = spec.partition("@")
+    model, _, think = spec.split("#")[0].partition("@")
     return model, think == "low"
 
 
@@ -180,12 +184,16 @@ async def _score(spec: str, case: dict[str, Any], f: RawFinding, fix: dict[str, 
                  graders: list[OllamaJudge]) -> dict[str, Any]:
     rule = rules.get(case["rule_code"])
     original = (fix or {}).get("original", "").strip()
-    proposed = (fix or {}).get("proposed", "").strip()
+    action = ((fix or {}).get("action") or "").strip().lower()
+    # As production reads it: a deletion is the removal, whatever text the model put beside it.
+    proposed = "" if action == "delete" else (fix or {}).get("proposed", "").strip()
     row: dict[str, Any] = {
         "config": spec, "id": case["id"], "rule": case["rule_code"], "expect": case["expect"],
         "batch_s": round(secs, 2), "error": err, "answered": fix is not None,
         "explanation": f.explanation if fix else None, "original": original, "proposed": proposed,
-        "offered": bool(original and proposed and original != proposed),
+        "action": action or None,
+        "offered": bool(original and original != proposed and action != "none"
+                        and (proposed or action == "delete")),
         "shown": f.suggestion is not None,
         "intent": f.suggestion.intent_preserved if f.suggestion else None,
         **mechanical(case, rule, proposed),
@@ -207,7 +215,7 @@ async def _grade(row: dict[str, Any], case: dict[str, Any], f: RawFinding, rule:
     questions = {"explains": GRADE["explains"]}
     if row["shown"]:
         before, after = suggest._in_sentence(f, row["original"], row["proposed"])
-        state |= {"original": before, "revised": after}
+        state |= {"original": before, "revised": after or "(removed)"}
         questions |= {"resolves": GRADE["resolves"], "natural": GRADE["natural"]}
     for g in graders:
         try:
@@ -249,7 +257,7 @@ async def regrade() -> None:
                 print(f"{path.name}: regraded {len(todo)} case(s), {left} still failing", flush=True)
 
 
-async def run(specs: list[str], repeats: int, limit: int | None, pause: float) -> None:
+async def run(specs: list[str], repeats: int, limit: int | None, pause: float, tag: str | None = None) -> None:
     cases, rules = load_cases()
     cases = cases[:limit] if limit else cases
     RESULTS.mkdir(exist_ok=True)
@@ -259,13 +267,13 @@ async def run(specs: list[str], repeats: int, limit: int | None, pause: float) -
         settings = Settings(llm_mode="live", keys_dir=Path(keys), judge_resamples=2)
         assert settings.ollama_api_key, "OLLAMA_API_KEY is needed in backend/.env"
         for r in range(repeats):
-            for spec in specs:
+            for spec in (f"{s}#{tag}" if tag else s for s in specs):
                 graders = [OllamaJudge(settings.ollama_api_key.get_secret_value(), model=m,
                                        base_url=settings.ollama_base_url, meter=UsageMeter(10**9), resamples=0)
                            for m in GRADERS]
                 t0 = time.perf_counter()
                 rows = await run_once(spec, cases, rules, settings, graders)
-                out = RESULTS / f"{spec.replace(':', '_').replace('@', '-')}.jsonl"
+                out = RESULTS / f"{spec.replace(':', '_').replace('@', '-').replace('#', '-')}.jsonl"
                 with out.open("a") as fh:
                     for row in rows:
                         fh.write(json.dumps(row | {"repeat": f"{stamp}-{r}"}, ensure_ascii=False) + "\n")
@@ -344,6 +352,48 @@ def report() -> str:
     return text
 
 
+GATE_DATA = HERE / "data" / "fix_gate.jsonl"
+# The gate production used before the rule-aware one, kept so the two are measured on the same pairs.
+OLD_GATE = {"same_intent": Question(
+    "noul", "Does the revised text keep the original's message, call to action and audience?",
+    {"true": "A reader would take away the same point and act the same way.",
+     "false": "The meaning, offer, audience or call to action changed."})}
+
+
+async def gate() -> str:
+    """The fix gate on its own, against fixes whose right verdict is known (evals/data/fix_gate.jsonl):
+    good fixes that remove what a rule forbids, and traps that keep a dig, drop the offer, add a number or
+    keep the pressure. Scores the old single question and the rule-aware pair with the production judge."""
+    _, rules = load_cases()
+    pairs = [json.loads(line) for line in GATE_DATA.read_text().splitlines() if line.strip()]
+    rows = []
+    with tempfile.TemporaryDirectory() as keys:
+        settings = Settings(llm_mode="live", keys_dir=Path(keys), judge_resamples=2)
+        assert settings.ollama_api_key, "OLLAMA_API_KEY is needed in backend/.env"
+        judge = Prism(settings, None).guarded_providers(Redactor(CONFIDENTIAL))[0]  # type: ignore[arg-type]
+        for pair in pairs:  # one at a time: the free plan refuses bursts
+            f = RawFinding(unit_id=pair["id"], category="eval", title=pair["why"], explanation="", confidence=0.9,
+                           checker="eval", rule_code=pair["rule_code"], quote=pair["original"])
+            old_judged = await judge.ask({"original": pair["original"], "revised": pair["revised"] or "(removed)"},
+                                         OLD_GATE)
+            # Both columns get the code checks that run before any judge, so the judge questions are what differ.
+            numbers_ok = not suggest._new_numbers(pair["original"], pair["revised"])
+            old = numbers_ok and old_judged["same_intent"].p_yes >= suggest.INTENT_FLOOR
+            edit = SuggestedEdit(pair["original"], pair["revised"], "")
+            new = numbers_ok and bool(await suggest._check_intent([(f, edit)], judge, rules))
+            rows.append(pair | {"old": old, "new": new})
+    (RESULTS / "fix_gate.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+    good = [r for r in rows if r["should_pass"]]
+    bad = [r for r in rows if not r["should_pass"]]
+    lines = ["| Gate | Good fixes let through | Bad fixes blocked |", "|---|---|---|"]
+    for name in ("old", "new"):
+        lines.append(f"| {name} | {sum(r[name] for r in good)} of {len(good)} | "
+                     f"{sum(not r[name] for r in bad)} of {len(bad)} |")
+    wrong = [f"- {r['id']} ({r['why']}): new gate {'passed' if r['new'] else 'blocked'} it" for r in rows
+             if r["new"] != r["should_pass"]]
+    return "\n".join(lines + ([""] + wrong if wrong else []))
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="evals.explain_and_fix")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -352,13 +402,18 @@ def main() -> None:
     r.add_argument("--repeats", type=int, default=1)
     r.add_argument("--limit", type=int, default=None)
     r.add_argument("--pause", type=float, default=30, help="seconds between runs, to stay under rate limits")
+    r.add_argument("--tag", help="names a variant of the pipeline (model#tag), so before and after sit side by side")
     sub.add_parser("report")
     sub.add_parser("regrade", help="retry failed grades from saved answers")
+    sub.add_parser("gate", help="score the fix gate alone on fixes with known verdicts")
     args = p.parse_args()
+    if args.cmd == "gate":
+        print(asyncio.run(gate()))
+        return
     if args.cmd == "regrade":
         asyncio.run(regrade())
     if args.cmd == "run":
-        asyncio.run(run(args.models, args.repeats, args.limit, args.pause))
+        asyncio.run(run(args.models, args.repeats, args.limit, args.pause, args.tag))
     print(report())
 
 
