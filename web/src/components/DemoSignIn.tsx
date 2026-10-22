@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRightIcon } from "./Icons";
+import { ArrowRightIcon, CalendarIcon, InfoIcon, RefreshIcon, UsersIcon } from "./Icons";
+import { SignInShell } from "./SignInShell";
 
 type Person = { key: string; name: string; side: "manager" | "creator"; title: string; blurb: string };
 
@@ -40,42 +41,40 @@ export function DemoSignIn({ brand, resetsOn, people, next }: { brand: string; r
   // One locale and zone on server and browser alike, or the date renders twice differently and hydration fails.
   const reset = new Date(`${resetsOn}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 py-4 md:py-10">
-      <header className="vt-stagger flex flex-col gap-3">
-        <span aria-hidden className="vt-mark grid h-10 w-10 place-items-center rounded-xl text-base font-bold">V</span>
-        <h1 className="text-[1.9rem] font-semibold leading-tight tracking-tight">Try Verytas as someone at {brand}</h1>
-        <p className="max-w-2xl text-sm leading-6 text-muted">
-          Verytas checks content before it is published: claims against approved facts, the brand&apos;s words and
-          voice, artwork, accessibility and confidential terms. Every issue says why and cites its source, and people
-          make the final call. {brand} is a made-up online learning brand with three weeks of work already in it.
+    <SignInShell>
+      <header className="flex flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-accent">Live demo</p>
+        <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Pick someone at {brand} to be</h1>
+        <p className="max-w-xl text-sm leading-6 text-muted">
+          {brand} is a made-up online learning brand with three weeks of work already in it. Each person below is a
+          real account with their own role, so you see exactly what they would.
         </p>
       </header>
 
       {SIDES.map(({ side, label, lead }) => (
         <section key={side} aria-labelledby={`side-${side}`} className="flex flex-col gap-3">
-          <div>
+          <div className="flex items-baseline justify-between gap-3">
             <h2 id={`side-${side}`} className="text-sm font-semibold">{label}</h2>
-            <p className="text-xs text-muted">{lead}</p>
+            <p className="hidden text-xs text-subtle sm:block">{lead}</p>
           </div>
           <ul className="vt-stagger grid gap-2.5 sm:grid-cols-2">
             {people.filter((p) => p.side === side).map((p) => (
               <li key={p.key}>
                 <button type="button" onClick={() => enter(p.key)} disabled={busy !== null}
-                  className="vt-card vt-lift group flex h-full w-full items-start gap-3 p-4 text-left disabled:opacity-60">
-                  <span aria-hidden className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-sunken text-xs font-semibold text-muted">
+                  className="vt-lift group flex h-full w-full items-start gap-3 rounded-[14px] border border-line bg-raised p-4 text-left shadow-[var(--vt-shadow)] hover:border-accent/60 disabled:opacity-60">
+                  <span aria-hidden className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-xs font-semibold ${
+                    side === "manager" ? "bg-accent/12 text-accent" : "bg-[var(--vt-ok-bg)] text-[var(--vt-ok)]"}`}>
                     {p.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2">
-                      <span className="truncate text-sm font-semibold">{p.name}</span>
-                      <span className="truncate text-xs text-subtle">{p.title}</span>
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-muted">{p.blurb}</span>
+                    <span className="block truncate text-sm font-semibold">{p.name}</span>
+                    <span className="block truncate text-xs text-subtle">{p.title}</span>
+                    <span className="mt-1.5 block text-xs leading-5 text-muted">{p.blurb}</span>
                   </span>
                   {busy === p.key ? (
                     <span role="img" aria-label="Signing in" className="mt-1 h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
                   ) : (
-                    <ArrowRightIcon size={15} className="mt-1 shrink-0 text-subtle transition group-hover:translate-x-0.5 group-hover:text-accent" />
+                    <ArrowRightIcon size={16} className="mt-1 shrink-0 text-subtle transition group-hover:translate-x-0.5 group-hover:text-accent" />
                   )}
                 </button>
               </li>
@@ -86,15 +85,19 @@ export function DemoSignIn({ brand, resetsOn, people, next }: { brand: string; r
 
       {error && <p role="alert" className="rounded-xl bg-[var(--vt-blocker-bg)] px-4 py-3 text-sm text-[var(--vt-blocker)]">{error}</p>}
 
-      <section aria-labelledby="demo-notes" className="border-l-2 border-accent/50 pl-4 text-xs leading-5 text-muted">
-        <h2 id="demo-notes" className="mb-1.5 text-sm font-semibold text-ink">Before you start</h2>
-        <ul className="flex list-disc flex-col gap-1 pl-4 marker:text-subtle">
-          <li>This is one shared demo. What you add or change (posts, decisions, rules) is saved and other visitors see it too.</li>
-          <li>Switch to another person at any time with <span className="font-medium text-ink">Switch account</span> at the bottom of the sidebar. Your work stays where you left it.</li>
-          <li>All data is reset to the starting state every 14 days. The next reset is on <span className="font-medium text-ink">{reset}</span>, so anything you add disappears then.</li>
-          <li>Please don&apos;t upload anything private. Text and images are checked on this server; model calls go to an AI service after confidential terms are redacted.</li>
+      <section aria-labelledby="demo-notes" className="mt-auto rounded-2xl bg-sunken/70 p-4">
+        <h2 id="demo-notes" className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-subtle">Good to know</h2>
+        <ul className="grid gap-3 text-xs leading-5 text-muted sm:grid-cols-2">
+          <li className="flex gap-2.5"><UsersIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
+            <span>One shared demo: what you add or change is saved, and other visitors see it too.</span></li>
+          <li className="flex gap-2.5"><RefreshIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
+            <span>Be someone else any time with <span className="font-medium text-ink">Switch account</span> in the sidebar. Your work stays.</span></li>
+          <li className="flex gap-2.5"><CalendarIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
+            <span>Everything resets every 14 days. Next reset: <span className="font-medium text-ink">{reset}</span>.</span></li>
+          <li className="flex gap-2.5"><InfoIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
+            <span>Please upload nothing private. Confidential terms are redacted before any AI call.</span></li>
         </ul>
       </section>
-    </div>
+    </SignInShell>
   );
 }
