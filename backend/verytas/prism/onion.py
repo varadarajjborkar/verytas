@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from verytas.checks.base import RawFinding, Source
 from verytas.prism.agents import AgentNode, ReviewRun
+from verytas.prism.dedupe import restated
 from verytas.providers.base import Question
 
 KIND = Literal["indirect_taunt", "insinuation", "sarcasm", "double_meaning", "competitor_dig", "coded_language",
@@ -147,6 +148,14 @@ async def onion_agent(run: ReviewRun, node: AgentNode) -> None:
         cross = await layer("cross_modal", "Layer 3: caption with images",
                             "\n\n".join(_block(s) for s in texts) + "\n\n" + scenes, candidates)
         candidates = _merge(candidates, cross)
+
+    # The literal checks have all finished by now (plan runs first). A reading that only restates
+    # one of them on the same words would be a second finding for one issue: skip it before the judge.
+    fresh = [c for c in candidates
+             if restated(c.source, (i := by_id[c.source].text.find(c.quote)), i + len(c.quote), c.kind,
+                         run.findings) is None]
+    node.detail = {**(node.detail or {}), "already_flagged": len(candidates) - len(fresh)}
+    candidates = fresh
 
     findings = await run.tree.spawn(node, "verifier", "Check each reading with the judge",
                                     lambda n: _verify(run, n, candidates, by_id)) or []

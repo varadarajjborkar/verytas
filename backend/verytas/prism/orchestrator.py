@@ -55,6 +55,7 @@ from verytas.models import (
     utcnow,
 )
 from verytas.prism.agents import MEDIA_COVERS, WORKER_COVERS, AgentTree, OfficialAsset, ReviewRun, plan
+from verytas.prism.dedupe import collapse
 from verytas.prism.disputes import is_mechanical, rule_thresholds
 from verytas.prism.governor import CircuitBreaker, Governor, GuardedJudge, GuardedLLM
 from verytas.prism.intent import intent_agent
@@ -222,6 +223,8 @@ class Prism:
         async def prism(root):
             await plan(run, root)
             await tree.spawn(root, "context", "Onion: context layers", lambda n: onion_agent(run, n), essential=True)
+            # One finding per issue before anything spends a model call on each.
+            run.findings[:] = collapse(run.findings)
             # Last, and apart from every check: what the creator says it means.
             found = await tree.spawn(root, "intent", "Weigh the creator's note",
                                      lambda n: intent_agent(run, n, notes_realm, run.sources), essential=True)
