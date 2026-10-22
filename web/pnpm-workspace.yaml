@@ -1,0 +1,5 @@
+allowBuilds:
+  # Its only install script is usage telemetry; the package ships prebuilt.
+  '@openuidev/lang-core': false
+  sharp: false
+  unrs-resolver: false
