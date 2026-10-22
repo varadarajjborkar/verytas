@@ -3,7 +3,9 @@ import { OPENUI_PROMPT } from "@/generated/openui-prompt";
 
 // "Ask Verytas": answers questions about the person's own content and the
 // workspace's governance data as OpenUI Lang (charts, tables, callouts). The
-// context comes from the API's /assistant/context, already redacted there; the
+// context comes from the API's /assistant/context, redacted there along with the
+// conversation (assistant turns arrive from the browser, so they are only as
+// trusted as the person asking; they can mislead nobody else); the
 // model runs on Ollama Cloud and its stream is passed straight to the page.
 
 const OLLAMA_URL = process.env.OLLAMA_BASE_URL ?? "https://ollama.com";
@@ -40,20 +42,29 @@ function sanitize(raw: unknown): ChatMessage[] {
     .slice(-MAX_MESSAGES);
 }
 
-async function governanceContext(question: string): Promise<string> {
-  // Live: one call, built and redacted by the API for this person.
-  const live = await getAssistantContext(question);
-  if (live) return JSON.stringify({ data_source: "live workspace data", ...live });
-  // Never fall back to the raw insights of a live workspace: they are not redacted.
-  if (backendConfigured) return JSON.stringify({ data_source: "unavailable", note: "Workspace data could not be loaded right now; say so." });
+/** JSON safe to place between tags: other people's text can't close <governance_data> early. */
+const inert = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+
+/** The data block and the conversation as they may leave for the model, or null when a live
+ * workspace couldn't redact them (nothing is sent unredacted). */
+async function governanceContext(messages: ChatMessage[]): Promise<{ data: string; messages: ChatMessage[] } | null> {
+  if (backendConfigured) {
+    // Live: one call, built and redacted by the API for this person, conversation included.
+    const live = await getAssistantContext(messages.map((m) => m.content));
+    if (!live) return null;
+    return {
+      data: inert({ data_source: "live workspace data", ...live.context }),
+      messages: messages.map((m, i) => ({ ...m, content: live.messages[i] })),
+    };
+  }
   const [overview, health, recurring] = await Promise.all([getOverview(), getGuidelineHealth(), getRecurring()]);
   const demo = [overview, health, recurring].some((s) => s.source === "demo");
-  return JSON.stringify({
+  return { messages, data: inert({
     data_source: demo ? "demo sample data (say so if asked)" : "live workspace data",
     overview: overview.data,
     guideline_health: health.data.map(({ advice, ...rest }) => ({ ...rest, advice: advice.slice(0, 2) })),
     recurring_problems: recurring.data.slice(0, 15),
-  });
+  }) };
 }
 
 const VERYTAS_RULES = `
@@ -81,12 +92,15 @@ export async function POST(request: Request) {
     return Response.json({ error: "Send a question." }, { status: 400 });
   }
 
-  const question = messages.at(-1)?.content ?? "";
-  const system = `${OPENUI_PROMPT}\n${VERYTAS_RULES}\n<governance_data>\n${await governanceContext(question)}\n</governance_data>`;
+  const ctx = await governanceContext(messages);
+  if (!ctx) {
+    return Response.json({ error: "Workspace data couldn't be loaded, so Ask Verytas can't answer right now." }, { status: 503 });
+  }
+  const system = `${OPENUI_PROMPT}\n${VERYTAS_RULES}\n<governance_data>\n${ctx.data}\n</governance_data>`;
   const upstream = await fetch(`${OLLAMA_URL}/v1/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, stream: true, temperature: 0.2, messages: [{ role: "system", content: system }, ...messages] }),
+    body: JSON.stringify({ model: MODEL, stream: true, temperature: 0.2, messages: [{ role: "system", content: system }, ...ctx.messages] }),
     signal: request.signal,
   });
 

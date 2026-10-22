@@ -73,3 +73,47 @@ def test_assistant_context_redacts_codenames_and_skips_confidential_content(clie
 def test_assistant_context_keeps_workspace_analytics_to_analysts(client, world):
     ctx = client.get("/assistant/context", headers=_auth(world["creator"])).json()
     assert "overview" not in ctx and "analytics" in ctx
+
+
+def test_chat_images_are_checked_beyond_their_prefix_and_titles_must_say_something(client, world):
+    me = _auth(world["creator"])
+    fake = {"role": "user", "content": "x", "images": ["data:image/png;base64,PGh0bWw+"]}  # "<html>"
+    assert client.post("/chats", headers=me, json={"title": "t", "messages": [fake]}).status_code == 422
+    garbled = {"role": "user", "content": "x", "images": ["data:image/png;base64,not base64!"]}
+    assert client.post("/chats", headers=me, json={"title": "t", "messages": [garbled]}).status_code == 422
+    assert client.post("/chats", headers=me, json={"title": "   ", "messages": []}).status_code == 422
+
+
+def test_assistant_analytics_leave_confidential_content_out(client, world):
+    admin = _auth(world["admin"])
+    body = {"channel": "linkedin", "tier": "confidential", "body": "Verytas is trusted by 1,000+ teams."}
+    for title in ("Board memo", "Board memo 2"):
+        assert client.post("/contents?wait=true", headers=admin, json={**body, "title": title}).status_code == 201
+    ctx = client.get("/assistant/context", headers=admin).json()
+    assert ctx["overview"]["findings"]["total"] == 0
+    assert ctx["recurring_problems"] == [] and ctx["guideline_health"] == []
+    # The analyst view itself still counts them for someone cleared to read them.
+    assert client.get("/insights/overview", headers=admin).json()["findings"]["total"] >= 2
+
+
+def test_assistant_redacts_terms_whose_embargo_has_passed(client, world):
+    admin = _auth(world["admin"])
+    made = client.post("/confidential-terms", headers=admin, json={"term": "Nimbus", "embargo_until": "2020-01-01"})
+    assert made.status_code in (200, 201), made.text
+    post = {"title": "Nimbus recap", "channel": "linkedin", "body": "Nimbus shipped last year."}
+    assert client.post("/contents?wait=true", headers=admin, json=post).status_code == 201
+    assert "Nimbus" not in str(client.get("/assistant/context", headers=admin, params={"q": "nimbus"}).json())
+
+
+def test_assistant_redacts_the_conversation_with_the_data(client, world):
+    admin = _auth(world["admin"])
+    body = {"title": "Project Lumen teaser", "channel": "linkedin", "body": "Project Lumen lands next month."}
+    assert client.post("/contents?wait=true", headers=admin, json=body).status_code == 201
+    out = client.post("/assistant/context", headers=admin, json={"messages": ["When does Project Lumen ship?", "Hi"]})
+    assert out.status_code == 200
+    ctx = out.json()
+    first, second = ctx["messages"]
+    assert "Lumen" not in str(ctx) and second == "Hi"
+    # The same placeholder in the question and in the data, so the model can connect them.
+    placeholder = first[first.index("[[TERM_"):first.index("]]") + 2]
+    assert placeholder in str(ctx["content"])

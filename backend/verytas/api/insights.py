@@ -58,27 +58,37 @@ def beta_summary(accepted: int, rejected: int) -> dict:
     return {"mean": round(mean, 3), "lower_90": round(max(0.0, mean - 1.645 * sd), 3)}
 
 
-async def _workspace_findings(session, user: User) -> list[Finding]:
+async def _workspace_findings(session, user: User, tiers: list[Tier]) -> list[Finding]:
     q = (select(Finding).options(selectinload(Finding.decisions))
          .join(Review, Finding.review_id == Review.id)
          .join(ContentVersion, Review.version_id == ContentVersion.id)
          .join(Content, ContentVersion.content_id == Content.id)
-         .where(Content.workspace_id == user.workspace_id, Content.tier.in_(_visible_tiers(user))))
+         .where(Content.workspace_id == user.workspace_id, Content.tier.in_(tiers)))
     return list((await session.scalars(q)).all())
+
+
+async def _rules(session, user: User, tiers: list[Tier]) -> dict[int, Rule]:
+    # A rule above the tiers in scope stays out too: its code and title are text.
+    return {r.id: r for r in (await session.scalars(select(Rule).where(
+        Rule.workspace_id == user.workspace_id, Rule.tier.in_(tiers)))).all()}
 
 
 @router.get("/overview")
 async def overview(session: Session, user: Analyst, days: int = 30) -> dict:
+    return await overview_for(session, user, _visible_tiers(user), days)
+
+
+async def overview_for(session, user: User, tiers: list[Tier], days: int = 30) -> dict:
+    """The overview over an explicit set of tiers; the assistant narrows it further than clearance."""
     ws = user.workspace_id
-    tiers = _visible_tiers(user)
     contents = (await session.scalars(
         select(Content).where(Content.workspace_id == ws, Content.tier.in_(tiers)))).all()
     reviews = (await session.scalars(
         select(Review).join(ContentVersion, Review.version_id == ContentVersion.id)
         .join(Content, ContentVersion.content_id == Content.id)
         .where(Content.workspace_id == ws, Content.tier.in_(tiers)))).all()
-    findings = await _workspace_findings(session, user)
-    rules = {r.id: r for r in (await session.scalars(select(Rule).where(Rule.workspace_id == ws))).all()}
+    findings = await _workspace_findings(session, user, tiers)
+    rules = await _rules(session, user, tiers)
 
     decisions = [d for f in findings for d in f.decisions]
     by_action = Counter(d.action.value for d in decisions)
@@ -111,9 +121,12 @@ async def overview(session: Session, user: Analyst, days: int = 30) -> dict:
 @router.get("/recurring")
 async def recurring(session: Session, user: Analyst, min_count: int = 2) -> list[dict]:
     """The same rule tripping on the same phrase across content: a training or template problem."""
-    findings = await _workspace_findings(session, user)
-    rules = {r.id: r for r in (await session.scalars(
-        select(Rule).where(Rule.workspace_id == user.workspace_id))).all()}
+    return await recurring_for(session, user, _visible_tiers(user), min_count)
+
+
+async def recurring_for(session, user: User, tiers: list[Tier], min_count: int = 2) -> list[dict]:
+    findings = await _workspace_findings(session, user, tiers)
+    rules = await _rules(session, user, tiers)
     groups: dict[tuple[int, str], list[Finding]] = defaultdict(list)
     for f in findings:
         if f.rule_id and f.quote and len(f.quote) <= 80:
@@ -162,8 +175,12 @@ def _health(rule: Rule, findings: list[Finding]) -> dict:
 
 @router.get("/guideline-health")
 async def guideline_health(session: Session, user: Analyst) -> list[dict]:
-    findings = await _workspace_findings(session, user)
-    rules = (await session.scalars(select(Rule).where(Rule.workspace_id == user.workspace_id))).all()
+    return await guideline_health_for(session, user, _visible_tiers(user))
+
+
+async def guideline_health_for(session, user: User, tiers: list[Tier]) -> list[dict]:
+    findings = await _workspace_findings(session, user, tiers)
+    rules = (await _rules(session, user, tiers)).values()
     by_rule: dict[int, list[Finding]] = defaultdict(list)
     for f in findings:
         if f.rule_id:
