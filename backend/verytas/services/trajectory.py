@@ -79,6 +79,10 @@ async def creators(session: AsyncSession, viewer: User) -> list[dict]:
         select(Content.created_by, Content.status, func.count(), func.max(Content.created_at))
         .where(Content.workspace_id == viewer.workspace_id, Content.tier.in_(tiers))
         .group_by(Content.created_by, Content.status))).all()
+    above = dict((await session.execute(
+        select(Content.created_by, func.count()).where(Content.workspace_id == viewer.workspace_id,
+                                                       Content.tier.not_in(tiers))
+        .group_by(Content.created_by))).all())
     escalations = dict((await session.execute(
         select(Escalation.raised_by, func.count()).join(Content, Escalation.content_id == Content.id)
         .where(Escalation.workspace_id == viewer.workspace_id, Escalation.status == "open", Content.tier.in_(tiers))
@@ -90,6 +94,7 @@ async def creators(session: AsyncSession, viewer: User) -> list[dict]:
         last = max((r[3] for r in mine), default=None)
         out.append({"id": p.id, "name": p.name, "role": p.role.value, "pieces": sum(by_status.values()),
                     "by_status": by_status, "open_escalations": escalations.get(p.id, 0),
+                    "above_clearance": above.get(p.id, 0),
                     "last_at": last.isoformat() if isinstance(last, datetime) else None})
     return out
 
@@ -100,6 +105,9 @@ async def trajectory(session: AsyncSession, viewer: User, creator: User) -> dict
         select(Content).where(Content.workspace_id == viewer.workspace_id, Content.created_by == creator.id,
                               Content.tier.in_(tiers)).order_by(Content.created_at, Content.id))).all()
     ids = [c.id for c in contents]
+    hidden = (await session.scalar(select(func.count()).select_from(Content).where(
+        Content.workspace_id == viewer.workspace_id, Content.created_by == creator.id,
+        Content.tier.not_in(tiers)))) or 0
     first: dict[int, Review] = {}
     if ids:
         reviews = (await session.execute(
@@ -145,7 +153,7 @@ async def trajectory(session: AsyncSession, viewer: User, creator: User) -> dict
     return {
         "person": {"id": creator.id, "name": creator.name, "role": creator.role.value},
         "stats": {
-            "pieces": len(contents), "reviewed": sent,
+            "pieces": len(contents), "reviewed": sent, "above_clearance": hidden,
             "on_brand_as_sent": sum(p["distance"] == 0 for p in points),
             "published": sum(c.status is ContentStatus.published for c in contents),
             "in_review": sum(c.status is ContentStatus.in_review for c in contents),

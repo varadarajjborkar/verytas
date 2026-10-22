@@ -83,7 +83,7 @@ export function ManagerDashboard({ overview, recurring, health }: { overview: Ov
     </div>;
   }
   if (editing) {
-    return <Arrange layout={layout} onSave={(items) => writeStored(key, JSON.stringify({ v: 1, items }))} onDone={() => setEditing(false)} />;
+    return <Arrange layout={layout} onSave={(items) => writeStored(key, items ? JSON.stringify({ v: 1, items }) : null)} onDone={() => setEditing(false)} />;
   }
   return (
     <div className="grid items-start gap-5 xl:grid-cols-2">
@@ -98,10 +98,13 @@ export function ManagerDashboard({ overview, recurring, health }: { overview: Ov
   );
 }
 
-type Drag = { id: string; grabX: number; grabY: number; x: number; y: number; frame: number };
+type Drag = { id: string; pointer: number; mouse: boolean; start: string; grabX: number; grabY: number; x: number; y: number;
+  clientY: number; frame: number };
+const EDGE = 64; // px from the top or bottom of the window where a drag scrolls the page
+const ids = (items: Item[]) => items.map((i) => i.id).join(",");
 
 /** The arranging view: light tiles in the dashboard's own grid, so what you see is where it lands. */
-function Arrange({ layout, onSave, onDone }: { layout: Item[]; onSave: (items: Item[]) => void; onDone: () => void }) {
+function Arrange({ layout, onSave, onDone }: { layout: Item[]; onSave: (items: Item[] | null) => void; onDone: () => void }) {
   const [order, setOrder] = useState(layout);
   const [dragging, setDragging] = useState<string | null>(null);
   const [said, setSaid] = useState("");
@@ -141,26 +144,45 @@ function Arrange({ layout, onSave, onDone }: { layout: Item[]; onSave: (items: I
     if (!g || !el) return;
     el.style.translate = `${g.x - g.grabX - el.offsetLeft}px ${g.y - g.grabY - el.offsetTop}px`;
   }
+  // A mouse drags a tile from anywhere on it. On touch only the grip drags, so the rest of a tile still scrolls the
+  // page (tiles allow vertical panning; the grip doesn't).
   const onDown = (e: ReactPointerEvent<HTMLElement>, id: string) => {
-    if ((e.target as HTMLElement).closest("button") || (e.pointerType === "mouse" && e.button !== 0)) return;
+    const target = e.target as HTMLElement;
+    if (drag.current || target.closest("button") || (e.pointerType === "mouse" && e.button !== 0)) return;
+    if (e.pointerType !== "mouse" && !target.closest("[data-grip]")) return;
     const el = tiles.current.get(id), box = grid.current?.getBoundingClientRect();
     if (!el || !box) return;
     e.preventDefault();
+    el.focus({ preventScroll: true }); // preventDefault would otherwise keep the click from focusing the tile
     const x = e.clientX - box.left, y = e.clientY - box.top;
-    drag.current = { id, grabX: x - el.offsetLeft, grabY: y - el.offsetTop, x, y, frame: 0 };
+    drag.current = { id, pointer: e.pointerId, mouse: e.pointerType === "mouse", start: ids(orderRef.current),
+      grabX: x - el.offsetLeft, grabY: y - el.offsetTop, x, y, clientY: e.clientY, frame: 0 };
     lastOver.current = null;
     setDragging(id);
   };
   useEffect(() => {
     if (!dragging) return;
     const onMove = (e: PointerEvent) => {
+      const g = drag.current;
+      if (!g || e.pointerId !== g.pointer) return;
+      if (g.mouse && e.buttons === 0) { onUp(); return; } // the button came up outside the window
+      g.clientY = e.clientY;
+      const box = grid.current?.getBoundingClientRect();
+      if (box) g.x = e.clientX - box.left;
+      track();
+    };
+    // Follows the pointer, and keeps scrolling while it rests near the window's top or bottom edge.
+    const track = () => {
       const g = drag.current, box = grid.current?.getBoundingClientRect();
-      if (!g || !box) return;
-      g.x = e.clientX - box.left;
-      g.y = e.clientY - box.top;
-      if (g.frame) return;
+      if (!g || !box || g.frame) return;
       g.frame = requestAnimationFrame(() => {
         g.frame = 0;
+        const edge = g.clientY < EDGE ? -1 : g.clientY > window.innerHeight - EDGE ? 1 : 0;
+        if (edge) window.scrollBy(0, edge * 12);
+        const now = grid.current?.getBoundingClientRect();
+        if (!now) return;
+        g.y = g.clientY - now.top;
+        if (edge) track();
         place();
         // The slot under the pointer, read from the grid's layout rather than from what is on screen mid-slide.
         const over = orderRef.current.find(({ id }) => {
@@ -177,7 +199,11 @@ function Arrange({ layout, onSave, onDone }: { layout: Item[]; onSave: (items: I
         reorder(next);
       });
     };
-    const onUp = () => {
+    const end = (e?: PointerEvent) => {
+      if (e && drag.current && e.pointerId !== drag.current.pointer) return;
+      onUp();
+    };
+    function onUp() {
       const g = drag.current, el = g && tiles.current.get(g.id);
       if (g?.frame) cancelAnimationFrame(g.frame);
       if (el) {
@@ -187,15 +213,21 @@ function Arrange({ layout, onSave, onDone }: { layout: Item[]; onSave: (items: I
       }
       drag.current = null;
       setDragging(null);
-      onSave(orderRef.current);
-    };
+      // A press without a move changes nothing, and saving it would pin today's default as the user's own layout.
+      if (g && ids(orderRef.current) !== g.start) onSave(orderRef.current);
+    }
+    const hiddenTab = () => { if (document.hidden) onUp(); };
     window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    window.addEventListener("blur", onUp);
+    document.addEventListener("visibilitychange", hiddenTab);
     return () => {
       window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      window.removeEventListener("blur", onUp);
+      document.removeEventListener("visibilitychange", hiddenTab);
     };
   // place and reorder only touch refs and stable setters.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,9 +238,21 @@ function Arrange({ layout, onSave, onDone }: { layout: Item[]; onSave: (items: I
     return () => window.removeEventListener("keydown", onKey);
   }, [onDone]);
 
-  const commit = (next: Item[], message: string) => { reorder(next); onSave(next); setSaid(message); };
-  const remove = (id: string) => commit(order.filter((i) => i.id !== id), `${title(id)} removed`);
-  const add = (id: string) => commit([...order, { id, size: WIDGETS[id].size }], `${title(id)} added at the end`);
+  const commit = (next: Item[], message: string, focus?: string) => {
+    reorder(next);
+    onSave(next);
+    setSaid(message);
+    // Keep the keyboard where the user is working, rather than dropping focus to the page.
+    if (focus) requestAnimationFrame(() => tiles.current.get(focus)?.focus());
+  };
+  const remove = (id: string) => {
+    const n = order.findIndex((i) => i.id === id), next = order.filter((i) => i.id !== id);
+    commit(next, `${title(id)} removed`, next[Math.min(n, next.length - 1)]?.id);
+  };
+  const add = (id: string) => commit([...order, { id, size: WIDGETS[id].size }], `${title(id)} added at the end`, id);
+  // Reset forgets the saved layout, so later changes to the default reach this person too.
+  const reset = () => { reorder(DEFAULT_LAYOUT); onSave(null); setSaid("Default layout restored");
+    requestAnimationFrame(() => tiles.current.get(DEFAULT_LAYOUT[0].id)?.focus()); };
   // Keyboard: arrows move the focused tile, Delete removes it.
   const onKey = (e: ReactKeyboardEvent, id: string) => {
     const n = order.findIndex((i) => i.id === id);
@@ -229,7 +273,7 @@ function Arrange({ layout, onSave, onDone }: { layout: Item[]; onSave: (items: I
     <div className="vt-page flex flex-col gap-4">
       <div className="flex items-center gap-3">
         <p className="mr-auto text-sm text-muted">Drag tiles to rearrange.</p>
-        <button type="button" onClick={() => commit(DEFAULT_LAYOUT, "Default layout restored")} className="text-xs font-medium text-subtle hover:text-ink">
+        <button type="button" onClick={reset} className="text-xs font-medium text-subtle hover:text-ink">
           Reset
         </button>
         <button type="button" onClick={onDone} className="vt-btn vt-btn-primary py-1.5">Done</button>
@@ -242,7 +286,7 @@ function Arrange({ layout, onSave, onDone }: { layout: Item[]; onSave: (items: I
             aria-label={`${title(item.id)}, place ${n + 1} of ${order.length}. Arrow keys move it, Delete removes it.`}
             ref={(el) => { if (el) tiles.current.set(item.id, el); else tiles.current.delete(item.id); }}
             onPointerDown={(e) => onDown(e, item.id)} onKeyDown={(e) => onKey(e, item.id)}
-            className={`relative flex h-[72px] touch-none select-none items-center gap-3 rounded-xl border bg-raised px-4 outline-offset-2 ${
+            className={`relative flex h-[72px] touch-pan-y select-none items-center gap-3 rounded-xl border bg-raised px-4 outline-offset-2 ${
               item.size === "full" ? "sm:col-span-2" : ""} ${dragging === item.id
               ? "vt-dragging z-10 cursor-grabbing border-accent" : "vt-wobble cursor-grab border-line hover:border-line-strong"}`}
             style={dragging === item.id ? undefined : { ["--vt-wobble-delay" as string]: `${(n * 83) % 320}ms` }}>
@@ -250,7 +294,9 @@ function Arrange({ layout, onSave, onDone }: { layout: Item[]; onSave: (items: I
               <span className="block truncate text-sm font-medium">{title(item.id)}</span>
               <span className="block truncate text-xs text-muted">{WIDGETS[item.id].blurb}</span>
             </span>
-            <GripIcon size={15} className="shrink-0 text-subtle" aria-hidden />
+            <span data-grip aria-hidden className="-mr-2 grid h-10 w-10 shrink-0 touch-none place-items-center text-subtle">
+              <GripIcon size={15} />
+            </span>
             <button type="button" onClick={() => remove(item.id)} aria-label={`Remove ${title(item.id)}`} tabIndex={-1}
               className="absolute -left-2 -top-2 grid h-6 w-6 place-items-center rounded-full border border-line bg-raised text-muted shadow-sm transition-colors hover:border-[var(--vt-blocker)] hover:text-[var(--vt-blocker)]">
               <CloseIcon size={11} />

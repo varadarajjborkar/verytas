@@ -423,8 +423,8 @@ class Prism:
                 GuardedLLM(vision, self._vision_breaker, self._provider_slots), notes + vision_notes)
 
 
-# Profiles by (workspace, tier, the approved versions they came from, the topic texts): an unchanged brand
-# costs one id query per review, and any approval, edit or new fact makes a new key.
+# Profiles by (database, workspace, tier, the approved versions they came from, the topic texts): an unchanged
+# brand costs one id query per review, and any approval, edit or new fact makes a new key.
 _PROFILES: OrderedDict[tuple, BrandProfile] = OrderedDict()
 _PROFILE_SOURCES = 150
 
@@ -437,14 +437,16 @@ async def _brand_profile(session: AsyncSession, content: Content, rules: list[Ru
     latest = func.max(ContentVersion.id)
     ids = tuple((await session.scalars(
         select(latest).join(Content, ContentVersion.content_id == Content.id)
-        .where(Content.workspace_id == content.workspace_id, Content.tier.in_(tiers),
+        .where(Content.workspace_id == content.workspace_id, Content.tier.in_(tiers), Content.id != content.id,
                Content.status.in_((ContentStatus.approved, ContentStatus.published)))
         .group_by(ContentVersion.content_id).order_by(latest.desc()).limit(_PROFILE_SOURCES))).all())
     # Rule examples widen the topics but don't count as approved work: the explanation says "N pieces".
     topics = [ex for r in rules if r.category in ("tone", "messaging") for ex in (r.good_examples or [])]
     topics += [f.statement for f in facts] + [f"{e.name}. {e.summary} {e.guidance}" for e in events
                                               if e.status == "active" and e.tier.rank <= content.tier.rank]
-    key = (content.workspace_id, content.tier.rank, ids, hash(tuple(topics)))
+    # Version bodies never change once written, so their ids stand for their text within one database; the engine
+    # is part of the key because ids repeat across databases (tests, a reseeded demo) in one process.
+    key = (id(session.get_bind()), content.workspace_id, content.tier.rank, ids, hash(tuple(topics)))
     if (hit := _PROFILES.get(key)) is not None:
         _PROFILES.move_to_end(key)
         return hit

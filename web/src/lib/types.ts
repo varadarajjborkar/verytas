@@ -339,6 +339,8 @@ export type CreatorRow = {
   pieces: number;
   by_status: Partial<Record<ContentStatus, number>>;
   open_escalations: number;
+  /** Pieces above the viewer's clearance: counted, never shown. */
+  above_clearance: number;
   last_at: string | null;
 };
 
@@ -366,6 +368,7 @@ export type CreatorTrack = {
   stats: {
     pieces: number;
     reviewed: number;
+    above_clearance: number;
     on_brand_as_sent: number;
     published: number;
     in_review: number;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { TrackPoint } from "@/lib/types";
 
 const H = 220;
@@ -24,18 +24,23 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 
  * One creator's pieces in the order they sent them, by distance from the brand as sent.
  * A creator who stays on brand draws a flat line along zero; drift shows as the line lifting.
  * Points are coloured by their worst finding (with the label in the tooltip and legend, never
- * colour alone), ringed when the finding was tone or topic drift, and open the piece on click.
+ * colour alone), ringed when the finding was tone or topic drift, and open the piece on click. On touch,
+ * the first tap shows why and the second opens; modifier-clicks open a new tab as links do.
  */
 export function DriftChart({ points }: { points: TrackPoint[] }) {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
   const [active, setActive] = useState<number | null>(null);
+  const [focused, setFocused] = useState<number | null>(null);
+  const [touch, setTouch] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
+  // Measured before paint, so the first frame is drawn at the real width rather than a guess.
+  useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
-    const ro = new ResizeObserver(([e]) => setWidth(Math.max(260, Math.round(e.contentRect.width))));
+    setWidth(Math.max(200, el.clientWidth));
+    const ro = new ResizeObserver(([e]) => setWidth(Math.max(200, Math.round(e.contentRect.width))));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -53,8 +58,10 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div ref={box} className="relative" onMouseLeave={() => setActive(null)}>
-        <svg width={width} height={H} role="img" aria-label={`Distance from the brand across ${points.length} pieces`} className="block overflow-visible">
+      <div ref={box} className="relative" onMouseLeave={() => setActive(null)}
+        onKeyDown={(e) => { if (e.key === "Escape") setActive(null); }}>
+        {/* A group, not an image: the points inside are links that assistive tech must reach. */}
+        <svg width={width} height={H} role="group" aria-label={`Distance from the brand across ${points.length} pieces`} className="block overflow-visible">
           {[0, 50, 100].map((v) => (
             <g key={v}>
               <line x1={PAD.left} x2={width - PAD.right} y1={y(v)} y2={y(v)} stroke="var(--vt-line)" strokeDasharray={v ? "2 4" : undefined} />
@@ -68,10 +75,18 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
             const href = `/review?id=${p.content_id}`;
             return (
               <a key={p.content_id} href={href} aria-label={`${p.title}, ${day(p.at)}: ${p.summary}`}
-                onClick={(e) => { e.preventDefault(); router.push(href); }}
-                onMouseEnter={() => setActive(i)} onFocus={() => setActive(i)} onBlur={() => setActive(null)}
+                onPointerDown={(e) => setTouch(e.pointerType !== "mouse")}
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // a new tab or window, as any link
+                  e.preventDefault();
+                  if (touch && active !== i) { setActive(i); return; }
+                  router.push(href);
+                }}
+                onMouseEnter={() => setActive(i)} onFocus={() => { setActive(i); setFocused(i); }}
+                onBlur={() => { setActive(null); setFocused(null); }}
                 className="cursor-pointer outline-none">
                 <circle cx={x(i)} cy={y(p.distance)} r={hit} fill="transparent" />
+                {focused === i && <circle cx={x(i)} cy={y(p.distance)} r={12} fill="none" stroke="var(--vt-accent)" strokeWidth={2} />}
                 {p.drift.length > 0 && <circle cx={x(i)} cy={y(p.distance)} r={8.5} fill="none" stroke={lv.color} strokeWidth={1.5} />}
                 <circle cx={x(i)} cy={y(p.distance)} r={active === i ? 6 : 4.5} fill={lv.color} stroke="var(--vt-raised)" strokeWidth={2}
                   className="transition-[r] duration-150" />
@@ -86,10 +101,10 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
         </svg>
         {a && (
           <div role="tooltip" className="vt-pop pointer-events-none absolute z-10 w-[min(18rem,calc(100%-1rem))] rounded-xl border border-line bg-raised p-3 text-xs shadow-[var(--vt-shadow-pop)]"
+            // Placed by top or bottom, never by transform: the pop-in animation owns transform and would undo it.
             style={{
               left: Math.min(Math.max(0, x(active!) - 144), width - Math.min(288, width - 16)),
-              top: y(a.distance) > H / 2 ? Math.max(0, y(a.distance) - 12) : y(a.distance) + 14,
-              transform: y(a.distance) > H / 2 ? "translateY(-100%)" : undefined,
+              ...(y(a.distance) > H / 2 ? { bottom: H - y(a.distance) + 14 } : { top: y(a.distance) + 14 }),
             }}>
             <p className="font-semibold text-ink">{a.title}</p>
             <p className="mt-0.5 text-subtle">{day(a.at)} · {a.channel}{a.event ? ` · ${a.event}` : ""} · {STATUS_LABEL[a.status] ?? a.status}</p>
@@ -104,7 +119,9 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
                 ))}
               </ul>
             )}
-            <p className="mt-2 font-medium text-accent">{a.distance ? `${a.distance} from the brand` : "On the line"} · click to open</p>
+            <p className="mt-2 font-medium text-accent">
+              {a.distance ? `${a.distance} from the brand` : "On the line"} · {touch ? "tap again" : "click"} to open
+            </p>
           </div>
         )}
       </div>

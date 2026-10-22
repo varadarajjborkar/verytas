@@ -178,7 +178,8 @@ def test_hybrid_posts_are_checked_in_every_language_they_use():
                  "Course बहुत अच्छा है।\n\nBut honestly जो नहीं समझा वह बेवकूफ है।",
                  "The course starts Monday.\n\nY el que no lo entienda es un idiota, honestly."]:
         assert [f.title for f in _run(tone_shift, TONE, body, profile)] == ["Tone turns hostile partway through"]
-    [f] = _run(topic_drift, TOPIC, "Our new curso starts Monday.\n\nPero the elecciones are rigged.", profile)
+    body = "Our new curso starts Monday.\n\nPero the elecciones are rigged and the ministro lies."
+    [f] = _run(topic_drift, TOPIC, body, profile)
     assert f.title == "Drifts off topic into politics"
 
 
@@ -194,11 +195,11 @@ def test_drift_is_caught_in_other_languages_and_scripts():
         [f] = _run(tone_shift, TONE, body, profile)
         assert f.title == "Tone turns hostile partway through" and f.quote == quote, body
     off = {
-        "Nuestro curso empieza el lunes.\n\nLas elecciones fueron un fraude.": "politics",
+        "Nuestro curso empieza el lunes.\n\nLas elecciones fueron un fraude y el ministro mintió.": "politics",
         "Naya course aaj se shuru.\n\nIs chunav mein sab neta jhoothe hain.": "politics",
         "नया कोर्स आज से शुरू।\n\nइस चुनाव में वोट ज़रूर दें।": "politics",
         "Notre cours commence lundi.\n\nAchetez des cryptomonnaies maintenant.": "trading tips",
-        "O curso começa segunda.\n\nFaça suas apostas no jogo de hoje.": "betting",
+        "O curso começa segunda.\n\nFaça suas apostas esportivas no jogo de hoje.": "betting",
     }
     for body, domain in off.items():
         [f] = _run(topic_drift, TOPIC, body, profile)
@@ -286,3 +287,16 @@ def test_a_creators_own_rejection_does_not_clean_their_record(client, world):
     me = client.get("/me", headers=creator).json()
     [point] = client.get(f"/insights/creators/{me['id']}", headers=reviewer).json()["points"]
     assert point["distance"] > 0 and point["drift"] == ["tone"]
+
+
+def test_second_review_round_false_alarms():
+    profile = build_profile([])
+    for body in ["Nuestra apuesta por la calidad no cambia.", "A nossa aposta é na qualidade.",
+                 "Read the artist's manifesto, then join the protest against boring slides.",
+                 "Big news! Our design track opens Monday. Come see it! Bring a friend! It starts at nine."]:
+        assert _run(tone_shift, TONE, body, profile) == [], body
+        assert _run(topic_drift, TOPIC, body, profile) == [], body
+    # Pressure plus shouting is hype; a curly apostrophe is the same word as a straight one.
+    assert [f.title for f in _run(tone_shift, TONE, "Hurry, offer ends soon!!! Join now.", profile)] == [
+        "Off the brand's voice: hyped"]
+    assert len(tone_hits("y’all gonna love it")["slangy"]) == 2
