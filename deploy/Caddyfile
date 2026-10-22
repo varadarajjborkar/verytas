@@ -13,7 +13,8 @@
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
-		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# The microphone is for the creator's spoken brief (BriefBox), on this site only; nothing else may ask.
+		Permissions-Policy "camera=(), microphone=(self), geolocation=()"
 		-Server
 	}
 	reverse_proxy 127.0.0.1:3000

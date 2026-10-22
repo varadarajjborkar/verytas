@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   // The dev-mode badge sits on top of Settings in every corner; off in development too.
   devIndicators: false,
+  // No "X-Powered-By: Next.js": the framework and its version are no one else's business.
+  poweredByHeader: false,
   partialPrefetching: true,
   // Every image the app shows is its own or one the viewer attached (data: and blob: URLs), so img-src
   // stays on this origin: an image link a model or a pasted post slips into Ask Verytas cannot load,
