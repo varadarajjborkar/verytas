@@ -366,7 +366,8 @@ async def image_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_i
                          "text in it could not be blacked out first")
     _asset_findings(run, node, image_id, locator, matches or [], scene, lines)
     contrast = run.rule_by_code.get("A11Y-CONTRAST")
-    if contrast and lines:
+    # A scan's contrast is the scanner's, not the author's.
+    if contrast and lines and not scanned:
         await run.tree.spawn(node, "contrast", "Measure text contrast",
                              lambda n: _contrast_agent(run, n, pil, image_id, locator, lines, contrast))
     if image_id in run.layouts:
@@ -423,23 +424,32 @@ async def ocr_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_id:
     return result
 
 
-# Most posts are seen on phones, so text is sized as it shows at a phone's width (CSS px) when telling
-# large text (WCAG: 18pt, 24px) from body text. An OCR box is about 1.2 times the font size tall.
+# Text is sized as it shows when telling large text (WCAG: 18pt, 24 CSS px) from body text: a post at a
+# phone's width, where most are seen, and a document page at a letter page's width (8.5 in at 96 px/in).
+# An OCR box is about 1.2 times the font size tall, or about the cap height for a line in capitals.
 _PHONE_CSS_WIDTH = 390
+_PAGE_CSS_WIDTH = 816
 _LARGE_TEXT_PX = 24
 _CONTRAST_MAX_FINDINGS = 5
+# A measured ratio this close under the minimum is reported as a warning: the measurement is good to
+# about this much on compressed, small or anti-aliased text.
+_CONTRAST_MARGIN = 0.85
 
 
-def _low_contrast_lines(pil: Image.Image, lines: list[local_ocr.OcrLine], min_ratio: float,
-                        min_large: float) -> list[tuple[local_ocr.OcrLine, tuple, tuple, float, float, bool]]:
-    """Lines whose text is below the contrast minimum, with (text colour, background, ratio, needed, busy)."""
+def _low_contrast_lines(pil: Image.Image, lines: list[local_ocr.OcrLine], min_ratio: float, min_large: float,
+                        *, page: bool = False) -> list[tuple[local_ocr.OcrLine, tuple, tuple, float, float, bool]]:
+    """Lines whose text is below the contrast minimum, with (text colour, background, ratio, needed, busy),
+    worst first."""
     import numpy as np
 
     from verytas.checks.color import text_contrast
 
+    # Transparent pixels have no colour of their own until something is drawn behind them; flattening
+    # them would invent a background, so lines over transparency are not measured.
+    alpha = np.asarray(pil.getchannel("A")) if "A" in pil.getbands() else None
     arr = np.asarray(pil.convert("RGB"))
     height, width = arr.shape[:2]
-    scale = min(1.0, _PHONE_CSS_WIDTH / width)
+    scale = min(1.0, (_PAGE_CSS_WIDTH if page else _PHONE_CSS_WIDTH) / width)
     out = []
     for ln in lines:
         x0, y0, x1, y1 = ln.box
@@ -448,14 +458,20 @@ def _low_contrast_lines(pil: Image.Image, lines: list[local_ocr.OcrLine], min_ra
         if h < 8 or ln.confidence < 0.6 or sum(ch.isalnum() for ch in ln.text) < 3:
             continue
         pad = max(3, h // 4)
-        measured = text_contrast(arr[max(0, y0 - pad):min(height, y1 + pad), max(0, x0 - pad):min(width, x1 + pad)])
+        box = (slice(max(0, y0 - pad), min(height, y1 + pad)), slice(max(0, x0 - pad), min(width, x1 + pad)))
+        if alpha is not None and (alpha[box] < 250).mean() > 0.05:
+            continue
+        measured = text_contrast(arr[box])
         if measured is None:
             continue
         fg, bg, ratio, busy = measured
-        needed = min_large if h * scale / 1.2 >= _LARGE_TEXT_PX else min_ratio
+        letters = [ch for ch in ln.text if ch.isalpha()]
+        caps = bool(letters) and all(ch.isupper() for ch in letters)
+        font_px = h * scale / (1.0 if caps else 1.2)
+        needed = min_large if font_px >= _LARGE_TEXT_PX else min_ratio
         if ratio < needed:
             out.append((ln, fg, bg, ratio, needed, busy))
-    return out
+    return sorted(out, key=lambda t: t[3] / t[4])
 
 
 async def _contrast_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_id: str, locator: dict[str, Any],
@@ -463,7 +479,7 @@ async def _contrast_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, ima
     from verytas.checks.color import rgb_to_hex
 
     low = await run.blocking(_low_contrast_lines, pil, lines, float(rule.pattern.get("min_ratio", 4.5)),
-                             float(rule.pattern.get("min_ratio_large", 3.0)))
+                             float(rule.pattern.get("min_ratio_large", 3.0)), page="page" in locator)
     node.detail = {"lines": len(lines), "low": len(low)}
     found = []
     for i, (ln, fg, bg, ratio, needed, busy) in enumerate(low[:_CONTRAST_MAX_FINDINGS], start=1):
@@ -472,13 +488,15 @@ async def _contrast_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, ima
             unit_id=f"{image_id}:contrast{i}", category=rule.category,
             title=f'Low contrast text "{ln.text[:60]}": {ratio:.1f}:1 (needs {needed:g}:1)',
             explanation=f"Measured from the image: text {rgb_to_hex(fg)} on {over}, {ratio:.2f}:1. {rule.text}",
-            # Over a photo the background colour is an estimate, so the finding is less certain.
-            confidence=0.6 if busy else 0.95, checker="contrast", rule_code=rule.code, source=image_id,
+            # Over a photo the background colour is an estimate, and just under the line the measurement
+            # is too close to call: both are warnings, never blockers.
+            confidence=0.6 if busy or ratio >= needed * _CONTRAST_MARGIN else 0.95,
+            checker="contrast", rule_code=rule.code, source=image_id,
             locator={**locator, "image": image_id, "box": list(ln.box)},
         ))
     if len(low) > _CONTRAST_MAX_FINDINGS:
-        run.notes.append(f"{image_id}: {len(low)} lines are below the contrast minimum; the first "
-                         f"{_CONTRAST_MAX_FINDINGS} are reported")
+        run.notes.append(f"{image_id}: {len(low)} lines are below the contrast minimum; the "
+                         f"{_CONTRAST_MAX_FINDINGS} lowest are reported")
     run.add(node, "media", found)
 
 
@@ -693,7 +711,7 @@ def _misspelled(wordmark: str, lines: list[local_ocr.OcrLine]) -> str | None:
             cand = " ".join(words[i:i + n]).strip(".,!?:;\"'()")
             c = cand.casefold()
             # The wordmark used as a hashtag, a handle, a possessive or a plural is spelled right.
-            if not c or c == target or _BRAND_FORMS.sub("", c) == target:
+            if not c or c == target or target in _brand_forms(c):
                 continue
             # Digits and look-alike letters standing in for the real ones
             # ("Inkl00m", "Nlke", "Arnazon") are the commonest garble, in
@@ -709,7 +727,11 @@ def _misspelled(wordmark: str, lines: list[local_ocr.OcrLine]) -> str | None:
     return None
 
 
-_BRAND_FORMS = re.compile(r"^[#@]|(?:['\u2019]s?|e?s)$")
+def _brand_forms(token: str) -> set[str]:
+    """What a token could be the wordmark of: itself without a #/@ prefix, and that without a possessive
+    or plural ending. Every reading is kept, so "nikes" offers both "nike" and "nik"."""
+    bare = token[1:] if token[:1] in "#@" else token
+    return {bare} | {bare[:-len(end)] for end in ("'s", "\u2019s", "'", "\u2019", "es", "s") if bare.endswith(end)}
 
 
 def _transposed(a: str, b: str) -> bool:

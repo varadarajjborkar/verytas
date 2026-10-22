@@ -161,9 +161,11 @@ def text_contrast(crop: np.ndarray) -> tuple[RGB, RGB, float, bool] | None:
 
     The crop should have a margin around the text: its border is the background. The text is the pixels
     that differ from the background, on whichever side (darker or lighter) differs most; its colour is
-    the core of the strokes (the furthest 30% of those), not their anti-aliased edges, so a thin font is
-    not read as low contrast. A background whose border spans a wide range of luminance (a photo) is
-    reported as busy: the one colour given for it is then a median. None when nothing stands out.
+    the far edge of those (the 99th percentile of their difference), not their anti-aliased or
+    JPEG-blurred edges. Small and compressed text then reads at or slightly above its true contrast,
+    never below it: a compliant caption must not be blocked by a measurement artefact. A background whose
+    border spans a wide range of luminance (a photo) is reported as busy: the one colour given for it is
+    then a median. None when nothing stands out.
     """
     if crop.ndim != 3 or min(crop.shape[:2]) < 6:
         return None
@@ -178,9 +180,10 @@ def text_contrast(crop: np.ndarray) -> tuple[RGB, RGB, float, bool] | None:
     if side.sum() < 12:
         return None
     dist = np.abs(diff[side])
+    far = float(np.percentile(dist, 99))
+    text_l = bg - far if side is darker else bg + far
     core = side.copy()
-    core[side] = dist >= np.percentile(dist, 70)
-    text_l = float(np.median(lum[core]))
+    core[side] = dist >= np.percentile(dist, 97)
     near = np.abs(ring - bg) <= max(0.02, float(np.median(np.abs(ring - bg))))
     bg_rgb: RGB = tuple(int(v) for v in np.median(ring_rgb[near], axis=0))  # type: ignore[assignment]
     text_rgb: RGB = tuple(int(v) for v in np.median(rgb[core], axis=0))  # type: ignore[assignment]
