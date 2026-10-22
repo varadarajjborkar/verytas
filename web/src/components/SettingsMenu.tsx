@@ -47,8 +47,8 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
         aria-label="Settings"
         className={compact
           ? "grid h-10 w-10 place-items-center rounded-xl text-muted transition hover:bg-sunken hover:text-ink"
-          : "group flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left text-muted transition hover:bg-sunken hover:text-ink"}>
-        <SettingsIcon size={compact ? 24 : 40} strokeWidth={1.5}
+          : "group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-muted transition hover:bg-sunken hover:text-ink"}>
+        <SettingsIcon size={compact ? 20 : 18} strokeWidth={1.75}
           className="shrink-0 transition-transform duration-500 ease-out group-hover:rotate-45" />
         {!compact && <span className="text-sm font-medium">Settings</span>}
       </button>

@@ -46,9 +46,9 @@ export function RulesTab({ rules, editable, onChanged, initialState, initialQuer
           ))}
         </div>
         <select value={category} onChange={(e) => setCategory(e.target.value as RuleCategory | "all")} aria-label="Category"
-          className="vt-input w-auto py-1.5 pr-8 text-xs capitalize">
+          className="vt-input w-auto py-1.5 text-xs">
           <option value="all">All categories</option>
-          {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          {CATEGORIES.map((c) => <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>)}
         </select>
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search rules" aria-label="Search rules"
           className="vt-input w-48 py-1.5 text-xs" />
@@ -70,8 +70,8 @@ export function RulesTab({ rules, editable, onChanged, initialState, initialQuer
                 <code className="w-28 shrink-0 truncate text-[11px] text-subtle">{r.code}</code>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{r.title}</span>
-                  <span className="block truncate text-[11px] capitalize text-subtle">
-                    {r.category} · {r.kind === "deterministic" ? "exact match" : "judged by the model"}{r.version > 1 ? ` · v${r.version}` : ""}
+                  <span className="block truncate text-[11px] text-subtle">
+                    {r.category[0].toUpperCase() + r.category.slice(1)} · {r.kind === "deterministic" ? "exact match" : "judged by the model"}{r.version > 1 ? ` · v${r.version}` : ""}
                     {r.source_ref ? ` · ${r.source_ref}` : ""}
                   </span>
                 </span>

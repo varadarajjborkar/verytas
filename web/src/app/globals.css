@@ -144,58 +144,61 @@ table, .tabular-nums { font-variant-numeric: tabular-nums; }
 }
 
 /* --- shared pieces ------------------------------------------------------- */
+/* In the components layer, so a utility on the same element (w-auto, py-1.5) still wins. */
+@layer components {
 
-.vt-card {
-  background: var(--vt-surface);
-  border: 1px solid var(--vt-line);
-  border-radius: 14px;
-  box-shadow: var(--vt-shadow);
-}
+  .vt-card {
+    background: var(--vt-surface);
+    border: 1px solid var(--vt-line);
+    border-radius: 14px;
+    box-shadow: var(--vt-shadow);
+  }
 
-.vt-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  border-radius: 9px;
-  padding: 0.5rem 0.9rem;
-  font-size: 0.8125rem;
-  font-weight: 550;
-  line-height: 1.25rem;
-  transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out, transform 90ms ease-out;
-}
-.vt-btn:active:not(:disabled) { transform: scale(0.98); }
-.vt-btn:disabled { cursor: not-allowed; opacity: 0.5; }
-.vt-btn-primary { background: var(--vt-accent); color: var(--vt-accent-ink); }
-.vt-btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--vt-accent) 88%, var(--vt-ink)); }
-.vt-btn-quiet { border: 1px solid var(--vt-line); background: var(--vt-raised); color: var(--vt-ink); }
-.vt-btn-quiet:hover:not(:disabled) { border-color: var(--vt-line-strong); background: var(--vt-surface); }
+  .vt-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border-radius: 9px;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.8125rem;
+    font-weight: 550;
+    line-height: 1.25rem;
+    transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out, transform 90ms ease-out;
+  }
+  .vt-btn:active:not(:disabled) { transform: scale(0.98); }
+  .vt-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+  .vt-btn-primary { background: var(--vt-accent); color: var(--vt-accent-ink); }
+  .vt-btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--vt-accent) 88%, var(--vt-ink)); }
+  .vt-btn-quiet { border: 1px solid var(--vt-line); background: var(--vt-raised); color: var(--vt-ink); }
+  .vt-btn-quiet:hover:not(:disabled) { border-color: var(--vt-line-strong); background: var(--vt-surface); }
 
-.vt-input {
-  width: 100%;
-  border-radius: 9px;
-  border: 1px solid var(--vt-line);
-  background: var(--vt-raised);
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
-  color: var(--vt-ink);
-  transition: border-color 140ms ease-out, box-shadow 140ms ease-out;
+  .vt-input {
+    width: 100%;
+    border-radius: 9px;
+    border: 1px solid var(--vt-line);
+    background: var(--vt-raised);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--vt-ink);
+    transition: border-color 140ms ease-out, box-shadow 140ms ease-out;
+  }
+  .vt-input::placeholder { color: var(--vt-subtle); }
+  /* Native selects keep their keyboard and screen-reader behaviour; only the arrow is redrawn, inset from
+     the edge like every other control's padding, instead of the platform's arrow pressed against the border. */
+  select.vt-input:not(.appearance-none) {
+    appearance: none;
+    cursor: pointer;
+    padding-right: 2.1rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a92a2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.65rem center;
+    background-size: 14px 14px;
+    text-overflow: ellipsis;
+  }
+  select.vt-input option { background: var(--vt-raised); color: var(--vt-ink); }
+  .vt-input:focus { outline: none; border-color: var(--vt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vt-accent) 18%, transparent); }
 }
-.vt-input::placeholder { color: var(--vt-subtle); }
-/* Native selects keep their keyboard and screen-reader behaviour; only the arrow is redrawn, inset from
-   the edge like every other control's padding, instead of the platform's arrow pressed against the border. */
-select.vt-input:not(.appearance-none) {
-  appearance: none;
-  cursor: pointer;
-  padding-right: 2.1rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a92a2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.65rem center;
-  background-size: 14px 14px;
-  text-overflow: ellipsis;
-}
-select.vt-input option { background: var(--vt-raised); color: var(--vt-ink); }
-.vt-input:focus { outline: none; border-color: var(--vt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vt-accent) 18%, transparent); }
 
 /* Fixed stops, not the theme accents, so the white mark stays readable (5:1+) in both themes. */
 .vt-mark {

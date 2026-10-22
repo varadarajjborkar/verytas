@@ -1,8 +1,7 @@
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { DashboardView } from "@/components/DashboardView";
+import { CustomizeButton, ManagerDashboard } from "@/components/dashboard/ManagerDashboard";
 import { CreatorHome } from "@/components/home/CreatorHome";
-import { ManagerHome } from "@/components/home/ManagerHome";
 import { PageHeader, PageSkeleton, SourceBadge } from "@/components/ui";
 import { getGuidelineHealth, getOverview, getRecurring, getViewer } from "@/lib/backend";
 import { sideOf } from "@/lib/roles";
@@ -24,10 +23,8 @@ async function Home() {
   return (
     <>
       <PageHeader title="Dashboard" lead="What needs a decision, how work is flowing, and what Verytas caught."
-        aside={<SourceBadge source={source} />} />
-      <ManagerHome overview={overview.data} health={health.data} />
-      <h2 className="mb-3 mt-9 text-sm font-semibold text-muted">Brand health</h2>
-      <DashboardView overview={overview.data} recurring={recurring.data} health={health.data} />
+        aside={<div className="flex items-center gap-2"><SourceBadge source={source} /><CustomizeButton /></div>} />
+      <ManagerDashboard overview={overview.data} recurring={recurring.data} health={health.data} />
     </>
   );
 }
