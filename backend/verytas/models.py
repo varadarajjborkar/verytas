@@ -152,6 +152,8 @@ class Rule(Base):
     tier: Mapped[Tier] = mapped_column(_enum(Tier), default=Tier.internal)
     status: Mapped[RuleStatus] = mapped_column(_enum(RuleStatus), default=RuleStatus.draft)
     system: Mapped[bool] = mapped_column(default=False)  # built-in (WCAG, confidentiality)
+    # Set on rules a brand event generates; they apply while the event runs, or to pieces tagged with it.
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("brand_events.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -203,6 +205,8 @@ class Content(Base):
     status: Mapped[ContentStatus] = mapped_column(_enum(ContentStatus), default=ContentStatus.draft)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # The brand event this piece is for (a launch, a sale): its brief and hashtags apply to it.
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("brand_events.id"), index=True)
 
     versions: Mapped[list[ContentVersion]] = relationship(
         back_populates="content", order_by="ContentVersion.version_no"
@@ -475,3 +479,92 @@ class ChatThread(Base):
     messages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class PublicContact(Base):
+    """A contact detail the company publishes. Anything phone- or email-shaped in a post or a message that
+    is not listed here is treated as private: posts are flagged, and messages offering it are refused."""
+
+    __tablename__ = "public_contacts"
+    __table_args__ = (UniqueConstraint("workspace_id", "kind", "normalized", name="uq_public_contact"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # phone | email | handle | url
+    value: Mapped[str] = mapped_column(String(200))
+    normalized: Mapped[str] = mapped_column(String(200))
+    label: Mapped[str | None] = mapped_column(String(120))
+    source_ref: Mapped[str | None] = mapped_column(String(300))
+    active: Mapped[bool] = mapped_column(default=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BrandEvent(Base):
+    """Something the brand is doing (a launch, a sale, a partnership) or going through (a crisis).
+
+    An event is context for every review while it runs: its brief becomes a model-judged rule, its
+    words to avoid an exact-match rule, and its hashtags are required on pieces tagged with it. Each
+    change bumps `revision` and starts the update chain (services/events.py)."""
+
+    __tablename__ = "brand_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    kind: Mapped[str] = mapped_column(String(20), default="campaign")  # launch|campaign|sale|crisis|partnership|other
+    starts_on: Mapped[date] = mapped_column(Date)
+    ends_on: Mapped[date | None] = mapped_column(Date)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    guidance: Mapped[str] = mapped_column(Text, default="")
+    hashtags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    avoid_terms: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Promotional posts pause while it runs (a crisis, a day of mourning).
+    blackout: Mapped[bool] = mapped_column(default=False)
+    status: Mapped[str] = mapped_column(String(12), default="active")  # active | cancelled
+    tier: Mapped[Tier] = mapped_column(_enum(Tier), default=Tier.public)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    def live_on(self, day: date) -> bool:
+        return self.status == "active" and self.starts_on <= day and (self.ends_on is None or day <= self.ends_on)
+
+
+class EventImpact(Base):
+    """One link in the update chain: an event changed, so this piece was re-checked against it."""
+
+    __tablename__ = "event_impacts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("brand_events.id"), index=True)
+    content_id: Mapped[int] = mapped_column(ForeignKey("contents.id"), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    change: Mapped[str] = mapped_column(String(20))  # created | updated | cancelled
+    review_id: Mapped[int | None] = mapped_column(ForeignKey("reviews.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Escalation(Base):
+    """A creator asking a person to look at a finding: "this is wrong, please review it by hand".
+
+    Unlike a dispute (re-judged by Prism), an escalation goes to the brand team's inbox. Its message is
+    screened first (security/guard.py); what was flagged travels with it so the reviewer sees it."""
+
+    __tablename__ = "escalations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    content_id: Mapped[int] = mapped_column(ForeignKey("contents.id"), index=True)
+    finding_id: Mapped[int] = mapped_column(ForeignKey("findings.id"), index=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("content_versions.id"))
+    raised_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    message: Mapped[str] = mapped_column(Text)
+    guard: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(12), default="open")  # open | upheld | cleared | withdrawn
+    resolved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    resolution_code: Mapped[str | None] = mapped_column(String(40))
+    resolution: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

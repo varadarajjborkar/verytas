@@ -98,6 +98,7 @@ DETERMINISTIC: dict[str, type[_Pattern]] = {
     "banned_terms": BannedTerms, "preferred_terms": PreferredTerms, "casing": Casing, "palette": Palette,
     "readability": Readability, "link_text": LinkText, "hashtag_case": HashtagCase, "all_caps": AllCaps,
     "alt_text": AltText, "contrast": Contrast, "confidential_terms": NoConfig, "claims": NoConfig,
+    "public_contacts": NoConfig, "event_hashtags": BannedTerms,
     # Built-in families run by their own agents (brand assets, context layers,
     # media intake); listed so admins can retune severity or retire them.
     "brand_assets": NoConfig, "context": NoConfig, "media": NoConfig, "input": NoConfig,

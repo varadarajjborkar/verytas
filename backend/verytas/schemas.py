@@ -253,6 +253,7 @@ class ContentIn(BaseModel):
     body: str = Field(min_length=1, max_length=100_000)
     attachments: AttachmentsIn = AttachmentsIn()
     creator_notes: CreatorNotesIn = CreatorNotesIn()
+    event_id: int | None = Field(default=None, description="The brand event this piece is for, if any")
 
 
 class VersionIn(BaseModel):
@@ -293,6 +294,7 @@ class ContentOut(ORM):
     status: ContentStatus
     created_by: int
     created_at: datetime
+    event_id: int | None = None
 
 
 class LatestReview(UTCModel):
@@ -312,6 +314,8 @@ class ContentListItem(ContentOut):
     updated_at: datetime | None = None
     status_since: datetime | None = Field(default=None, description="When it entered its current status")
     latest_review: LatestReview | None = None
+    open_escalations: int = 0
+    rechecked_for_event: int | None = Field(default=None, description="Event whose change last re-checked it")
 
 
 class ContentDetail(ContentOut):
@@ -517,3 +521,109 @@ class AiEditOut(BaseModel):
     changes: list[str]
     remaining: list[str]
     model: str
+
+
+# --- the brand team's inbox, events and public contacts ----------------------------------
+
+ContactKind = Literal["phone", "email", "handle", "url"]
+
+
+class ContactIn(BaseModel):
+    kind: ContactKind
+    value: str = Field(min_length=3, max_length=200,
+                       description="An email, or *@domain to list a whole company domain")
+    label: str | None = Field(default=None, max_length=120)
+    source_ref: str | None = Field(default=None, max_length=300)
+
+
+class ContactOut(ORM):
+    id: int
+    kind: str
+    value: str
+    normalized: str
+    label: str | None
+    source_ref: str | None
+    active: bool
+
+
+EventKind = Literal["launch", "campaign", "sale", "crisis", "partnership", "other"]
+
+
+class EventIn(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    kind: EventKind = "campaign"
+    starts_on: date
+    ends_on: date | None = None
+    summary: str = Field(default="", max_length=4000)
+    guidance: str = Field(default="", max_length=4000, description="What posts should and shouldn't say while it runs")
+    hashtags: list[str] = Field(default=[], max_length=20)
+    avoid_terms: list[str] = Field(default=[], max_length=200)
+    blackout: bool = False
+    tier: Tier = Tier.public
+
+    @field_validator("hashtags", "avoid_terms")
+    @classmethod
+    def _clean(cls, v: list[str]) -> list[str]:
+        out = []
+        for t in v:
+            t = t.strip()
+            if t and len(t) <= 100 and t not in out:
+                out.append(t)
+        return out
+
+    @model_validator(mode="after")
+    def _window(self) -> EventIn:
+        if self.ends_on is not None and self.ends_on < self.starts_on:
+            raise ValueError("ends_on must be on or after starts_on")
+        return self
+
+
+class EventPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=160)
+    kind: EventKind | None = None
+    starts_on: date | None = None
+    ends_on: date | None = None
+    summary: str | None = Field(default=None, max_length=4000)
+    guidance: str | None = Field(default=None, max_length=4000)
+    hashtags: list[str] | None = Field(default=None, max_length=20)
+    avoid_terms: list[str] | None = Field(default=None, max_length=200)
+    blackout: bool | None = None
+
+
+class EventOut(ORM):
+    id: int
+    name: str
+    kind: str
+    starts_on: date
+    ends_on: date | None
+    summary: str
+    guidance: str
+    hashtags: list[str]
+    avoid_terms: list[str]
+    blackout: bool
+    status: str
+    tier: Tier
+    revision: int
+    updated_at: datetime
+    live: bool = False
+    rules: list[str] = []
+    pieces: int = 0
+    rechecked: list[int] = []
+
+
+class EscalationIn(BaseModel):
+    message: str = Field(min_length=10, max_length=2000,
+                         description="Why this finding is wrong or needs a person, in the creator's words")
+
+
+class EscalationResolveIn(BaseModel):
+    outcome: Literal["upheld", "cleared"]
+    reason_code: Literal["false_positive", "not_applicable", "guideline_unclear", "intentional", "other"] | None = None
+    note: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _reason_to_clear(self) -> EscalationResolveIn:
+        # Clearing is a dismissal: guideline health learns from its reason, so one is required.
+        if self.outcome == "cleared" and self.reason_code is None:
+            raise ValueError("clearing a finding needs a reason_code")
+        return self

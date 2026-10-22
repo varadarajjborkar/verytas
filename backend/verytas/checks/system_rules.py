@@ -11,6 +11,17 @@ from typing import Any
 
 SYSTEM_RULES: list[dict[str, Any]] = [
     {
+        "code": "CONTACT-PUBLIC",
+        "category": "confidentiality",
+        "kind": "deterministic",
+        "severity": "must",
+        "title": "Only the company's public contact details",
+        "text": "Phone numbers and email addresses in a post must be ones the company publishes (Library, Public "
+        "contacts). A personal or unlisted number exposes someone's private data and can't be taken back once "
+        "posted.",
+        "pattern": {"type": "public_contacts"},
+    },
+    {
         "code": "CONF-LEAK",
         "category": "confidentiality",
         "kind": "deterministic",

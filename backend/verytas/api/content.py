@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from verytas.api.deps import CurrentUser, PrismDep, Session, can_read, require
 from verytas.api.media import build_profile
 from verytas.models import (
+    BrandEvent,
     Change,
     Comment,
     Content,
@@ -22,6 +23,8 @@ from verytas.models import (
     Decision,
     DecisionAction,
     Dispute,
+    Escalation,
+    EventImpact,
     Finding,
     Level,
     Review,
@@ -57,6 +60,7 @@ from verytas.schemas import (
     VersionOut,
 )
 from verytas.security.audit import append
+from verytas.services.contacts import screened
 
 log = logging.getLogger("verytas.api.content")
 router = APIRouter(tags=["content"])
@@ -81,10 +85,18 @@ async def _content(session, user: User, content_id: int, *, with_versions: bool 
     if with_versions:
         q = q.options(selectinload(Content.versions))
     content = await session.scalar(q)
-    # Same 404 for "missing" and "above your clearance" so tiers don't leak.
-    if content is None or content.workspace_id != user.workspace_id or not can_read(user, content.tier):
+    # Same 404 for "missing", "above your clearance" and "another creator's", so nothing leaks.
+    if content is None or not visible(user, content):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "content not found")
     return content
+
+
+def visible(user: User, content: Content) -> bool:
+    """Creators see their own pieces only: one brand team, many creators, and a creator's drafts are
+    nobody else's business but the team's. The brand team sees everything its clearance allows."""
+    if content.workspace_id != user.workspace_id or not can_read(user, content.tier):
+        return False
+    return user.role is not Role.creator or content.created_by == user.id
 
 
 async def _readable_finding(session, user: User, finding_id: int, *options) -> tuple[Finding, Content]:
@@ -95,7 +107,7 @@ async def _readable_finding(session, user: User, finding_id: int, *options) -> t
         review = await session.get(Review, finding.review_id)
         version = await session.get(ContentVersion, review.version_id)
         content = await session.get(Content, version.content_id)
-        if content.workspace_id == user.workspace_id and can_read(user, content.tier):
+        if visible(user, content):
             return finding, content
     raise HTTPException(status.HTTP_404_NOT_FOUND, "finding not found")
 
@@ -147,11 +159,16 @@ async def create_content(body: ContentIn, session: Session, user: Writer, prism:
     """Create a draft and start the automated pre-check. `wait=true` returns after the review finishes."""
     if not can_read(user, body.tier):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "you cannot create content above your clearance")
+    if body.event_id is not None:
+        event = await session.get(BrandEvent, body.event_id)
+        if event is None or event.workspace_id != user.workspace_id or event.status != "active" \
+                or not can_read(user, event.tier):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "that event doesn't exist or was cancelled")
     attachments = body.attachments.model_dump(exclude_none=True)
     notes = body.creator_notes.model_dump(exclude_none=True)
     attachments["profile"] = await _intake(session, user, body.channel, body.body, attachments, notes)
     content = Content(workspace_id=user.workspace_id, title=body.title, channel=body.channel, tier=body.tier,
-                      created_by=user.id)
+                      created_by=user.id, event_id=body.event_id)
     session.add(content)
     await session.flush()
     version = ContentVersion(content_id=content.id, version_no=1, body=body.body,
@@ -271,7 +288,7 @@ async def list_contents(session: Session, user: CurrentUser, state: ContentStatu
     q = select(Content).where(Content.workspace_id == user.workspace_id)
     if state:
         q = q.where(Content.status == state)
-    if mine:
+    if mine or user.role is Role.creator:
         q = q.where(Content.created_by == user.id)
     rows = [c for c in (await session.scalars(q.order_by(Content.id.desc()))).all() if can_read(user, c.tier)]
     if not rows:
@@ -300,11 +317,20 @@ async def list_contents(session: Session, user: CurrentUser, state: ContentStatu
             .where(WorkflowEvent.content_id.in_(ids)).order_by(WorkflowEvent.id))).all():
         if to == status_of[cid]:
             since[cid] = at
+    open_esc: dict[int, int] = dict((await session.execute(
+        select(Escalation.content_id, func.count()).where(Escalation.content_id.in_(ids), Escalation.status == "open")
+        .group_by(Escalation.content_id))).all())
+    rechecked: dict[int, int] = {}
+    for cid, eid in (await session.execute(select(EventImpact.content_id, EventImpact.event_id)
+                                           .where(EventImpact.content_id.in_(ids)).order_by(EventImpact.id))).all():
+        rechecked[cid] = eid
 
     out = []
     for c in rows:
         item = ContentListItem.model_validate(c)
         item.status_since = since.get(c.id, c.created_at)
+        item.open_escalations = open_esc.get(c.id, 0)
+        item.rechecked_for_event = rechecked.get(c.id)
         item.version_count = count.get(c.id, 0)
         r = latest.get(c.id)
         item.updated_at = max(filter(None, [last_edit.get(c.id), r.finished_at if r else None]), default=c.created_at)
@@ -462,6 +488,7 @@ async def list_comments(content_id: int, session: Session, user: CurrentUser) ->
 @router.post("/contents/{content_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
 async def add_comment(content_id: int, body: CommentIn, session: Session, user: CurrentUser) -> Comment:
     await _content(session, user, content_id)
+    await screened(session, workspace_id=user.workspace_id, actor_id=user.id, text=body.body, where="comment")
     if body.parent_id is not None:
         parent = await session.get(Comment, body.parent_id)
         if parent is None or parent.content_id != content_id:
@@ -538,7 +565,26 @@ async def timeline(content_id: int, session: Session, user: CurrentUser) -> dict
                "level": level, "version": version_no[vid], "action": d.action, "reason_code": d.reason_code,
                "reason": d.reason_text} for d, title, level, vid in decisions]
     # Stable order for equal timestamps: a version comes before its review, a move after both.
-    rank = {"version": 0, "review": 1, "decision": 2, "status": 3, "comment": 4}
+    escalations = (await session.execute(
+        select(Escalation, Finding.title, Finding.level).join(Finding, Escalation.finding_id == Finding.id)
+        .where(Escalation.content_id == content_id).order_by(Escalation.id))).all()
+    impacts = (await session.execute(
+        select(EventImpact, BrandEvent.name).join(BrandEvent, EventImpact.event_id == BrandEvent.id)
+        .where(EventImpact.content_id == content_id).order_by(EventImpact.id))).all()
+    involved = {e.raised_by for e, *_ in escalations} | {e.resolved_by for e, *_ in escalations if e.resolved_by}
+    extra = involved - set(people)
+    if extra:
+        people |= {u.id: {"id": u.id, "name": u.name, "role": u.role} for u in (await session.scalars(
+            select(User).where(User.id.in_(extra), User.workspace_id == user.workspace_id))).all()}
+    for e, title, level in escalations:
+        items.append({"type": "escalation", "at": e.created_at, "actor": people.get(e.raised_by), "id": e.id,
+                      "finding": title, "level": level, "message": e.message, "state": "raised"})
+        if e.resolved_at:
+            items.append({"type": "escalation", "at": e.resolved_at, "actor": people.get(e.resolved_by), "id": e.id,
+                          "finding": title, "level": level, "message": e.resolution, "state": e.status})
+    items += [{"type": "event", "at": i.created_at, "actor": None, "event": name, "change": i.change,
+               "revision": i.revision, "review_id": i.review_id} for i, name in impacts]
+    rank = {"version": 0, "review": 1, "decision": 2, "status": 3, "comment": 4, "escalation": 5, "event": 6}
     items.sort(key=lambda i: (_aware(i["at"]), rank[i["type"]]))
     for i in items:
         i["at"] = _aware(i["at"]).isoformat()
@@ -586,6 +632,7 @@ async def dispute_finding(finding_id: int, body: DisputeIn, session: Session, us
     """'That is not what it means.' Queued and re-evaluated by Prism; the verdict can still be no."""
     _, content = await _readable_finding(session, user, finding_id)
     _can_dispute(user, content)
+    await screened(session, workspace_id=user.workspace_id, actor_id=user.id, text=body.claim, where="dispute")
     dispute = await _file_dispute(session, user, content, finding_id, body.claim, body.language)
     await session.commit()
     if wait:
@@ -611,6 +658,9 @@ async def resubmit(content_id: int, body: ResubmitIn, session: Session, user: Wr
     overturned now is not raised at full weight again."""
     content = await _content(session, user, content_id)
     _can_dispute(user, content)
+    # Screened before anything is saved, so a refusal leaves no half-made version behind.
+    for d in body.disputes:
+        await screened(session, workspace_id=user.workspace_id, actor_id=user.id, text=d.claim, where="dispute")
     review = await _latest_review(session, content.id)
     if review is None or review.status is not ReviewStatus.done:
         raise HTTPException(status.HTTP_409_CONFLICT, "no finished review to work from")

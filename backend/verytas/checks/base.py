@@ -56,6 +56,16 @@ class TermView:
     embargo_until: date | None
 
 
+@dataclass(frozen=True)
+class ContactView:
+    """A contact detail the company publishes (phone, email, handle or site), from the public register."""
+
+    kind: str  # phone | email | handle | url
+    value: str
+    normalized: str
+    label: str | None = None
+
+
 @dataclass
 class CheckContext:
     body: str
@@ -63,6 +73,7 @@ class CheckContext:
     rules: list[RuleView]
     facts: list[FactView] = field(default_factory=list)
     terms: list[TermView] = field(default_factory=list)
+    contacts: list[ContactView] = field(default_factory=list)
     attachments: dict[str, Any] = field(default_factory=dict)
     channel: str = "general"
     today: date = field(default_factory=date.today)

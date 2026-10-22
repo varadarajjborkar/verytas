@@ -186,6 +186,43 @@ def confidential_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding
             )
 
 
+# --- contact details ---------------------------------------------------------
+
+@matcher("public_contacts")
+def public_contacts(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
+    from verytas.security.guard import emails_in, phones_in
+
+    listed = {(c.kind, c.normalized) for c in ctx.contacts}
+    domains = {c.normalized[2:] for c in ctx.contacts if c.kind == "email" and c.normalized.startswith("*@")}
+    phone = next((c for c in ctx.contacts if c.kind == "phone"), None)
+    for start, end, norm in phones_in(ctx.body):
+        if ("phone", norm) in listed:
+            continue
+        fix = SuggestedEdit(ctx.body[start:end], phone.value, f"Use the public number ({phone.label or 'listed'}).") \
+            if phone else None
+        yield _finding(ctx, rule, start, end, "Phone number that isn't one of the company's public numbers",
+                       rule.text, fix)
+    for start, end, addr in emails_in(ctx.body):
+        if ("email", addr) in listed or addr.rsplit("@", 1)[-1] in domains:
+            continue
+        yield _finding(ctx, rule, start, end, "Email address that isn't in the public contacts register", rule.text)
+
+
+# --- brand events --------------------------------------------------------------
+
+@matcher("event_hashtags")
+def event_hashtags(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
+    """A piece made for an event carries at least one of the event's hashtags (rules from services/events.py)."""
+    tags = rule.pattern.get("terms", [])
+    folded = fold(ctx.body, "drop")[0].lower()
+    if not tags or any(t.lower().lstrip("#") in re.findall(r"#(\w+)", folded) for t in tags):
+        return
+    unit = ctx.units[0] if ctx.units else None
+    yield RawFinding(unit_id=unit.id if unit else "p1", category=rule.category, title="Missing the event's hashtag",
+                     explanation=f"{rule.text} Add one of: {', '.join('#' + t.lstrip('#') for t in tags)}.",
+                     confidence=1.0, checker=CHECKER, rule_code=rule.code)
+
+
 # --- accessibility -----------------------------------------------------------
 
 _PLACEHOLDER_ALT = {"image", "photo", "picture", "img", "graphic", "screenshot", "banner", "logo"}

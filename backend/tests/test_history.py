@@ -49,7 +49,9 @@ def test_content_list_carries_the_latest_review_and_filters_to_mine(client, worl
     row = rows[0]
     assert row["version_count"] == 1 and row["updated_at"]
     assert row["latest_review"]["status"] == "done" and row["latest_review"]["blockers"] >= 1
-    assert {r["title"] for r in client.get("/contents", headers=creator).json()} == {"Launch post", "Theirs"}
+    # One brand team, many creators: a creator never lists another person's pieces, even without mine=true.
+    assert {r["title"] for r in client.get("/contents", headers=creator).json()} == {"Launch post"}
+    assert {r["title"] for r in client.get("/contents", headers=reviewer).json()} == {"Launch post", "Theirs"}
 
 
 def test_assistant_context_redacts_codenames_and_skips_confidential_content(client, world):
