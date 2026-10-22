@@ -80,6 +80,9 @@ class CheckContext:
     # How the brand's published work sounds and what it covers (checks/voice.py BrandProfile). Typed loosely so
     # this module stays import-free; None falls back to the default voice.
     profile: Any = None
+    # False for text read out of an attachment (image OCR, a document page, a video caption). Requirements
+    # on the post as a whole, such as carrying the event's hashtag, are met by the caption, not each image.
+    whole_post: bool = True
 
     def rules_with(self, pattern_type: str) -> list[RuleView]:
         return [r for r in self.rules if r.pattern.get("type") == pattern_type]

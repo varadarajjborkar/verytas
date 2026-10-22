@@ -214,6 +214,8 @@ def public_contacts(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
 def event_hashtags(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     """A piece made for an event carries at least one of the event's hashtags (rules from services/events.py)."""
     tags = rule.pattern.get("terms", [])
+    if not ctx.whole_post:
+        return  # text inside an image or a document: the caption carries the post's hashtags
     folded = fold(ctx.body, "drop")[0].lower()
     if not tags or any(t.lower().lstrip("#") in re.findall(r"#(\w+)", folded) for t in tags):
         return
