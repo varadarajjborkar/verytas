@@ -162,7 +162,6 @@ def limit_for(media_type: str) -> int:
 _PDF_ACTIVE = {b"JavaScript": "JavaScript", b"JS": "JavaScript", b"Launch": "launch action",
                b"EmbeddedFile": "embedded file", b"EmbeddedFiles": "embedded file", b"OpenAction": "auto-open action",
                b"AA": "auto-run action", b"RichMedia": "rich media", b"XFA": "XFA form"}
-_STREAM = re.compile(rb"stream\r?\n(.*?)endstream", re.S)
 _NAME = re.compile(rb"/([^\s/<>\[\]()%{}]+)")
 _HEX = re.compile(rb"#([0-9A-Fa-f]{2})")
 _OBJSTM_MAX = 8 * 1024 * 1024  # inflated bytes read from all object streams together
@@ -171,6 +170,29 @@ _OBJSTM_MAX = 8 * 1024 * 1024  # inflated bytes read from all object streams tog
 def _names(chunk: bytes) -> set[bytes]:
     """PDF names in a chunk of object syntax, with #xx escapes decoded (/J#61vaScript is /JavaScript)."""
     return {_HEX.sub(lambda m: bytes([int(m.group(1), 16)]), m.group(1)) for m in _NAME.finditer(chunk)}
+
+
+def _streams(raw: bytes):
+    """(start, body, end) of each `stream ... endstream` run, scanning forward only.
+
+    A lazy regex for this is quadratic: every unterminated `stream` makes it read to the end of the
+    file again, so a few megabytes of them stall a worker for minutes. An unterminated stream ends
+    the walk and the rest is read as dictionary text, as the regex did."""
+    pos = 0
+    while (start := raw.find(b"stream", pos)) != -1:
+        data = start + 6
+        if raw.startswith(b"\r\n", data):
+            data += 2
+        elif raw.startswith(b"\n", data):
+            data += 1
+        else:
+            pos = data
+            continue
+        end = raw.find(b"endstream", data)
+        if end == -1:
+            return
+        yield start, raw[data:end], end + 9
+        pos = end + 9
 
 
 def pdf_active_content(raw: bytes) -> list[str]:
@@ -183,18 +205,18 @@ def pdf_active_content(raw: bytes) -> list[str]:
     """
     names: set[bytes] = set()
     pos, budget = 0, _OBJSTM_MAX
-    for m in _STREAM.finditer(raw):
-        head = raw[pos:m.start()]
+    for start, body, end in _streams(raw):
+        head = raw[pos:start]
         names |= _names(head)
         # The stream's own dictionary sits just before the keyword.
         if b"ObjStm" in _names(head[-400:]) and budget > 0:
             try:
-                inflated = zlib.decompressobj().decompress(m.group(1), budget)
+                inflated = zlib.decompressobj().decompress(body, budget)
             except zlib.error:
                 inflated = b""
             budget -= len(inflated)
             names |= _names(inflated)
-        pos = m.end()
+        pos = end
     names |= _names(raw[pos:])
     found = []
     for name, label in _PDF_ACTIVE.items():
