@@ -6,8 +6,23 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from verytas.api.deps import CurrentUser, Session, new_token, require
-from verytas.models import AuditEntry, Role, User, Workspace
+from verytas.api.deps import CurrentUser, Session, can_read, new_token, require
+from verytas.models import (
+    AuditEntry,
+    BrandAsset,
+    Content,
+    ContentVersion,
+    Dispute,
+    Escalation,
+    Fact,
+    Finding,
+    Review,
+    Role,
+    Rule,
+    Tier,
+    User,
+    Workspace,
+)
 from verytas.schemas import AuditOut, BootstrapIn, PersonOut, TokenOut, UserIn, UserOut
 from verytas.security.audit import append, verify_chain
 from verytas.services.workspace import create_workspace
@@ -64,7 +79,43 @@ async def audit_log(session: Session, user: AuditReader, limit: Annotated[int, Q
     q = select(AuditEntry).where(AuditEntry.workspace_id == user.workspace_id)
     if object_type:
         q = q.where(AuditEntry.object_type == object_type)
-    return list((await session.scalars(q.order_by(AuditEntry.id.desc()).limit(limit))).all())
+    entries = list((await session.scalars(q.order_by(AuditEntry.id.desc()).limit(limit))).all())
+    if user.clearance is Tier.confidential:
+        return entries
+    tiers = await _object_tiers(session, entries)
+    return [e for e in entries if can_read(user, tiers.get((e.object_type, e.object_id), Tier.public))]
+
+
+# Each tiered object type, and how to reach the row that carries its tier. Entries keep their labels
+# (rule codes, asset names, notes) because the chain hashes them, so the read side hides the whole
+# entry from anyone the object itself is hidden from.
+_TIER_OF = {
+    "rule": lambda ids: select(Rule.id, Rule.tier).where(Rule.id.in_(ids)),
+    "fact": lambda ids: select(Fact.id, Fact.tier).where(Fact.id.in_(ids)),
+    "brand_asset": lambda ids: select(BrandAsset.id, BrandAsset.tier).where(BrandAsset.id.in_(ids)),
+    "content": lambda ids: select(Content.id, Content.tier).where(Content.id.in_(ids)),
+    "dispute": lambda ids: select(Dispute.id, Content.tier).join(Content, Content.id == Dispute.content_id)
+    .where(Dispute.id.in_(ids)),
+    "escalation": lambda ids: select(Escalation.id, Content.tier).join(Content, Content.id == Escalation.content_id)
+    .where(Escalation.id.in_(ids)),
+    "review": lambda ids: select(Review.id, Content.tier).join(ContentVersion, ContentVersion.id == Review.version_id)
+    .join(Content, Content.id == ContentVersion.content_id).where(Review.id.in_(ids)),
+    "finding": lambda ids: select(Finding.id, Content.tier).join(Review, Review.id == Finding.review_id)
+    .join(ContentVersion, ContentVersion.id == Review.version_id).join(Content, Content.id == ContentVersion.content_id)
+    .where(Finding.id.in_(ids)),
+}
+
+
+async def _object_tiers(session, entries: list[AuditEntry]) -> dict[tuple[str, str], Tier]:
+    wanted: dict[str, set[int]] = {}
+    for e in entries:
+        if e.object_type in _TIER_OF and e.object_id and e.object_id.isdigit():
+            wanted.setdefault(e.object_type, set()).add(int(e.object_id))
+    out = {}
+    for kind, ids in wanted.items():
+        for oid, tier in (await session.execute(_TIER_OF[kind](ids))).all():
+            out[(kind, str(oid))] = tier
+    return out
 
 
 @router.get("/audit/verify")
