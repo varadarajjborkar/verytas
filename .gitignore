@@ -44,3 +44,7 @@ demo-accounts*.json
 
 # wrangler local state
 .wrangler/
+
+# Vision model weights (downloaded, never committed)
+backend/.models/
+backend/.venv-vision/
