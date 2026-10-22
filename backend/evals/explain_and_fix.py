@@ -233,6 +233,8 @@ async def regrade() -> None:
         settings = Settings(llm_mode="live", keys_dir=Path(keys))
         for path in sorted(RESULTS.glob("*.jsonl")):
             rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+            if rows and "config" not in rows[0]:
+                continue  # another eval's results
             todo = [r for r in rows if any(k.startswith("grade_error@") for k in r)]
             # One at a time: the free plan serves one cloud model at once, and bursts are refused.
             for r in todo:
@@ -281,6 +283,8 @@ def report() -> str:
     for path in sorted(RESULTS.glob("*.jsonl")):
         for line in path.read_text().splitlines():
             row = json.loads(line)
+            if "config" not in row:
+                break  # another eval's results (the mascot benchmark shares the folder)
             row["repeat"] = str(row["repeat"])  # older rows carry a bare index
             by[row["config"]].append(row)
     lines = ["| Model | Runs | Useful | Fix shown | Fix resolves | Natural | Explains | Left claims alone | "
