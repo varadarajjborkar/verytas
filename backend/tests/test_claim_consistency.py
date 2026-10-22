@@ -162,3 +162,18 @@ async def test_unsupported_claim_says_how_to_resolve_it():
     await drop_fixes_that_keep_claims([f], ctx, ExtractsNothing(), OfflineJudge())
     assert f.explanation.endswith("To resolve it, add an approved fact that backs it, reword it so it no longer "
                                   "states a fact, or dismiss it with a reason.")
+
+
+async def test_overlapping_ai_fixes_are_not_shown_unchecked():
+    body = "Sign-in takes seconds."
+    ctx = make_ctx(body, [], facts=[TEAMS])
+    first = _claim_finding(body, "Sign in with your work account.")
+    second = _claim_finding(body, "Sign-in is simple.")
+    await drop_fixes_that_keep_claims([first, second], ctx, ExtractsNothing(), OfflineJudge())
+    assert first.suggestion is not None and second.suggestion is None
+
+
+async def test_unsupported_claim_text_never_suggests_softening():
+    ctx = make_ctx("Verytas is the #1 review tool.", [], facts=[TEAMS])
+    [f] = await check_claims(ctx, ExtractsAs("superlative"), OfflineJudge())
+    assert "soften" not in f.explanation and f.explanation.endswith("or dismiss it with a reason.")
