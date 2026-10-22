@@ -67,6 +67,7 @@ export const listEscalations = (state: "open" | "resolved" | "all" = "open", con
   api<EscalationRequest[]>(`escalations?state=${state}${contentId ? `&content_id=${contentId}` : ""}`);
 export const resolveEscalation = (id: number, outcome: "upheld" | "cleared", reasonCode?: string | null, note?: string | null) =>
   api<EscalationRequest>(`escalations/${id}/resolve`, json({ outcome, reason_code: reasonCode ?? null, note: note || null }));
+export const countEscalations = () => api<{ open: number }>("escalations/count");
 export const withdrawEscalation = (id: number) => api<EscalationRequest>(`escalations/${id}/withdraw`, json({}));
 export const listEvents = () => api<BrandEvent[]>("events");
 export const createEvent = (e: Partial<BrandEvent>) => api<BrandEvent>("events", json(e));

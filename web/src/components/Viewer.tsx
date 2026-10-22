@@ -57,6 +57,19 @@ export function ViewerProvider({ children, app }: { children: ReactNode; app: Si
   // A one-sided app is that side. Otherwise the account's role decides, and the persona cookie only
   // picks which account is used; demo mode has no account and shows the brand team's view.
   const side: Side = app ?? (me ? sideOf(me.role) : (persona?.persona ?? "manager"));
+  if (app && me && sideOf(me.role) !== app) {
+    return (
+      <div className="grid min-h-screen place-items-center p-6">
+        <div className="vt-card max-w-md p-6 text-center">
+          <p className="text-sm font-semibold">This account belongs to the {app === "manager" ? "creator Studio" : "Brand Console"}</p>
+          <p className="mt-1.5 text-sm text-muted">
+            {me.name} signs in as {me.role === "creator" ? "a creator" : "part of the brand team"}, and this is the{" "}
+            {app === "manager" ? "brand team's console" : "creators' Studio"}. Open the other app, or sign in with a different account.
+          </p>
+        </div>
+      </div>
+    );
+  }
   return (
     <ViewerContext.Provider value={{ me, side, app, loading, canSwitch: !app && Boolean(persona?.available), demo: Boolean(persona?.demo),
       switchTo }}>

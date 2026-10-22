@@ -48,7 +48,7 @@ export function EventsTab({ events, editable, onChanged }: { events: BrandEvent[
             className="vt-btn vt-btn-primary ml-auto py-1.5"><PlusIcon size={14} /> New event</button>
         )}
       </div>
-      {form && <EventForm initial={form} onCancel={() => setForm(null)} onDone={() => { setForm(null); onChanged(); }} />}
+      {form && <EventForm key={form.id ?? "new"} initial={form} onCancel={() => setForm(null)} onDone={() => { setForm(null); onChanged(); }} />}
       {sorted.length === 0 ? <Empty>No events yet. Add a launch, a sale or a crisis, and every review takes it into account.</Empty> : (
         <ul className="overflow-hidden rounded-xl border border-line bg-raised">
           {sorted.map((e) => {

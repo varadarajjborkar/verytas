@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { usePersistedFlag } from "@/lib/persisted-flag";
 import { ROLE_LABEL } from "@/lib/roles";
 import { useEffect, useState } from "react";
-import { listEscalations } from "@/lib/review-client";
+import { countEscalations } from "@/lib/review-client";
 import { BookIcon, DashboardIcon, GaugeIcon, HomeIcon, InboxIcon, PanelIcon, ReviewIcon, SparkIcon } from "./Icons";
 import { SettingsMenu } from "./SettingsMenu";
 import { useViewer } from "./Viewer";
@@ -104,7 +104,7 @@ function useOpenEscalations(enabled: boolean): number {
     let live = true;
     const check = () => {
       if (document.hidden) return;
-      listEscalations("open").then((r) => { if (live) setCount(r.length); }).catch(() => {});
+      countEscalations().then((r) => { if (live) setCount(r.open); }).catch(() => {});
     };
     check();
     const t = setInterval(check, 60_000);

@@ -10,6 +10,7 @@ import { ApiError, listContents, listEvents, listPeople, relativeTime, STATUS_LA
 import type { BrandEvent, ContentRow, Person } from "@/lib/types";
 import { ArrowRightIcon, ChevronIcon, CloseIcon, InboxIcon, RefreshIcon } from "../Icons";
 import { StageDots } from "../Journey";
+import { tabKeys } from "../ui";
 import { useViewer } from "../Viewer";
 import { ReviewView } from "./ReviewView";
 
@@ -30,7 +31,11 @@ export function ReviewQueue() {
   const [people, setPeople] = useState<Map<number, Person>>(new Map());
   const [events, setEvents] = useState<BrandEvent[]>([]);
   const [demo, setDemo] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
   const seq = useRef(0);
+  // The order the reviewer opened a piece from. Approving it moves it out of "Waiting", and previous
+  // and next should still walk the list they were working through.
+  const [opened, setOpened] = useState<number[]>([]);
 
   const get = (k: string) => params.get(k);
   const queue: Queue = isQueue(get("queue")) ? get("queue") as Queue : "waiting";
@@ -41,6 +46,8 @@ export function ReviewQueue() {
   const event = get("event") ?? "all";
   const signal = (get("signal") && Object.hasOwn(SIGNALS, get("signal")!) ? get("signal") : null) as Signal | null;
   const query = get("q") ?? "";
+  // The box is typed into locally and written to the URL once typing pauses.
+  const [typed, setTyped] = useState(query);
   const selected = Number(get("id")) || null;
 
   const set = useCallback((patch: Record<string, string | number | null>) => {
@@ -55,9 +62,21 @@ export function ReviewQueue() {
 
   const refresh = useCallback(() => {
     const ticket = ++seq.current;
-    return listContents(false).then((r) => { if (ticket === seq.current) setRows(r); }).catch((err) => {
-      if (err instanceof ApiError && err.status === 503) setDemo(true);
-      setRows([]);
+    return listContents(false).then((r) => {
+      if (ticket !== seq.current) return;
+      setRows(r);
+      setFailed(null);
+    }).catch((err) => {
+      if (ticket !== seq.current) return;
+      if (err instanceof ApiError && err.status === 503) {
+        setDemo(true);
+        setRows([]);
+        return;
+      }
+      // Keep what is on screen (and the polling it drives); say the refresh failed instead of
+      // showing an empty, "clear" queue.
+      setFailed((err as Error).message);
+      setRows((r) => r ?? []);
     });
   }, []);
   useEffect(() => {
@@ -72,6 +91,12 @@ export function ReviewQueue() {
     const t = setInterval(() => { if (!document.hidden) void refresh(); }, 5000);
     return () => clearInterval(t);
   }, [pending, refresh]);
+
+  useEffect(() => {
+    if (typed === query) return;
+    const t = setTimeout(() => set({ q: typed }), 250);
+    return () => clearTimeout(t);
+  }, [typed, query, set]);
 
   const nameOf = useCallback((id: number) => people.get(id)?.name ?? "Unknown", [people]);
   const eventName = useMemo(() => new Map(events.map((e) => [e.id, e.name])), [events]);
@@ -92,20 +117,21 @@ export function ReviewQueue() {
   const filters = [creator !== "all", channel !== "all", event !== "all", signal != null, query !== ""].filter(Boolean).length;
 
   if (selected != null && !demo) {
-    const at = filtered.findIndex((r) => r.id === selected);
-    const prev = at > 0 ? filtered[at - 1] : null;
-    const next = at >= 0 && at < filtered.length - 1 ? filtered[at + 1] : null;
+    const order = opened.includes(selected) ? opened : filtered.map((r) => r.id);
+    const at = order.indexOf(selected);
+    const prev = at > 0 ? order[at - 1] : null;
+    const next = at >= 0 && at < order.length - 1 ? order[at + 1] : null;
     return (
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => set({ id: null })} className="vt-btn vt-btn-quiet py-1.5">
             <ChevronIcon size={14} className="rotate-90" /> {QUEUES[queue].label}
           </button>
-          {at >= 0 && <span className="text-xs tabular-nums text-subtle">{at + 1} of {filtered.length}</span>}
+          {at >= 0 && <span className="text-xs tabular-nums text-subtle">{at + 1} of {order.length}</span>}
           <div className="ml-auto flex gap-1.5">
-            <button type="button" disabled={!prev} onClick={() => prev && set({ id: prev.id })} className="vt-btn vt-btn-quiet py-1.5"
+            <button type="button" disabled={prev == null} onClick={() => prev != null && set({ id: prev })} className="vt-btn vt-btn-quiet py-1.5"
               aria-label="Previous piece in the queue">Previous</button>
-            <button type="button" disabled={!next} onClick={() => next && set({ id: next.id })} className="vt-btn vt-btn-quiet py-1.5"
+            <button type="button" disabled={next == null} onClick={() => next != null && set({ id: next })} className="vt-btn vt-btn-quiet py-1.5"
               aria-label="Next piece in the queue">Next <ArrowRightIcon size={14} /></button>
           </div>
         </div>
@@ -121,9 +147,11 @@ export function ReviewQueue() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div role="tablist" aria-label="Queue" className="flex gap-1 overflow-x-auto border-b border-line">
+      <div role="tablist" aria-label="Queue" className="flex gap-1 overflow-x-auto border-b border-line"
+        onKeyDown={tabKeys(QUEUE_ORDER, queue, (q) => set({ queue: q === "waiting" ? null : q, sort: null }), "queue-tab")}>
         {QUEUE_ORDER.map((q) => (
-          <button key={q} type="button" role="tab" aria-selected={queue === q} onClick={() => set({ queue: q === "waiting" ? null : q, sort: null })}
+          <button key={q} id={`queue-tab-${q}`} type="button" role="tab" aria-selected={queue === q} aria-controls="queue-panel"
+            tabIndex={queue === q ? 0 : -1} onClick={() => set({ queue: q === "waiting" ? null : q, sort: null })}
             className={`-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
               queue === q ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}>
             {q === "escalated" && <InboxIcon size={14} />}{QUEUES[q].label}
@@ -135,7 +163,7 @@ export function ReviewQueue() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <input value={query} onChange={(e) => set({ q: e.target.value })} placeholder="Search pieces or creators" aria-label="Search"
+        <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Search pieces or creators" aria-label="Search"
           className="vt-input w-56 py-1.5 text-xs" />
         <select value={creator} onChange={(e) => set({ creator: e.target.value })} aria-label="Creator" className="vt-input w-auto py-1.5 text-xs">
           <option value="all">Every creator</option>
@@ -162,14 +190,19 @@ export function ReviewQueue() {
           {(Object.keys(GROUPS) as Group[]).map((k) => <option key={k} value={k}>{GROUPS[k]}</option>)}
         </select>
         {filters > 0 && (
-          <button type="button" onClick={() => set({ creator: null, channel: null, event: null, signal: null, q: null })}
+          <button type="button" onClick={() => { setTyped(""); set({ creator: null, channel: null, event: null, signal: null, q: null }); }}
             className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink">
             <CloseIcon size={13} /> Clear {filters} filter{filters === 1 ? "" : "s"}
           </button>
         )}
       </div>
 
-      <section className="vt-card min-w-0 overflow-hidden" aria-label={QUEUES[queue].title}>
+      {failed && (
+        <p role="alert" className="rounded-xl bg-[var(--vt-warning-bg)] px-4 py-2.5 text-xs text-[var(--vt-warning)]">
+          Couldn&apos;t refresh the queue ({failed}). Showing the last list; it retries while pieces are being checked.
+        </p>
+      )}
+      <section id="queue-panel" role="tabpanel" aria-labelledby={`queue-tab-${queue}`} className="vt-card min-w-0 overflow-hidden">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line px-4 py-3 md:px-5">
           <h2 className="text-sm font-semibold">{QUEUES[queue].title}</h2>
           <p className="text-xs text-muted">{QUEUES[queue].lead}</p>
@@ -221,7 +254,8 @@ export function ReviewQueue() {
                     </tr>
                   )}
                   {items.map((r) => <QueueRow key={r.id} r={r} queue={queue} creatorName={nameOf(r.created_by)}
-                    eventName={r.event_id ? eventName.get(r.event_id) : undefined} onOpen={() => set({ id: r.id })} />)}
+                    eventName={r.event_id ? eventName.get(r.event_id) : undefined}
+                    onOpen={() => { setOpened(groups.flatMap(([, xs]) => xs.map((x) => x.id))); set({ id: r.id }); }} />)}
                 </tbody>
               ))}
             </table>
