@@ -7,6 +7,7 @@ import { ROLE_LABEL } from "@/lib/roles";
 import { useEffect, useState } from "react";
 import { countEscalations } from "@/lib/review-client";
 import { BookIcon, DashboardIcon, GaugeIcon, HomeIcon, InboxIcon, PanelIcon, ReviewIcon, SparkIcon, UsersIcon } from "./Icons";
+import { Logo } from "./Logo";
 import { SettingsMenu } from "./SettingsMenu";
 import { useViewer } from "./Viewer";
 
@@ -53,7 +54,7 @@ export function SideNav() {
     <header className={`border-b border-line bg-surface/70 backdrop-blur md:sticky md:top-0 md:flex md:h-screen md:shrink-0 md:flex-col md:border-b-0 md:border-r md:transition-[width] md:duration-300 md:ease-out ${
       collapsed ? "md:w-[4.5rem]" : "md:w-60"}`}>
       <div className={`flex items-center gap-2.5 px-5 py-4 md:py-6 ${collapsed ? "md:flex-col md:px-0" : ""}`}>
-        <span aria-hidden className="vt-mark grid h-8 w-8 shrink-0 place-items-center rounded-[10px] text-sm font-bold">V</span>
+        <Logo size={32} className="shrink-0" />
         <p className={`flex-1 leading-tight ${collapsed ? "md:sr-only" : ""}`}>
           <span className="block text-[15px] font-semibold tracking-tight">Verytas</span>
           {app && <span className="block text-[11px] font-medium text-subtle">{app === "manager" ? "Brand Console" : "Studio"}</span>}

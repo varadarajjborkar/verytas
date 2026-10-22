@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { type ChatStore, imageToDataUrl, openChatStore, type StoredMessage, type ThreadSummary } from "@/lib/chat-store";
 import { usePersistedFlag } from "@/lib/persisted-flag";
 import { Drawer } from "./Drawer";
+import { Logo } from "./Logo";
 import { ArrowRightIcon, ArrowUpIcon, ChatIcon, CloseIcon, HistoryIcon, PanelIcon, PaperclipIcon, PlusIcon, SparkIcon, TrashIcon } from "./Icons";
 import { useToast } from "./Toaster";
 import { useViewer } from "./Viewer";
@@ -473,7 +474,7 @@ function ChatMessage({ message: m, streaming, onAction }: {
   const plain = !streaming && m.content && !parsed?.root;
   return (
     <div className="vt-pop flex gap-3">
-      <span aria-hidden className="vt-mark mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg"><SparkIcon size={14} /></span>
+      <Logo size={26} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1 text-sm leading-6">
         {m.error ? (
           <p className="rounded-xl bg-[var(--vt-blocker-bg)] px-3 py-2 text-[var(--vt-blocker)]">{m.content}</p>
