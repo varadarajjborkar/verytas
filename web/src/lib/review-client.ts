@@ -2,7 +2,7 @@
 // server proxy (app/api/v), which holds the API token and an allowlist.
 
 import type {
-  BrandAsset, BrandEvent, ContentDetail, EscalationRequest, EventImpact, PublicContact, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
+  BrandAsset, BrandEvent, ContentDetail, CreatorRow, CreatorTrack, EscalationRequest, EventImpact, PublicContact, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
   Review, Rule, RuleDraft, Term, Timeline, UploadedMedia,
 } from "./types";
 
@@ -70,6 +70,8 @@ export const resolveEscalation = (id: number, outcome: "upheld" | "cleared", rea
 export const countEscalations = () => api<{ open: number }>("escalations/count");
 export const withdrawEscalation = (id: number) => api<EscalationRequest>(`escalations/${id}/withdraw`, json({}));
 export const listEvents = () => api<BrandEvent[]>("events");
+export const listCreators = () => api<CreatorRow[]>("insights/creators");
+export const creatorTrack = (id: number) => api<CreatorTrack>(`insights/creators/${id}`);
 export const createEvent = (e: Partial<BrandEvent>) => api<BrandEvent>("events", json(e));
 export const updateEvent = (id: number, e: Partial<BrandEvent>) => api<BrandEvent>(`events/${id}`, send("PATCH", e));
 export const cancelEvent = (id: number) => api<BrandEvent>(`events/${id}/cancel`, json({}));

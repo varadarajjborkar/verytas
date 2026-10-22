@@ -20,4 +20,5 @@ export const ONLY_FOR: Record<string, AppSide> = {
   "/library": "manager",
   "/guidelines": "manager",
   "/escalations": "manager",
+  "/creators": "manager",
 };

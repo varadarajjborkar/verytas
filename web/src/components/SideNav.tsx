@@ -6,7 +6,7 @@ import { usePersistedFlag } from "@/lib/persisted-flag";
 import { ROLE_LABEL } from "@/lib/roles";
 import { useEffect, useState } from "react";
 import { countEscalations } from "@/lib/review-client";
-import { BookIcon, DashboardIcon, GaugeIcon, HomeIcon, InboxIcon, PanelIcon, ReviewIcon, SparkIcon } from "./Icons";
+import { BookIcon, DashboardIcon, GaugeIcon, HomeIcon, InboxIcon, PanelIcon, ReviewIcon, SparkIcon, UsersIcon } from "./Icons";
 import { SettingsMenu } from "./SettingsMenu";
 import { useViewer } from "./Viewer";
 
@@ -22,6 +22,7 @@ const LINKS: Record<"creator" | "manager" | "loading", NavLink[]> = {
     { href: "/", label: "Dashboard", Icon: DashboardIcon },
     { href: "/review", label: "Review queue", short: "Queue", Icon: ReviewIcon },
     { href: "/escalations", label: "Escalations", short: "Asks", Icon: InboxIcon },
+    { href: "/creators", label: "Creators", Icon: UsersIcon },
     { href: "/library", label: "Brand library", short: "Library", Icon: BookIcon },
     { href: "/guidelines", label: "Guideline health", short: "Health", Icon: GaugeIcon },
     ASK,
