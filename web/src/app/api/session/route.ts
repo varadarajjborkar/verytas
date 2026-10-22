@@ -1,13 +1,15 @@
 import { cookies } from "next/headers";
 import { z } from "zod/v4";
+import { demoAccounts } from "@/lib/demo-accounts";
 import { SESSION_COOKIE, cookieOptions, signinRequired } from "@/lib/session";
 
 const API_URL = process.env.VERYTAS_API_URL;
 const Input = z.object({ token: z.string().trim().min(16).max(512).regex(/^[\w.\-~+/=]+$/) });
 
-/** Whether this console asks people to sign in (the settings menu shows sign-out only then). */
+/** Whether this console asks people to sign in (the settings menu shows sign-out only then), and whether
+ * sign-in is the shared demo's account picker (sign-out then reads "Switch account"). */
 export async function GET() {
-  return Response.json({ required: signinRequired });
+  return Response.json({ required: signinRequired, demo: signinRequired && demoAccounts() !== null });
 }
 
 /** Same-site JSON only. Without this a page elsewhere could post a form (text/plain needs
