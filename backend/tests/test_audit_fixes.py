@@ -121,3 +121,25 @@ class _NullSession:
 
     async def __aexit__(self, *exc):
         return False
+
+
+def test_hidden_audit_entries_never_leave_an_auditor_with_a_short_page(client, world):  # noqa: F811
+    admin = _auth(world["admin"])
+    auditor = _auditor(client, world)
+    for n in range(4):  # newer than anything the auditor may see
+        assert client.post("/rules", headers=admin, json={
+            "code": f"SECRET-{n}", "category": "terminology", "kind": "deterministic", "severity": "should",
+            "title": "Codename", "text": "Spell it our way.", "tier": "confidential",
+            "pattern": {"type": "preferred_terms", "map": {"lumen": "Lumen"}},
+        }).status_code == 201
+    page = client.get("/audit?limit=2", headers=auditor).json()
+    assert len(page) == 2 and all("SECRET" not in str(e["detail"]) for e in page)
+    older = client.get(f"/audit?limit=2&before={page[-1]['id']}", headers=auditor).json()
+    assert older and all(e["id"] < page[-1]["id"] for e in older)
+
+
+def test_confidential_term_entries_are_for_brand_admins_only(client, world):  # noqa: F811
+    auditor = _auditor(client, world)
+    assert all(e["object_type"] != "confidential_term" for e in client.get("/audit", headers=auditor).json())
+    admin_view = client.get("/audit", headers=_auth(world["admin"])).json()
+    assert any(e["object_type"] == "confidential_term" for e in admin_view)

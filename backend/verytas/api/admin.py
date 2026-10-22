@@ -10,6 +10,7 @@ from verytas.api.deps import CurrentUser, Session, can_read, new_token, require
 from verytas.models import (
     AuditEntry,
     BrandAsset,
+    BrandEvent,
     Content,
     ContentVersion,
     Dispute,
@@ -75,15 +76,34 @@ async def list_users(session: Session, user: CurrentUser) -> list[UserOut] | lis
 
 @router.get("/audit", response_model=list[AuditOut])
 async def audit_log(session: Session, user: AuditReader, limit: Annotated[int, Query(ge=1, le=500)] = 100,
-                    object_type: str | None = None) -> list:
+                    object_type: str | None = None, before: int | None = None) -> list:
+    """Newest first; pass the last id as `before` for the next page."""
     q = select(AuditEntry).where(AuditEntry.workspace_id == user.workspace_id)
     if object_type:
         q = q.where(AuditEntry.object_type == object_type)
-    entries = list((await session.scalars(q.order_by(AuditEntry.id.desc()).limit(limit))).all())
-    if user.clearance is Tier.confidential:
-        return entries
-    tiers = await _object_tiers(session, entries)
-    return [e for e in entries if can_read(user, tiers.get((e.object_type, e.object_id), Tier.public))]
+    # Hidden entries are dropped after the query, so keep reading back until the page is full: a run of
+    # confidential activity must not leave a lower-clearance reader with an empty page and no way past it.
+    out: list[AuditEntry] = []
+    cursor = before
+    for _ in range(_AUDIT_SCAN_PAGES):
+        page = q if cursor is None else q.where(AuditEntry.id < cursor)
+        batch = list((await session.scalars(page.order_by(AuditEntry.id.desc()).limit(limit))).all())
+        tiers = await _object_tiers(session, batch)
+        out += [e for e in batch if _visible(user, e, tiers)]
+        if len(out) >= limit or len(batch) < limit:
+            break
+        cursor = batch[-1].id
+    return out[:limit]
+
+
+_AUDIT_SCAN_PAGES = 10
+
+
+def _visible(user: User, entry: AuditEntry, tiers: dict[tuple[str, str], Tier]) -> bool:
+    # The term list itself is brand-admin only; its entries (embargo dates) follow it.
+    if entry.object_type == "confidential_term":
+        return user.role is Role.brand_admin
+    return can_read(user, tiers.get((entry.object_type, entry.object_id or ""), Tier.public))
 
 
 # Each tiered object type, and how to reach the row that carries its tier. Entries keep their labels
@@ -94,6 +114,7 @@ _TIER_OF = {
     "fact": lambda ids: select(Fact.id, Fact.tier).where(Fact.id.in_(ids)),
     "brand_asset": lambda ids: select(BrandAsset.id, BrandAsset.tier).where(BrandAsset.id.in_(ids)),
     "content": lambda ids: select(Content.id, Content.tier).where(Content.id.in_(ids)),
+    "event": lambda ids: select(BrandEvent.id, BrandEvent.tier).where(BrandEvent.id.in_(ids)),
     "dispute": lambda ids: select(Dispute.id, Content.tier).join(Content, Content.id == Dispute.content_id)
     .where(Dispute.id.in_(ids)),
     "escalation": lambda ids: select(Escalation.id, Content.tier).join(Content, Content.id == Escalation.content_id)
