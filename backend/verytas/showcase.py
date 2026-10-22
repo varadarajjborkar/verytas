@@ -377,7 +377,33 @@ def _token_env(path: Path, values: dict[str, str]) -> None:
     path.write_text("\n".join(out) + "\n")
 
 
-def seed(db_path: Path, keys_dir: Path, env_out: Path | None) -> dict[str, int]:
+# The people a visitor can be on the demo's sign-in page, in the order shown. Titles are what the brand
+# team would call each job; the blurb says what that person does here, so a first-time visitor knows
+# which account shows which part of the product.
+DEMO_PEOPLE = [
+    ("approver", "manager", "Social media manager",
+     "Works the review queue: approves, sends back, rules on escalations."),
+    ("admin", "manager", "Head of brand",
+     "Owns the brand library: rules, facts, artwork, events. Sees every screen."),
+    ("c2", "creator", "Content creator", "Writes posts and fixes what Verytas flags. Has a piece sent back."),
+    ("c1", "creator", "Content creator", "Instagram and X. Her tone drifts when she's in a hurry."),
+    ("c6", "creator", "Agency", "An outside agency writing campaigns for the brand."),
+]
+
+
+def _demo_accounts(path: Path, tok: dict[str, str]) -> None:
+    """The demo sign-in page's accounts, with their tokens: a server-side file, never sent to a browser."""
+    import json
+
+    names = {"admin": TEAM[0][1], "approver": TEAM[1][1], **{f"c{i}": n for i, (_, n) in enumerate(CREATORS)}}
+    seeded = datetime.now(UTC).replace(microsecond=0)
+    people = [{"key": key, "name": names[key], "side": side, "title": title, "blurb": blurb, "token": tok[key]}
+              for key, side, title, blurb in DEMO_PEOPLE]
+    path.write_text(json.dumps({"brand": BRAND, "seeded_at": seeded.isoformat(), "people": people}, indent=2))
+    path.chmod(0o600)
+
+
+def seed(db_path: Path, keys_dir: Path, env_out: Path | None, demo_out: Path | None = None) -> dict[str, int]:
     from verytas import models
     from verytas.config import Settings
     from verytas.main import create_app
@@ -479,6 +505,8 @@ def seed(db_path: Path, keys_dir: Path, env_out: Path | None) -> dict[str, int]:
             if env_out is not None:
                 # Dev has the richest history for a creator: a piece sent back, an open escalation, one published.
                 _token_env(env_out, {"VERYTAS_API_TOKEN": tok["admin"], "VERYTAS_CREATOR_TOKEN": tok["c2"]})
+            if demo_out is not None:
+                _demo_accounts(demo_out, tok)
     finally:
         models.datetime = datetime
     return counts
