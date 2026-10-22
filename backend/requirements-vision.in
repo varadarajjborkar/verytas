@@ -1,0 +1,18 @@
+# The vision worker's environment (verytas/vision): object grounding, segmentation and likeness on CPU.
+# Kept apart from the API's lock because torch alone is larger than everything the API installs.
+# SAM2 isn't on PyPI, so it is installed from its pinned commit after this lock (see deploy/vision.sh).
+torch==2.9.0
+torchvision==0.24.0
+transformers==4.57.1
+opencv-python-headless==4.12.0.88
+scenedetect==0.6.7
+numpy==2.2.6
+pillow==13.0.0
+# SAM2's own dependencies, which --no-deps skips when it is installed from git.
+hydra-core==1.3.7
+iopath==0.1.10
+tqdm
+fastapi==0.152.0
+uvicorn==0.54.0
+pydantic==2.14.1
+httpx==0.28.1

@@ -23,81 +23,43 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-import numpy as np
 from PIL import Image
 
-PROMPT = "a cartoon mascot character."
-SAM_CONFIG = "configs/sam2.1/sam2.1_hiera_t.yaml"
-SAM_CHECKPOINT = Path(__file__).resolve().parents[2] / ".models" / "sam2.1_hiera_tiny.pt"
+# The production chain (verytas/vision), so the benchmark measures what reviews run.
+MODELS = Path(__file__).resolve().parents[2] / ".models"
 
 
-class Chain:
-    """The three models, loaded once."""
-
-    def __init__(self, device: str = "cpu") -> None:
-        import torch
-        from sam2.build_sam import build_sam2
-        from sam2.sam2_image_predictor import SAM2ImagePredictor
-        from transformers import AutoImageProcessor, AutoModel, AutoModelForZeroShotObjectDetection, AutoProcessor
-
-        self.torch, self.device = torch, device
-        self.proc = AutoProcessor.from_pretrained("IDEA-Research/grounding-dino-tiny")
-        self.gdino = AutoModelForZeroShotObjectDetection.from_pretrained("IDEA-Research/grounding-dino-tiny")
-        self.gdino = self.gdino.to(device).eval()
-        self.sam = SAM2ImagePredictor(build_sam2(SAM_CONFIG, str(SAM_CHECKPOINT), device=device))
-        self.dproc = AutoImageProcessor.from_pretrained("facebook/dinov2-small")
-        self.dino = AutoModel.from_pretrained("facebook/dinov2-small").to(device).eval()
-
-    def detect(self, scene: Image.Image, prompt: str = PROMPT) -> tuple[list[float], float] | None:
-        inp = self.proc(images=scene, text=prompt, return_tensors="pt").to(self.device)
-        with self.torch.no_grad():
-            out = self.gdino(**inp)
-        res = self.proc.post_process_grounded_object_detection(
-            out, inp.input_ids, threshold=0.25, text_threshold=0.2, target_sizes=[scene.size[::-1]])[0]
-        if len(res["boxes"]) == 0:
-            return None
-        i = int(res["scores"].argmax())
-        return [float(v) for v in res["boxes"][i].tolist()], float(res["scores"][i])
-
-    def segment(self, scene: Image.Image, box: list[float]) -> np.ndarray:
-        self.sam.set_image(np.asarray(scene))
-        masks, _, _ = self.sam.predict(box=np.array(box), multimask_output=False)
-        return masks[0].astype(bool)
-
-    def embed(self, img: Image.Image):
-        with self.torch.no_grad():
-            v = self.dino(**self.dproc(images=img.convert("RGB"), return_tensors="pt").to(self.device))
-        return self.torch.nn.functional.normalize(v.last_hidden_state[:, 0], dim=-1)[0].cpu().numpy()
-
-
-def _on_white(rgba: Image.Image) -> Image.Image:
-    bg = Image.new("RGB", rgba.size, "white")
-    bg.paste(rgba, mask=rgba.getchannel("A"))
-    return bg
-
-
-def _iou(a: list[float], b: list[float]) -> float:
-    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
-    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
-    inter = ix * iy
-    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
-    return inter / union if union else 0.0
-
-
-def run(data: Path, out: Path, device: str) -> None:
-    from verytas.media.fidelity import compare, official_reference
+def run(data: Path, out: Path, device: str, resume: bool = False) -> None:
+    from verytas.media.fidelity import compare
+    from verytas.vision.chain import Chain, iou
 
     manifest = json.loads((data / "manifest.json").read_text())
+    # A full run takes over half an hour on a laptop CPU; --resume keeps the scenes already scored and
+    # appends the rest. A run killed mid-write leaves a torn last line, which is dropped (and its scene
+    # rerun) rather than glued to the next row.
+    done: set[str] = set()
+    if resume and out.is_file():
+        whole = []
+        for line in out.read_text().splitlines():
+            try:
+                done.add(json.loads(line)["file"])
+            except (ValueError, KeyError):
+                continue
+            whole.append(line + "\n")
+        # Replaced in one step: a crash here leaves the old file, never a half-written one.
+        tmp = out.with_suffix(".tmp")
+        tmp.write_text("".join(whole))
+        tmp.replace(out)
     t0 = time.perf_counter()
-    chain = Chain(device)
+    chain = Chain(MODELS, device)
     officials = sorted({c["mascot"] for c in manifest["cases"]})
-    refs = {m: Image.open(data / f"{m}_official.png") for m in officials}
-    ref_vec = {m: chain.embed(_on_white(img)) for m, img in refs.items()}
-    ref_fid = {m: official_reference(img) for m, img in refs.items()}
+    refs = {m: chain.reference(m, Image.open(data / f"{m}_official.png")) for m in officials}
     print(f"models and {len(officials)} officials ready in {time.perf_counter() - t0:.0f}s", flush=True)
     out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w") as fh:
+    with out.open("a" if resume else "w") as fh:
         for n, case in enumerate(manifest["cases"], start=1):
+            if case["file"] in done:
+                continue
             t = time.perf_counter()
             scene = Image.open(data / case["file"]).convert("RGB")
             row = dict(case)
@@ -106,18 +68,16 @@ def run(data: Path, out: Path, device: str) -> None:
                 row["found"] = False
             else:
                 box, score = found
-                mask = chain.segment(scene, box)
-                ys, xs = np.nonzero(mask)
-                rgb = np.asarray(scene)
-                if len(ys):
-                    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
-                    crop = rgb[y0:y1, x0:x1].copy()
-                    crop[~mask[y0:y1, x0:x1]] = 255
-                    vec = chain.embed(Image.fromarray(crop))
-                    fid = compare(ref_fid[case["mascot"]], (rgb, mask))
-                    row |= {"likeness": {m: round(float(vec @ v), 4) for m, v in ref_vec.items()},
+                cut = chain.cut_out(scene, box)
+                if cut is not None:
+                    rgb, mask, crop = cut
+                    vec = chain.embed(crop)
+                    # Fidelity against the scene's own mascot, whatever likeness says: identity and
+                    # fidelity are scored apart.
+                    fid = compare(refs[case["mascot"]].fidelity, (rgb, mask))
+                    row |= {"likeness": {m: round(float(vec @ r.vector), 4) for m, r in refs.items()},
                             "differences": [{"kind": d.kind, "text": d.text} for d in fid.differences]}
-                row |= {"found": True, "score": round(score, 3), "iou": round(_iou(box, case["box"]), 3)}
+                row |= {"found": True, "score": round(score, 3), "iou": round(iou(box, case["box"]), 3)}
             row["seconds"] = round(time.perf_counter() - t, 2)
             fh.write(json.dumps(row) + "\n")
             fh.flush()
@@ -191,11 +151,12 @@ def main() -> None:
     p.add_argument("--out", type=Path, default=Path("evals/results/mascots.jsonl"))
     p.add_argument("--device", default="cpu")
     p.add_argument("--report", type=Path)
+    p.add_argument("--resume", action="store_true", help="keep scored scenes in --out and run the rest")
     args = p.parse_args()
     if args.report:
         print(report(args.report))
         return
-    run(args.data, args.out, args.device)
+    run(args.data, args.out, args.device, args.resume)
     print(report(args.out))
 
 
