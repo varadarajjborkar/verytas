@@ -21,7 +21,7 @@ from typing import Any
 from blackbox.client import Api, Server, ServerError
 from blackbox.content import SLOT, Template, llm_templates, offline_templates
 from blackbox.llm import OllamaChat, load_key
-from blackbox.oracle import grade
+from blackbox.oracle import grade, rejected_grade
 from blackbox.plants import (
     APPENDED,
     Plant,
@@ -29,6 +29,8 @@ from blackbox.plants import (
     arms_for,
     attachment_plant,
     casing_plant,
+    mascot_plant,
+    media_plant,
     stat_plant,
     term_plant,
 )
@@ -50,6 +52,7 @@ class Config:
     adversary: bool = True
     review_timeout_s: float = 180.0
     world_model: str = "gpt-oss:120b"
+    media_rate: float = 0.4  # share of cases that also carry an image, document or video plant
     gen_model: str = "gpt-oss:20b"
 
 
@@ -60,6 +63,14 @@ class Case:
     body: str
     plants: list[Plant]
     attachments: dict[str, list[dict[str, Any]]] = field(default_factory=lambda: {"images": [], "colors": []})
+    uploads: list[tuple[str, str, bytes, str]] = field(default_factory=list)
+
+
+def _brand_colour(name: str) -> tuple[int, int, int]:
+    import hashlib
+
+    h = hashlib.sha256(name.encode()).digest()
+    return (120 + h[0] % 120, 60 + h[1] % 120, 20 + h[2] % 120)
 
 
 # --- setting a reality up through the API ---------------------------------------------------------
@@ -111,6 +122,12 @@ async def load_reality(api: Api, reality: Reality) -> dict[str, str]:
 
     await api.ok("POST", "/confidential-terms", json={"term": spec.codename, "note": "unannounced project",
                                                       "embargo_until": reality.embargo_until.isoformat()})
+    # Every brand has an official mascot, registered as a face only: a body is
+    # something the brand never approved.
+    from blackbox import media
+    reality.colour = _brand_colour(spec.name)
+    await api.ok("POST", "/brand-assets", json={"name": f"{spec.name} mascot", "kind": "mascot", "part": "face",
+                                                "data_base64": media.b64(media.png(media.mascot(reality.colour)))})
     tokens = {"admin": admin["token"]}
     for role in ("creator", "approver"):
         user = await api.ok("POST", "/users", json={"email": f"{role}@{slug}.example.com", "name": f"Sim {role}",
@@ -121,7 +138,8 @@ async def load_reality(api: Api, reality: Reality) -> dict[str, str]:
 
 # --- turning a template into a case ---------------------------------------------------------------
 
-def instantiate(t: Template, reality: Reality, rng: random.Random, store: Store, case_id: str) -> Case:
+def instantiate(t: Template, reality: Reality, rng: random.Random, store: Store, case_id: str,
+                media_rate: float = 0.0) -> Case:
     spec = reality.spec
     pieces = SLOT.split(t.body)  # text, slot id, text, slot id, ...
     by_id = {s.id: s for s in t.slots}
@@ -166,6 +184,20 @@ def instantiate(t: Template, reality: Reality, rng: random.Random, store: Store,
         for k, v in extra.items():
             case.attachments[k] += v
         case.plants.append(p)
+    if media_rate and rng.random() < media_rate:
+        family = rng.choice(["media", "media", "mascot"])
+        arm = store.pick(arms_for(family), rng)
+        no = case_id.replace("r", "").replace("g", "").replace("t", "").replace("f", "")
+        if family == "media":
+            kind = rng.choice(["codename", "term"])
+            needle = spec.codename if kind == "codename" else rng.choice(list(spec.banned))
+            p, extra, uploads = media_plant(arm.split(":")[1], needle, kind, rng, no)
+            case.uploads += uploads
+        else:
+            p, extra = mascot_plant(arm.split(":")[1], getattr(reality, "colour", (240, 130, 40)), no)
+        for k, v in extra.items():
+            case.attachments.setdefault(k, []).extend(v)
+        case.plants.append(p)
     return case
 
 
@@ -174,19 +206,47 @@ def instantiate(t: Template, reality: Reality, rng: random.Random, store: Store,
 async def run_case(api: Api, case: Case, reality: Reality, tokens: dict[str, str], cfg: Config) -> dict[str, Any]:
     out: dict[str, Any] = {"case": case, "review": None, "grade": None, "errors": []}
     try:
-        submitted = await api.ok("POST", "/contents", token=tokens["creator"], json={
-            "title": case.template.title[:300] or "untitled", "channel": case.template.channel, "tier": "public",
-            "body": case.body, "attachments": case.attachments})
+        for key, att_id, raw, filename in case.uploads:
+            res = await api.call("POST", "/media", token=tokens["creator"],
+                                 files={"file": (filename, raw, "application/octet-stream")})
+            if res.status_code >= 300:
+                raise RuntimeError(f"upload refused: {res.status_code} {res.text[:200]}")
+            case.attachments.setdefault(key, []).append({"id": att_id, "name": filename, "blob_id": res.json()["id"]})
+        payload = {"title": case.template.title[:300] or "untitled", "channel": case.template.channel,
+                   "tier": "public", "body": case.body, "attachments": case.attachments}
+        res = await api.call("POST", "/contents", token=tokens["creator"], json=payload)
+        if res.status_code == 422 and isinstance(res.json().get("detail"), dict):
+            # Irregular upload: give the reason a real creator would, and go ahead.
+            out["irregular"] = [i["code"] for i in res.json()["detail"].get("irregularities", [])]
+            payload["creator_notes"] = {"irregularity": "The campaign brief asks for this exact format"}
+            res = await api.call("POST", "/contents", token=tokens["creator"], json=payload)
+        if 400 <= res.status_code < 500:
+            # The API refused the case. That is an outcome, not a harness error:
+            # a flag plant in a refused case was not caught by a review.
+            out["rejected"] = f"{res.status_code}: {res.text[:200]}"
+            out["grade"] = rejected_grade(case.plants, out["rejected"])
+            return out
+        if res.status_code >= 400:
+            raise RuntimeError(f"POST /contents -> {res.status_code}: {res.text[:300]}")
+        submitted = res.json()
         review = await api.wait_review(submitted["review_id"], cfg.review_timeout_s)
         out["review"] = review
         out["grade"] = grade(case.body, case.plants, review, codename=reality.spec.codename,
                              banned=list(reality.spec.banned))
         blockers = [f for f in review.get("findings") or [] if f.get("level") == "blocker"]
         if cfg.gate_checks and blockers:
-            res = await api.call("POST", f"/contents/{submitted['content']['id']}/transition",
-                                 token=tokens["approver"], json={"to": "approved"})
-            if res.status_code < 300:
-                out["errors"].append(("gate_bypassed", f"approved with {len(blockers)} blocker(s)"))
+            # The real path: the creator sends it for review, then an approver
+            # tries to approve. Only the second step should be refused.
+            cid = submitted["content"]["id"]
+            res = await api.call("POST", f"/contents/{cid}/transition", token=tokens["creator"],
+                                 json={"to": "in_review"})
+            if res.status_code >= 300:
+                out["errors"].append(("gate_probe_failed", f"draft -> in_review: {res.status_code} {res.text[:150]}"))
+            else:
+                res = await api.call("POST", f"/contents/{cid}/transition", token=tokens["approver"],
+                                     json={"to": "approved"})
+                if res.status_code < 300:
+                    out["errors"].append(("gate_bypassed", f"approved with {len(blockers)} blocker(s)"))
     except ServerError as exc:
         out["errors"].append(("server_error", str(exc)))
     except Exception as exc:  # noqa: BLE001, a crashed case is a result, not a reason to stop the campaign
@@ -210,11 +270,9 @@ async def adversary_step(llm: OllamaChat, model: str, store: Store, run_id: int,
         if g is None or not g.verdicts:
             continue
         for p, v in zip(r["case"].plants, g.verdicts, strict=True):
-            if p.family in ("banned", "codename"):
-                ref = next((s.ref for s in r["case"].template.slots
-                            if s.type == ("term" if p.family == "banned" else "codename")), None)
-                if ref:
-                    seen[(p.family, ref)]["missed" if v["verdict"] == "missed" else "caught"].append(p.text)
+            # Each plant knows which term it spells; a template can hold several.
+            if p.family in ("banned", "codename") and p.ref:
+                seen[(p.family, p.ref)]["missed" if v["verdict"] == "missed" else "caught"].append(p.text)
     added = 0
     for (family, term), lists in list(seen.items())[:4]:
         user = (f"Phrase: {term!r}\nSlipped past the filter: {lists['missed'][:6]}\n"
@@ -259,7 +317,7 @@ async def campaign(cfg: Config, log=print) -> int:
                                  else offline_templates(reality, rng, cfg.templates))
                     log(f"  {len(templates)} templates ({'llm' if llm else 'offline'})")
                     for gen in range(cfg.generations):
-                        cases = [instantiate(t, reality, rng, store, f"r{r_idx}g{gen}t{ti}f{fi}")
+                        cases = [instantiate(t, reality, rng, store, f"r{r_idx}g{gen}t{ti}f{fi}", cfg.media_rate)
                                  for ti, t in enumerate(templates) for fi in range(cfg.fills)]
                         sem = asyncio.Semaphore(cfg.concurrency)
                         results = await asyncio.gather(*(_bounded(sem, api, c, reality, tokens, cfg)
