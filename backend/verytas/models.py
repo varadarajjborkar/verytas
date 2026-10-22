@@ -244,6 +244,14 @@ class ContentVersion(Base):
 
     content: Mapped[Content] = relationship(back_populates="versions")
 
+    @property
+    def images(self) -> list[dict[str, Any]]:
+        """The attached images as references (id, alt text, type), never their bytes: the bytes are served
+        one at a time by GET /contents/{id}/versions/{version_id}/images/{image_id}."""
+        return [{"id": i["id"], "alt": i.get("alt"), "decorative": bool(i.get("decorative")),
+                 "media_type": i.get("media_type") or "image/png"}
+                for i in (self.attachments or {}).get("images", []) if isinstance(i, dict) and i.get("id")]
+
 
 class Review(Base):
     __tablename__ = "reviews"

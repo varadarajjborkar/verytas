@@ -339,3 +339,25 @@ def test_text_under_the_app_buttons_is_flagged_on_full_screen_channels(client, w
     _, review = _submit(client, world, attachments={"images": [
         {"id": "story", "alt": "Promo card with a discount code", "data_base64": b64(png(img))}]}, channel="tiktok")
     assert any(f["title"].startswith("Text under the tiktok buttons") for f in review["findings"])
+
+
+def test_an_attached_image_is_served_back_to_whoever_can_read_the_piece(client, world):
+    made, _ = _submit(client, world, attachments={"images": [
+        {"id": "poster", "alt": "A poster", "data_base64": b64(png(text_image(["Hello"], size=(600, 400))))}]})
+    cid = made["content"]["id"]
+    [version] = client.get(f"/contents/{cid}", headers=_auth(world["creator"])).json()["versions"]
+    # References only: the bytes never ride along with the piece.
+    assert version["images"] == [{"id": "poster", "alt": "A poster", "decorative": False, "media_type": "image/png"}]
+    url = f"/contents/{cid}/versions/{version['id']}/images/poster"
+    for who in ("creator", "reviewer"):
+        res = client.get(url, headers=_auth(world[who]))
+        assert res.status_code == 200 and res.headers["content-type"] == "image/png"
+        assert res.content.startswith(b"\x89PNG") and res.headers["x-content-type-options"] == "nosniff"
+    # Another creator can't see the piece, so not its images either; unknown ids are the same 404.
+    other = client.post("/users", headers=_auth(world["admin"]),
+                        json={"email": "other@acme.io", "name": "Other", "role": "creator"}).json()["token"]
+    assert client.get(url, headers=_auth(other)).status_code == 404
+    assert client.get(f"/contents/{cid}/versions/{version['id']}/images/nope", headers=_auth(world["creator"])
+                      ).status_code == 404
+    assert client.get(f"/contents/{cid}/versions/999999/images/poster", headers=_auth(world["creator"])
+                      ).status_code == 404

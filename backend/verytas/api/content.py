@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from verytas.api.deps import CurrentUser, PrismDep, Session, can_read, require
 from verytas.api.media import build_profile
+from verytas.media.files import sniff
 from verytas.models import (
     BrandEvent,
     Change,
@@ -27,6 +29,7 @@ from verytas.models import (
     EventImpact,
     Finding,
     Level,
+    MediaBlob,
     Review,
     ReviewStatus,
     Role,
@@ -358,6 +361,32 @@ async def get_content(content_id: int, session: Session, user: CurrentUser) -> C
     detail = ContentDetail.model_validate(content)
     detail.latest_review_id = latest.id if latest else None
     return detail
+
+
+@router.get("/contents/{content_id}/versions/{version_id}/images/{image_id}")
+async def version_image(content_id: int, version_id: int, image_id: str, session: Session,
+                        user: CurrentUser) -> Response:
+    """One attached image, so a reviewer sees what was checked, with each finding's box drawn over it.
+    Readable exactly when the content is: one 404 for a missing piece, version or image."""
+    content = await _content(session, user, content_id, with_versions=True)
+    version = next((v for v in content.versions if v.id == version_id), None)
+    image = next((i for i in ((version.attachments or {}).get("images", []) if version else [])
+                  if isinstance(i, dict) and i.get("id") == image_id), None)
+    raw: bytes | None = None
+    if image is not None and image.get("data_base64"):
+        raw = base64.b64decode(image["data_base64"])
+    elif image is not None and image.get("blob_id"):
+        blob = await session.get(MediaBlob, image["blob_id"])
+        raw = blob.data if blob is not None and blob.workspace_id == content.workspace_id else None
+    if raw is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "image not found")
+    # The type is sniffed from the bytes, not trusted from the upload, and the browser may not guess.
+    kind = sniff(raw)
+    if not kind.startswith("image/"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "image not found")
+    return Response(raw, media_type=kind,
+                    # Revalidated every time: one browser can switch between accounts with different clearances.
+                    headers={"Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/reviews/{review_id}", response_model=ReviewOut)
