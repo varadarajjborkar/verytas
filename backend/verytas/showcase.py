@@ -277,7 +277,8 @@ def seed(db_path: Path, keys_dir: Path, env_out: Path | None) -> dict[str, int]:
                 run()
             _Clock.at = NOW
             if env_out is not None:
-                _token_env(env_out, {"VERYTAS_API_TOKEN": tok["admin"], "VERYTAS_CREATOR_TOKEN": tok["c0"]})
+                # Dev has the richest history for a creator: a piece sent back, an open escalation, one published.
+                _token_env(env_out, {"VERYTAS_API_TOKEN": tok["admin"], "VERYTAS_CREATOR_TOKEN": tok["c2"]})
     finally:
         models.datetime = datetime
     return counts

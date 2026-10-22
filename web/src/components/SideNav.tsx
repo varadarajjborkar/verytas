@@ -16,7 +16,8 @@ const ASK: NavLink = { href: "/ask", label: "Ask Verytas", short: "Ask", Icon: S
 // Each side sees only its own screens. Until the viewer is known, only the shared ones show,
 // so a creator never glimpses the brand team's links.
 const LINKS: Record<"creator" | "manager" | "loading", NavLink[]> = {
-  creator: [{ href: "/", label: "My work", short: "Home", Icon: HomeIcon }, REVIEW, ASK],
+  creator: [{ href: "/", label: "My work", short: "Home", Icon: HomeIcon },
+    { href: "/review", label: "My reviews", short: "Reviews", Icon: ReviewIcon }, ASK],
   manager: [
     { href: "/", label: "Dashboard", Icon: DashboardIcon },
     { href: "/review", label: "Review queue", short: "Queue", Icon: ReviewIcon },
