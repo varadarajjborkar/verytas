@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 import logging
 import threading
+import time
 from collections import OrderedDict
 from datetime import date
 from typing import Any
@@ -179,6 +180,14 @@ class Prism:
         content = version.content
         review.status, review.started_at = ReviewStatus.running, utcnow()
         await session.commit()
+        # Wall time per phase, kept on the review: where a slow review spent its time, without a profiler.
+        phases: dict[str, int] = {}
+        clock = [time.perf_counter()]
+
+        def lap(name: str) -> None:
+            now = time.perf_counter()
+            phases[name] = round((now - clock[0]) * 1000)
+            clock[0] = now
 
         ctx, redactor, assets = await self._context(session, version)
         language = detect(version.body)
@@ -221,8 +230,19 @@ class Prism:
             if flag.code in ("inducement", "contact_exchange"):
                 escalations.append({"reason": f"creator note: {flag.label}", "detail": flag.quote})
 
+        rules = {r.code: r for r in ctx.rules}
+        terms = [t.term for t in ctx.terms]
+        # Explanations and fixes for the literal findings are written while the context layers read the
+        # post: those findings are final once plan() returns (later steps only drop duplicates or cap a
+        # level), so they need not wait for the slowest model work. The context findings follow after.
+        early: list[asyncio.Task] = []
+
         async def prism(root):
             await plan(run, root)
+            first = [f for f in run.findings if f.needs_explanation]
+            if first:
+                early.append(asyncio.create_task(asyncio.wait_for(
+                    explain_and_fix(first, rules, llm, judge, terms), timeout=self.settings.task_timeout_s)))
             await tree.spawn(root, "context", "Onion: context layers", lambda n: onion_agent(run, n), essential=True)
             # One finding per issue before anything spends a model call on each.
             run.findings[:] = collapse(run.findings)
@@ -231,20 +251,29 @@ class Prism:
                                      lambda n: intent_agent(run, n, notes_realm, run.sources), essential=True)
             escalations.extend(found or [])
 
-        await tree.spawn(None, "prism", "Prism", prism)
+        lap("setup")
+        try:
+            await tree.spawn(None, "prism", "Prism", prism)
+        except BaseException:
+            for t in early:
+                t.cancel()
+            raise
+        lap("checks")
         raw = run.findings
         _apply_cleared(raw, cleared, {r.code: r.id for r in ctx.rules})
         rule_problems = run.rule_problems
         worker_of = run.worker_of
 
-        rules = {r.code: r for r in ctx.rules}
         suggest_note = None
         try:
-            await asyncio.wait_for(explain_and_fix(raw, rules, llm, judge, [t.term for t in ctx.terms]),
-                                   timeout=self.settings.task_timeout_s)
+            for t in early:
+                await t
+            # Whatever is still unexplained: the context layers' findings, mostly.
+            await asyncio.wait_for(explain_and_fix(raw, rules, llm, judge, terms), timeout=self.settings.task_timeout_s)
         except (ProviderError, TimeoutError) as exc:
             suggest_note = f"explanations and fixes skipped: {exc or 'timed out'}"
         else:
+            lap("explain_and_fix")
             try:
                 await asyncio.wait_for(drop_fixes_that_keep_claims(raw, ctx, llm, judge),
                                        timeout=self.settings.task_timeout_s)
@@ -305,6 +334,7 @@ class Prism:
                 session.add(Suggestion(finding_id=row.id, original=s.original, proposed=s.proposed,
                                        rationale=s.rationale, intent_preserved=s.intent_preserved, model=s.model))
 
+        lap("recheck_and_store")
         card = scorecard(levelled, checked, statuses)
         review.summary = card.as_dict()
         review.coverage = {
@@ -330,6 +360,7 @@ class Prism:
             "models": {"llm": llm.name, "judge": judge.name, "vision": vision.name},
             "usage": meter.by_provider,
             "redactions": redactor.count,
+            "phases_ms": phases,
         }
         # Agent details come from numpy-heavy media code; store plain JSON only.
         review.coverage = _plain(review.coverage)

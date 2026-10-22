@@ -9,6 +9,7 @@ fail either test are dropped rather than shown.
 
 from __future__ import annotations
 
+import asyncio
 import re
 
 from pydantic import BaseModel, Field
@@ -96,10 +97,11 @@ async def explain_and_fix(findings: list[RawFinding], rules: dict[str, RuleView]
     """
     pending = [f for f in findings if f.needs_explanation]
     proposals: list[tuple[RawFinding, SuggestedEdit]] = []
-    for start in range(0, len(pending), BATCH):
-        batch = pending[start:start + BATCH]
-        items = [(str(i), f, rules.get(f.rule_code or "")) for i, f in enumerate(batch)]
-        result = await llm.run(ExplainAndFixTask(items))
+    # Batches are independent, so they go to the model together; the provider slots bound how many at once.
+    batches = [[(str(i), f, rules.get(f.rule_code or "")) for i, f in enumerate(pending[start:start + BATCH])]
+               for start in range(0, len(pending), BATCH)]
+    results = await asyncio.gather(*(llm.run(ExplainAndFixTask(items)) for items in batches))
+    for items, result in zip(batches, results, strict=True):
         by_key = {fix.key: fix for fix in result.fixes}
         for key, f, _ in items:
             fix = by_key.get(key)
@@ -130,8 +132,7 @@ async def _check_intent(proposals: list[tuple[RawFinding, SuggestedEdit]],
                         judge: JudgeProvider) -> list[tuple[RawFinding, SuggestedEdit]]:
     if not proposals or judge.name.startswith("offline"):
         return proposals  # the offline judge can't judge meaning; intent stays unscored (shown as such)
-    kept = []
-    for f, s in proposals:
+    async def check(f: RawFinding, s: SuggestedEdit) -> bool:
         # Judge meaning in the surrounding sentence when there is one: a link's
         # text out of context looks like a different call to action when it isn't.
         original, revised = _in_sentence(f, s.original, s.proposed)
@@ -144,9 +145,11 @@ async def _check_intent(proposals: list[tuple[RawFinding, SuggestedEdit]],
             )},
         )
         s.intent_preserved = round(answers["same_intent"].p_yes, 4)
-        if s.intent_preserved >= INTENT_FLOOR:
-            kept.append((f, s))
-    return kept
+        return s.intent_preserved >= INTENT_FLOOR
+
+    # Each fix is judged on its own, so all of them at once: one round trip instead of one per fix.
+    verdicts = await asyncio.gather(*(check(f, s) for f, s in proposals))
+    return [p for p, ok in zip(proposals, verdicts, strict=True) if ok]
 
 
 def _leaks(text: str, confidential: list[str] | None) -> bool:
