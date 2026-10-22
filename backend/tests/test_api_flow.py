@@ -318,3 +318,18 @@ def test_scorecard_is_honest_about_coverage(client, world):
     assert cats["legal"]["status"] == "not_configured" and cats["legal"]["score"] is None
     assert cats["tone"]["status"] == "degraded"  # offline judge in tests
     assert "legal" in review["coverage"]["not_configured"]
+
+
+def test_built_in_checks_apply_to_public_content(client, world):
+    # Found by the black-box simulator: built-in rules were seeded "internal",
+    # so the tier ceiling skipped every leak, claim and accessibility check on
+    # public posts. A public post is exactly where a leak hurts most.
+    res = client.post("/contents?wait=true", headers=_auth(world["creator"]), json={
+        "title": "Teaser", "channel": "x", "tier": "public",
+        "body": "Psst, Project Lumen is coming. DO NOT SCROLL PAST THIS ONE SERIOUSLY.",
+    })
+    assert res.status_code == 201
+    review = client.get(f"/reviews/{res.json()['review_id']}", headers=_auth(world["creator"])).json()
+    categories = {f["category"] for f in review["findings"]}
+    assert {"confidentiality", "accessibility"} <= categories
+    assert "confidentiality" not in review["coverage"]["not_configured"]

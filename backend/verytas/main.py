@@ -11,6 +11,7 @@ from verytas.api import admin, content, insights, knowledge
 from verytas.config import Settings, get_settings
 from verytas.db import Database
 from verytas.prism.orchestrator import Prism
+from verytas.services.workspace import backfill_system_rule_tiers
 
 
 def _init_sentry(settings: Settings) -> None:
@@ -40,6 +41,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await db.create_all()
+        async with db.sessionmaker() as session:
+            await backfill_system_rule_tiers(session)
         yield
         await prism.drain()
         await db.dispose()
