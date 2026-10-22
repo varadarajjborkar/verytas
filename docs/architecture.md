@@ -365,6 +365,7 @@ flowchart LR
 | Workflow | `POST /contents/{id}/transition` (blockers need a noted override) | by role and state, mirrored in the UI's next steps |
 | Collaboration | `GET/POST /contents/{id}/comments` (threaded) · `GET /contents/{id}/timeline` · `GET /contents/{id}/changes` | the content's readers |
 | Insights | `GET /insights/overview` · `/insights/recurring` · `/insights/guideline-health` | reviewer, approver, auditor, brand admin |
+| Creators | `GET /insights/creators` · `GET /insights/creators/{id}` (pieces in order sent, distance from the brand as sent, why) | reviewer, approver, auditor, brand admin; by clearance |
 | Escalations | `POST /findings/{id}/escalations` · `GET /escalations?state=` · `POST /escalations/{id}/resolve` · `POST /escalations/{id}/withdraw` | raise: the piece's author or a reviewer · inbox: the brand team (creators see their own) · resolve: reviewer, approver; clearing a must-fix needs an approver |
 | Brand events | `GET/POST /events` · `PATCH /events/{id}` · `POST /events/{id}/cancel` · `GET /events/{id}/impacts` | read: anyone · write: brand admin; every write runs the update chain |
 | Public contacts | `GET/POST /public-contacts` · `DELETE /public-contacts/{id}` | read: anyone · write: brand admin |
