@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     # Pinned on purpose: jev-latest can move scores under a tuned threshold.
     jev_model: str = "jev-1.13.0"
 
+    # Without a TypeSafe key, the semantic judge runs on Ollama Cloud instead.
+    # The fast model is plenty for yes/no and level questions, and resamples
+    # cap how many extra calls a borderline answer may cost.
+    ollama_judge_model: str = "gpt-oss:20b"
+    # Resamples run in parallel inside one provider slot, so keep the cap small.
+    judge_resamples: int = Field(default=2, ge=0, le=4)
+
     keys_dir: Path = Path(".keys")
 
     environment: str = "development"

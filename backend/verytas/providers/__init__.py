@@ -20,9 +20,16 @@ def build_providers(settings: Settings, meter: UsageMeter) -> tuple[JudgeProvide
             settings.typesafe_api_key.get_secret_value(), model=settings.jev_model,
             base_url=settings.jev_base_url, meter=meter,
         )
+    elif settings.ollama_api_key is not None:
+        from verytas.providers.ollama_judge import OllamaJudge
+
+        judge = OllamaJudge(
+            settings.ollama_api_key.get_secret_value(), model=settings.ollama_judge_model,
+            base_url=settings.ollama_base_url, meter=meter, resamples=settings.judge_resamples,
+        )
     else:
         judge = OfflineJudge()
-        notes.append("TYPESAFE_API_KEY not set: semantic rules use the offline heuristic judge")
+        notes.append("no TYPESAFE_API_KEY or OLLAMA_API_KEY: semantic rules use the offline heuristic judge")
 
     llm: LLMProvider
     if settings.llm_backend == "claude":
