@@ -197,7 +197,7 @@ function RuleCard({ c }: { c: RuleCitation }) {
         className="flex w-full items-start gap-2 p-3 text-left">
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 text-[11px] text-subtle">
-            <span className="rounded bg-sunken px-1.5 py-px font-mono text-[10px] text-muted">{c.code}</span>
+            <span className="rounded bg-sunken px-1.5 py-px font-mono text-[11px] text-muted">{c.code}</span>
             <span>Rule · {severity}{c.event_id ? " · from an event" : c.system ? " · built in" : ""}</span>
           </p>
           <p className="mt-1 text-[13px] font-medium leading-5">{c.title}</p>
