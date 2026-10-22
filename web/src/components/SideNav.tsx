@@ -54,8 +54,10 @@ export function SideNav() {
     <header className={`border-b border-line bg-surface/70 backdrop-blur md:sticky md:top-0 md:flex md:h-screen md:shrink-0 md:flex-col md:border-b-0 md:border-r md:transition-[width] md:duration-300 md:ease-out ${
       collapsed ? "md:w-[4.5rem]" : "md:w-60"}`}>
       <div className={`flex items-center gap-2.5 px-5 py-4 md:py-6 ${collapsed ? "md:flex-col md:px-0" : ""}`}>
-        {/* The mark and name lead home from any screen. */}
-        <Link href="/" className="flex flex-1 items-center gap-2.5 rounded-lg">
+        {/* The mark and name lead home from any screen. Already home, a click does nothing: navigating to
+            the same page would only fetch and render it again. */}
+        <Link href="/" aria-current={pathname === "/" ? "page" : undefined} className="flex flex-1 items-center gap-2.5 rounded-lg"
+          onClick={(e) => { if (pathname === "/") e.preventDefault(); }}>
           <Logo size={32} className="shrink-0" />
           <p className={`leading-tight ${collapsed ? "md:sr-only" : ""}`}>
             <span className="block text-[15px] font-semibold tracking-tight">Verytas</span>
