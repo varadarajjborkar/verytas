@@ -188,7 +188,7 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
       <fieldset className="flex min-w-0 flex-col gap-2">
         <legend className="mb-1 text-xs font-medium text-muted">Attachments</legend>
         <div className="grid gap-2 sm:grid-cols-3">
-          <DropTile id={`${ids}-img`} label="Images" hint="PNG, JPG, WebP, GIF" accept="image/png,image/jpeg,image/webp,image/gif"
+          <DropTile id={`${ids}-img`} label="Images" hint="PNG, JPG, WebP, GIF · up to 6 MB" accept="image/png,image/jpeg,image/webp,image/gif"
             disabled={demo} onFiles={(f) => addFiles(f, "image")} />
           <DropTile id={`${ids}-doc`} label="Documents" hint="PDF or Word" accept="application/pdf,.docx"
             disabled={demo} onFiles={(f) => addFiles(f, "document")} />
@@ -232,7 +232,7 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
             ))}
           </ul>
           <label className="mt-3 flex flex-col gap-1 text-xs font-medium">
-            Why is it this way?
+            Why is it this way? It is still checked in full and counts against its score.
             <textarea className={`${field} min-h-16`} value={draft.irregularityReason} maxLength={2000}
               placeholder="e.g. The marketing team asked for the full catalogue as one LinkedIn document"
               onChange={(e) => set({ irregularityReason: e.target.value })} />
@@ -272,7 +272,7 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
           className="vt-btn vt-btn-primary">
           {busy ? "Checking…" : "Run review"}
         </button>
-        {!reasonOk && <span className="text-xs text-[var(--vt-warning)]">Add a short reason for the unusual upload.</span>}
+        {!reasonOk && <span className="text-xs text-[var(--vt-warning)]">Add a reason of at least 15 characters for the unusual upload.</span>}
       </div>
     </form>
   );
