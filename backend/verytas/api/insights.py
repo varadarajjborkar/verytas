@@ -19,7 +19,7 @@ from collections import Counter, defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -187,3 +187,22 @@ async def guideline_health_for(session, user: User, tiers: list[Tier]) -> list[d
             by_rule[f.rule_id].append(f)
     report = [_health(r, by_rule[r.id]) for r in rules if by_rule.get(r.id)]
     return sorted(report, key=lambda h: (h["ambiguity"] is None, -(h["ambiguity"] or 0), -h["findings"]))
+
+
+@router.get("/creators")
+async def creators(session: Session, user: Analyst) -> list[dict]:
+    """Everyone who writes for the brand, with where their pieces stand. The brand team's roster."""
+    from verytas.services.trajectory import creators as roster
+
+    return await roster(session, user)
+
+
+@router.get("/creators/{user_id}")
+async def creator_trajectory(user_id: int, session: Session, user: Analyst) -> dict:
+    """One creator's pieces in the order they were sent, each with its distance from the brand as sent."""
+    from verytas.services.trajectory import trajectory
+
+    person = await session.get(User, user_id)
+    if person is None or person.workspace_id != user.workspace_id or person.role is not Role.creator:
+        raise HTTPException(404, "no such creator")
+    return await trajectory(session, user, person)
