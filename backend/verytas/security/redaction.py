@@ -15,7 +15,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from verytas.providers.base import Answer, JudgeProvider, LLMProvider, Question, StructuredTask
-from verytas.security.terms import term_pattern
+from verytas.security.terms import sub_folded, term_pattern
 
 _PII = [
     ("EMAIL", re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")),
@@ -48,7 +48,9 @@ class Redactor:
 
     def redact(self, text: str) -> str:
         for pattern in self._terms:
-            text = pattern.sub(lambda m: self._placeholder("TERM", m.group(0)), text)
+            # Folded matching: a codename hidden with a zero-width space or a
+            # look-alike letter would otherwise reach the model unredacted.
+            text = sub_folded(pattern, text, lambda original: self._placeholder("TERM", original))
         for kind, pattern in _PII:
             text = pattern.sub(lambda m, k=kind: self._pii(k, m.group(0)), text)
         return text

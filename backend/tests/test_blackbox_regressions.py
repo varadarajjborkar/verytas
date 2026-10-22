@@ -1,0 +1,120 @@
+"""Regressions for gaps the black-box simulator found from the outside."""
+
+from __future__ import annotations
+
+from datetime import date
+
+import pytest
+
+from tests.helpers import make_ctx, rule, system_rule_views
+from verytas.checks.base import TermView
+from verytas.checks.claims import _PROMO, parse_numbers
+from verytas.checks.deterministic import run_deterministic
+from verytas.security.redaction import Redactor
+from verytas.security.terms import fold
+
+BANNED = rule("TERM-02", {"type": "banned_terms", "terms": ["fat-burning"]})
+
+
+@pytest.mark.parametrize("written", [
+    "f\u0430t-burning",  # Cyrillic a
+    "fat\u200b-burning",  # zero-width space
+    "\uff46\uff41\uff54\uff0d\uff42\uff55\uff52\uff4e\uff49\uff4e\uff47",  # full-width
+])
+def test_banned_terms_see_through_lookalikes_and_invisible_characters(written):
+    body = f"Honestly this one is {written} for athletes."
+    [f] = run_deterministic(make_ctx(body, [BANNED]))
+    # The span and quote still point at exactly what the writer typed.
+    assert f.quote == written and body[f.span_start:f.span_end] == written
+
+
+def test_folding_keeps_a_map_back_to_the_original():
+    folded, index = fold("a\u200bb\uff43")
+    assert folded == "abc" and index == (0, 2, 3, 4)
+
+
+def test_hidden_codename_is_flagged_and_redacted():
+    terms = [TermView(1, "Project Lumen", date(2099, 1, 1))]
+    body = "Psst, Proj\u200bect Lum\u0435n is coming."  # zero-width space, Cyrillic "\u0435"
+    findings = run_deterministic(make_ctx(body, system_rule_views(), terms=terms))
+    assert any(f.rule_code == "CONF-LEAK" for f in findings)
+    assert "men" not in Redactor(["Project Lumen"]).redact(body)
+
+
+def test_preferred_terms_suggest_on_folded_match():
+    r = rule("TERM-01", {"type": "preferred_terms", "map": {"e-mail": "email"}})
+    body = "\u0415-mail us."  # Cyrillic capital E
+    [f] = run_deterministic(make_ctx(body, [r]))
+    assert f.suggestion.original == body[:6] and f.suggestion.proposed == "Email"
+
+
+def test_indian_digit_grouping_is_one_number():
+    assert [n.value for n in parse_numbers("1,40,000 students and 12,34,567 views")] == [140000, 1234567]
+    assert [n.value for n in parse_numbers("1,000,000 users")] == [1_000_000]
+
+
+def test_rank_superlatives_are_seen():
+    assert _PROMO.search("We are the #1 sports drink")
+    assert _PROMO.search("the only brand that gets it")
+
+
+def test_file_name_alt_text_is_flagged():
+    images = [{"id": "hero", "alt": "IMG_20260412_0931.png"}, {"id": "ok", "alt": "A runner after a race"}]
+    findings = run_deterministic(make_ctx("Body text here.", system_rule_views(), attachments={"images": images}))
+    alt = [f for f in findings if f.rule_code == "A11Y-ALT"]
+    assert [f.unit_id for f in alt] == ["img:hero"]
+
+
+def test_dash_variants_match_in_both_rule_and_text():
+    # The LLM-generated brand wrote its banned phrase with a non-breaking
+    # hyphen; writers will type a plain one, and pasted copy brings en dashes.
+    r = rule("TERM-02", {"type": "banned_terms", "terms": ["world\u2011class care"]})
+    body = "We offer world-class care and world\u2013class care."
+    assert [f.quote for f in run_deterministic(make_ctx(body, [r]))] == ["world-class care", "world\u2013class care"]
+
+
+
+def test_em_dash_still_ends_a_word():
+    r = rule("TERM-02", {"type": "banned_terms", "terms": ["cheap"]})
+    body = "It is cheap\u2014really. A\u2014cheap\u2014b."
+    assert [f.quote for f in run_deterministic(make_ctx(body, [r]))] == ["cheap", "cheap"]
+
+
+@pytest.mark.parametrize("hidden", ["\u200e", "\u200f", "\u202a", "\u2063", "\u034f", "\ufe0f", "\u3164"])
+def test_every_kind_of_invisible_character_is_ignored(hidden):
+    terms = [TermView(1, "Project Lumen", date(2099, 1, 1))]
+    body = f"Psst, Proj{hidden}ect Lumen is coming."
+    assert any(f.rule_code == "CONF-LEAK" for f in run_deterministic(make_ctx(body, system_rule_views(), terms=terms)))
+    assert "Lumen" not in Redactor(["Project Lumen"]).redact(body)
+
+
+def test_genuine_cyrillic_words_are_not_read_as_latin():
+    r = rule("TERM-02", {"type": "banned_terms", "terms": ["cop", "pop"]})
+    assert run_deterministic(make_ctx("\u0441\u043e\u0440 \u0440\u043e\u0440", [r])) == []
+    # Mixed script is still caught, even with an invisible split in the middle.
+    [f] = run_deterministic(make_ctx("a \u0441\u200bop here", [r]))
+    assert f.quote == "\u0441\u200bop"
+
+
+def test_redaction_round_trips_when_matches_share_an_expanded_character():
+    red = Redactor(["f"])
+    text = "\ufb00 x"  # one ligature character that folds to "ff"
+    out = red.redact(text)
+    assert out.count("[[TERM_") == 1 and red.restore(out) == text
+
+
+async def test_existing_workspaces_get_public_built_in_rules(client, tmp_path):
+    from sqlalchemy import select
+
+    from verytas.models import Rule, Tier
+    from verytas.services.workspace import backfill_system_rule_tiers
+
+    client.post("/bootstrap", json={"workspace_name": "Old", "admin_email": "a@old.io", "admin_name": "A"})
+    db = client.app.state.db
+    async with db.sessionmaker() as s:
+        for r in (await s.scalars(select(Rule).where(Rule.system.is_(True)))).all():
+            r.tier = Tier.internal  # what an older database holds
+        await s.commit()
+        assert await backfill_system_rule_tiers(s) > 0
+        tiers = {r.tier for r in (await s.scalars(select(Rule).where(Rule.system.is_(True)))).all()}
+    assert tiers == {Tier.public}
