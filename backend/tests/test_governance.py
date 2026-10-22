@@ -182,3 +182,49 @@ def test_an_event_reaches_reviews_and_rechecks_pieces_in_flight(client, world):
     assert cancelled["status"] == "cancelled" and cancelled["rules"] == []
     assert client.post("/contents", headers=_auth(creator), json={
         "title": "x", "channel": "x", "body": "y", "event_id": ev["id"]}).status_code == 422
+
+
+# --- follow-ups from review ----------------------------------------------------------------------
+
+def test_ordinary_numbers_are_not_phone_numbers():
+    from verytas.security.guard import phones_in
+
+    for text in ("Our sale ends 15/03/2027.", "ISBN 978-0-306-40615-7", "Order 9820012345 shipped.",
+                 "We served 1200000000 lessons.", "Batch 2024-2025 opens soon.", "Fees from Rs 9820012345"):
+        assert phones_in(text) == [], text
+    for text in ("Call 98200 12345", "9820012345pm", "+44 20 7946 0958", "Helpline: 1800 123 456"):
+        assert phones_in(text), text
+    # In a message to the brand team a label is too easy a disguise.
+    assert not screen("ping ref9820012345", PUBLIC).ok
+    for text in ("I can send you 2 images of the layout.", "This reel should act as a teaser.",
+                 "You are now eligible for the scholarship."):
+        assert screen(text, PUBLIC).ok, text
+
+
+def test_event_edits_are_validated_and_cancelling_an_unstarted_event_stays_local(client, world):
+    admin, creator = _auth(world["admin"]), world["creator"]
+    waiting = _post(client, creator, "Our spring courses are open for enrolment.", title="Waiting")
+    client.post(f"/contents/{waiting['content']['id']}/transition", headers=_auth(creator), json={"to": "in_review"})
+    later = (date.today() + timedelta(days=30)).isoformat()
+    ev = client.post("/events", headers=admin, json={"name": "Later launch", "starts_on": later,
+                                                     "guidance": "No dates."}).json()
+    assert ev["rechecked"] == [], "an event that hasn't started touches only its own pieces"
+    bad = client.patch(f"/events/{ev['id']}", headers=admin, json={"ends_on": date.today().isoformat()})
+    assert bad.status_code == 422
+    assert client.post(f"/events/{ev['id']}/cancel", headers=admin).json()["rechecked"] == []
+
+
+def test_a_retired_contact_can_be_listed_again_and_the_badge_count_is_cheap(client, world):
+    admin = _auth(world["admin"])
+    c = client.post("/public-contacts", headers=admin, json={"kind": "phone", "value": "+91 22 4000 1234"}).json()
+    assert client.delete(f"/public-contacts/{c['id']}", headers=admin).status_code == 204
+    again = client.post("/public-contacts", headers=admin, json={"kind": "phone", "value": "022 4000 1234",
+                                                                "label": "Support"})
+    assert again.status_code == 201 and again.json()["id"] == c["id"] and again.json()["active"]
+    made = _post(client, world["creator"], LEAK)
+    f = _blocker(client, world["creator"], made)
+    client.post(f"/findings/{f['id']}/escalations", headers=_auth(world["creator"]),
+                json={"message": "Lumen was announced publicly at the keynote yesterday."})
+    assert client.get("/escalations/count", headers=_auth(world["reviewer"])).json() == {"open": 1}
+    other = client.post("/users", headers=admin, json={"email": "c3@acme.io", "name": "Third", "role": "creator"})
+    assert client.get("/escalations/count", headers=_auth(other.json()["token"])).json() == {"open": 0}

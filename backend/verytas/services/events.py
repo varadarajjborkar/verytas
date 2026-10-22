@@ -109,15 +109,18 @@ async def sync_rules(session: AsyncSession, e: BrandEvent) -> list[str]:
     return sorted(want)
 
 
-async def run_chain(session: AsyncSession, prism, e: BrandEvent, change: str, actor: str) -> ChainResult:
-    """Event saved: rewrite its rules, then re-check every piece it touches. Commits."""
+async def run_chain(session: AsyncSession, prism, e: BrandEvent, change: str, actor: str,
+                    was_live: bool = False) -> ChainResult:
+    """Event saved: rewrite its rules, then re-check every piece it touches. Commits.
+
+    An event's rules reach every piece in flight while it runs, and only the pieces made for it otherwise.
+    So a change touches every piece in flight if the event was running before it or is running after it
+    (a blackout ending, a start moved into today, a live event cancelled); otherwise only its own pieces."""
     codes = await sync_rules(session, e)
     # Same calendar as the checks (CheckContext.today), so "live" means the same thing everywhere.
     today = date.today()
     q = select(Content).where(Content.workspace_id == e.workspace_id, Content.status.in_(IN_FLIGHT))
-    if not e.live_on(today) and change != "cancelled":
-        # Not running yet (or over): only the pieces made for it are affected. A live or just-cancelled
-        # event touched every piece in flight, so all of those are checked again.
+    if not (was_live or e.live_on(today)):
         q = q.where(Content.event_id == e.id)
     pieces = (await session.scalars(q.order_by(Content.id.desc()))).all()
     # Tagged pieces first: they are the ones the event is about.
