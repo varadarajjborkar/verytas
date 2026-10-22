@@ -413,7 +413,7 @@ async def check_claims(ctx: CheckContext, llm: LLMProvider, judge: JudgeProvider
         elif kind in ("numeric", "superlative", "comparative") or retrieve(quote, ctx.facts):
             findings.append(RawFinding(
                 **base, rule_code="CLAIM-UNSUPPORTED", title=f"Unsupported {kind} claim",
-                explanation="No approved fact backs this claim. Add a source to the fact library or soften it.",
+                explanation=f"No approved fact backs this claim. {RESOLVE_UNSUPPORTED}",
                 needs_explanation=True,
             ))
     return findings
@@ -467,7 +467,8 @@ async def drop_fixes_that_keep_claims(findings: list[RawFinding], ctx: CheckCont
     cursor = shift = 0
     for start, end, f in pending:
         if start < cursor:
-            continue  # overlaps an earlier fix; its own re-check would be meaningless
+            f.suggestion = None  # overlaps an earlier fix, so it can't be re-checked; never show it unchecked
+            continue
         proposed = f.suggestion.proposed
         parts.append(ctx.body[cursor:start])
         parts.append(proposed)
