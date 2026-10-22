@@ -211,13 +211,40 @@ def profile_image(p: Profile, name: str, raw: bytes) -> None:
 
 
 def _trailing_bytes(raw: bytes, fmt: str | None) -> int:
-    if fmt == "PNG":
-        end = raw.rfind(b"IEND")
-        return max(0, len(raw) - (end + 8)) if end >= 0 else 0
-    if fmt == "JPEG":
-        end = raw.rfind(b"\xff\xd9")
-        return max(0, len(raw) - (end + 2)) if end >= 0 else 0
-    return 0
+    """Bytes after the image's real end. The end is found by walking the file's own structure, not by
+    searching for the last end marker: a payload that finishes with a fake marker would hide itself."""
+    end = _png_end(raw) if fmt == "PNG" else _jpeg_end(raw) if fmt == "JPEG" else None
+    return max(0, len(raw) - end) if end is not None else 0
+
+
+def _png_end(raw: bytes) -> int | None:
+    """Offset just past the first IEND chunk, walking chunk by chunk (length, type, data, CRC)."""
+    at = 8  # the signature
+    while at + 12 <= len(raw):
+        length = int.from_bytes(raw[at:at + 4], "big")
+        kind = raw[at + 4:at + 8]
+        at += 12 + length
+        if kind == b"IEND":
+            return at
+    return None
+
+
+def _jpeg_end(raw: bytes) -> int | None:
+    """Offset just past the EOI marker that closes the first scan. Segments are walked up to the first
+    start-of-scan, so a thumbnail's own markers in the EXIF block are skipped; inside scan data a 0xFF
+    byte is always stuffed or a restart marker, so the first FF D9 after it is the real end."""
+    at = 2  # SOI
+    while at + 4 <= len(raw) and raw[at] == 0xFF:
+        marker = raw[at + 1]
+        if marker == 0xFF:  # fill byte before a marker
+            at += 1
+            continue
+        length = int.from_bytes(raw[at + 2:at + 4], "big")
+        if marker == 0xDA:  # start of scan: the entropy-coded data follows its header
+            eoi = raw.find(b"\xff\xd9", at + 2 + length)
+            return eoi + 2 if eoi >= 0 else None
+        at += 2 + length
+    return None
 
 
 def _has_gps(img: Image.Image) -> bool:
