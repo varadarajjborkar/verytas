@@ -1,5 +1,5 @@
 [Unit]
-Description=Deploy origin/main to the Verytas demo when it has moved
+Description=Deploy origin/live (main after CI) to the Verytas demo when it has moved
 After=network-online.target
 Wants=network-online.target
 
