@@ -91,7 +91,7 @@ class Api:
 
     async def call(self, method: str, path: str, *, token: str | None = None, **kw: Any) -> httpx.Response:
         headers = {"Authorization": f"Bearer {token}"} if token else None
-        res = await self._client.request(method, path, headers=headers, **kw)
+        res = await self._client.request(method, path, headers=headers, timeout=600.0, **kw)
         if res.status_code >= 500:
             self.server_errors.append(f"{method} {path} -> {res.status_code}: {res.text[:300]}")
             raise ServerError(self.server_errors[-1])
