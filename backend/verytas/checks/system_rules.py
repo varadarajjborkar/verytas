@@ -174,6 +174,27 @@ SYSTEM_RULES: list[dict[str, Any]] = [
         "pattern": {"type": "context"},
     },
     {
+        "code": "LIKENESS-UNLICENSED",
+        "category": "legal",
+        "kind": "deterministic",
+        "severity": "must",
+        "title": "Only people the brand has an agreement with may appear",
+        "text": "A recognisable person in an image or video needs the brand's agreement for this channel, "
+        "campaign and date (Library, People). Featuring anyone else, a celebrity especially, invites a claim "
+        "against the brand for using their likeness.",
+        "pattern": {"type": "media"},
+    },
+    {
+        "code": "LIKENESS-UNKNOWN",
+        "category": "legal",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "Say who appears in the content",
+        "text": "A clearly visible person who isn't in the brand's records and isn't named in the brief can't be "
+        "checked. Name them in the brief, or register them in the Library (a creator registers themselves).",
+        "pattern": {"type": "media"},
+    },
+    {
         "code": "MEDIA-UNREAD",
         "category": "visual",
         "kind": "deterministic",

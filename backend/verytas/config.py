@@ -89,6 +89,8 @@ class Settings(BaseSettings):
     # Model files for the visual checks (faces, segmentation), fetched on first use and pinned by hash
     # (media/model_store.py).
     vision_models_dir: Path = Path(".models")
+    # Faces in images and video, identified against approved people (prism/people_agent.py).
+    faces_enabled: bool = True
     upload_quota_user_mb: int = Field(default=1024, ge=1)
     upload_quota_workspace_mb: int = Field(default=10 * 1024, ge=1)
     orphan_upload_ttl_h: float = Field(default=24.0, gt=0)

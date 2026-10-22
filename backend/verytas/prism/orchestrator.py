@@ -12,12 +12,13 @@ the Disambiguity agent; see docs/architecture.md 6.2.)
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import logging
 import threading
 import time
 from collections import OrderedDict
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 import cv2
@@ -28,12 +29,13 @@ from sqlalchemy.orm import selectinload
 
 from verytas.checks.base import CheckContext, ContactView, FactView, RawFinding, RuleView, TermView
 from verytas.checks.claims import drop_fixes_that_keep_claims
+from verytas.checks.likeness import PersonView
 from verytas.checks.voice import BrandProfile, build_profile
 from verytas.config import Settings
 from verytas.ingest.language import NAMES, WORD_LISTS, Language, detect
 from verytas.ingest.segment import image_units, segment
 from verytas.media import assets as asset_match
-from verytas.media.files import MediaError, decode_b64, open_image, png_b64, shrink
+from verytas.media.files import decode_b64, open_image, png_b64, shrink
 from verytas.media.storage import blob_ids
 from verytas.models import (
     BrandAsset,
@@ -47,6 +49,7 @@ from verytas.models import (
     Finding,
     Level,
     MediaBlob,
+    Person,
     PublicContact,
     Review,
     ReviewStatus,
@@ -63,6 +66,7 @@ from verytas.prism.governor import CircuitBreaker, Governor, GuardedJudge, Guard
 from verytas.prism.intent import intent_agent
 from verytas.prism.judge import CATEGORIES, level_for, scorecard
 from verytas.prism.onion import onion_agent
+from verytas.prism.people_agent import PeopleContext
 from verytas.prism.suggest import explain_and_fix
 from verytas.providers import build_providers, build_vision
 from verytas.providers.base import JudgeProvider, LLMProvider, ProviderError, UsageMeter
@@ -89,6 +93,7 @@ _ROLE_COVERS: dict[str, set[str]] = {
     "prism": set(CATEGORIES), "text": _ALL_TEXT,
     "policy": {"messaging", "legal"}, "presentation": {"legal", "visual", "accessibility"},
     "contrast": {"accessibility"},
+    "faces": {"legal"},
 }
 _ASSET_ROLES = {"assets", "scene", "keyframes"}  # visual, when the workspace has official artwork
 # Context reading is a second opinion over text that was already checked:
@@ -194,6 +199,8 @@ class Prism:
         ctx, redactor, assets = await self._context(session, version)
         language = detect(version.body)
         blobs = await _load_blobs(session, content.workspace_id, version.attachments or {}, version.creator_notes or {})
+        visuals = self.settings.faces_enabled and _has_visuals(version.attachments or {})
+        people = await _people(session, content, ctx, self.settings) if visuals else None
         cleared = await _cleared_disputes(session, content.id)
         # Learned from disputes and reviewer decisions: how sure the judge must
         # be before each model-judged rule flags (prism/disputes.py).
@@ -232,6 +239,7 @@ class Prism:
             if said:
                 notes_realm["brief"] = " ".join(filter(None, [notes_realm.get("brief"), f"(voice note) {said}"]))
         run.brief = notes_realm.get("brief") or ""
+        run.people = people
         # Offers and off-the-record contact in the note go to a person whatever the model makes of it.
         # (Steering is the intent agent's call: it reads the note against each finding.)
         note_text = " ".join(v for v in notes_realm.values() if isinstance(v, str))
@@ -576,6 +584,27 @@ async def _load_blobs(session: AsyncSession, workspace_id: int, attachments: dic
 
 
 
+def _has_visuals(attachments: dict) -> bool:
+    return bool(attachments.get("images") or attachments.get("videos") or attachments.get("documents"))
+
+
+async def _people(session: AsyncSession, content: Content, ctx: CheckContext, settings: Settings) -> PeopleContext:
+    """The brand's approved people and their photos, and whether names may be looked up on the web."""
+    rows = (await session.scalars(select(Person).options(selectinload(Person.references))
+                                  .where(Person.workspace_id == content.workspace_id, Person.active))).all()
+    people = [PersonView(id=p.id, name=p.name, kind=p.kind, valid_from=p.valid_from, valid_to=p.valid_to,
+                         channels=tuple(p.channels or ()), event_ids=tuple(p.event_ids or ()), user_id=p.user_id,
+                         active=p.active, aliases=tuple(p.aliases or ())) for p in rows]
+    photos = {p.id: [base64.b64decode(r.data_base64) for r in p.references if r.approved] for p in rows}
+    return PeopleContext(
+        people=people, photos=photos, restricted={p.id for p in rows if p.tier.rank > content.tier.rank},
+        channel=content.channel, event_id=content.event_id, author_id=content.created_by,
+        on=datetime.now(UTC).date(), models_dir=settings.vision_models_dir,
+        # A name in a confidential brief can itself be the secret (an unannounced deal): it never leaves.
+        allow_web=settings.llm_mode != "offline" and content.tier is not Tier.confidential,
+        avoid=[t.term for t in ctx.terms])
+
+
 async def _transcribe_brief(run: ReviewRun, audio: bytes) -> str:
     """What the creator said in a voice-note brief, or "" with a note when it can't be read."""
     from verytas.media import video
@@ -589,7 +618,9 @@ async def _transcribe_brief(run: ReviewRun, audio: bytes) -> str:
 
     try:
         said = await asyncio.wait_for(listen(), run.media_timeout_s)
-    except (TimeoutError, MediaError) as exc:
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001, a bad voice note costs the brief, never the review
         run.notes.append(f"the voice-note brief could not be transcribed ({type(exc).__name__})")
         return ""
     if not said:

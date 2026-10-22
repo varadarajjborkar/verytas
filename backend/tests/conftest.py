@@ -13,6 +13,8 @@ def settings(tmp_path) -> Settings:
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
         llm_mode="offline",
         keys_dir=tmp_path / "keys",
+        # The face models are fetched on first use; the suite stays offline (tests/test_faces.py opts in).
+        faces_enabled=False,
     )
 
 

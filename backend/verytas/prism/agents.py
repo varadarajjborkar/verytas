@@ -58,6 +58,7 @@ from verytas.media.files import (
     sniff,
 )
 from verytas.prism.governor import Governor, TaskOutcome
+from verytas.prism.people_agent import faces_agent
 from verytas.providers.base import JudgeProvider, LLMProvider, ProviderError
 from verytas.providers.vision import InspectTask, Reference, SceneReport, TranscribeTask
 from verytas.security.terms import term_pattern
@@ -188,6 +189,8 @@ class ReviewRun:
     # The creator's own account of what the images and video contain (typed, or a transcribed voice
     # note): names the visual checks look for, and claims they verify.
     brief: str = ""
+    # Approved people and their reference photos, for the faces check (prism/people_agent.py).
+    people: Any = None
     sources: list[Source] = field(default_factory=list)
     findings: list[RawFinding] = field(default_factory=list)
     outcomes: list[TaskOutcome] = field(default_factory=list)
@@ -368,6 +371,8 @@ async def image_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_i
         run.notes.append(f"{image_id}: not sent to a vision model because local OCR failed, so confidential "
                          "text in it could not be blacked out first")
     _asset_findings(run, node, image_id, locator, matches or [], scene, lines)
+    if run.people is not None:
+        await run.tree.spawn(node, "faces", "Identify faces", lambda n: faces_agent(run, n, pil, image_id, locator))
     contrast = run.rule_by_code.get("A11Y-CONTRAST")
     # A scan's contrast is the scanner's, not the author's.
     if contrast and lines and not scanned:
@@ -825,6 +830,11 @@ async def video_agent(run: ReviewRun, node: AgentNode, vid: dict[str, Any]) -> N
     async def visuals(n: AgentNode) -> None:
         keys = await run.blocking(video.keyframes, samples)
         n.detail = {"keyframes": [t for t, _ in keys]}
+        if run.people is not None:
+            for t, img in keys:
+                await run.tree.spawn(n, "faces", f"Identify faces at {t:.1f}s",
+                                     lambda c, img=img, t=t: faces_agent(run, c, img, video_id,
+                                                                         {**locator, "time": [t, t]}))
         best: dict[int, tuple[asset_match.AssetMatch, float]] = {}
         if run.assets:
             for t, img in keys:
