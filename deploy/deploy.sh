@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deploys now instead of waiting for the server's timer: the server pulls origin/main and runs
-# autodeploy.sh. Push to main first; only what is on GitHub's main can reach production.
+# Deploys now instead of waiting for the server's timer: the server pulls `live` and runs
+# autodeploy.sh. Push to main first; only a main commit that passed CI (and so moved `live`) deploys.
 # Usage: deploy/deploy.sh [--force]   (SSH key: ~/.ssh/verytas-deploy.pem; host override: VERYTAS_HOST)
 set -euo pipefail
 HOST=${VERYTAS_HOST:-ubuntu@15.252.228.168}
