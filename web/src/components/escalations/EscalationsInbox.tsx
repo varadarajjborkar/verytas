@@ -192,9 +192,10 @@ function RuleCard({ c }: { c: RuleCitation }) {
   const [open, setOpen] = useState(false);
   const severity = { must: "Must", should: "Should", may: "May" }[c.severity];
   return (
-    <div className="rounded-lg border border-line bg-raised">
+    // A quoted source, marked by a rule on its left edge rather than boxed: it already sits in a card.
+    <div className="border-l-2 border-line-strong">
       <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
-        className="flex w-full items-start gap-2 p-3 text-left">
+        className="flex w-full items-start gap-2 py-1 pl-3 text-left">
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 text-[11px] text-subtle">
             <span className="rounded bg-sunken px-1.5 py-px font-mono text-[11px] text-muted">{c.code}</span>
@@ -206,7 +207,7 @@ function RuleCard({ c }: { c: RuleCitation }) {
         <ChevronIcon size={15} className={`mt-0.5 shrink-0 text-subtle transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="vt-pop flex flex-col gap-2 border-t border-line px-3 pb-3 pt-2.5 text-xs">
+        <div className="vt-pop flex flex-col gap-2 pb-1 pl-3 pt-2.5 text-xs">
           {terms(c.pattern) && <p><span className="text-muted">Matches: </span>{terms(c.pattern)}</p>}
           {c.good_examples.length > 0 && <p><span className="font-medium text-[var(--vt-ok)]">On brand: </span>{c.good_examples.map((x) => `“${x}”`).join(", ")}</p>}
           {c.bad_examples.length > 0 && <p><span className="font-medium text-[var(--vt-blocker)]">Off brand: </span>{c.bad_examples.map((x) => `“${x}”`).join(", ")}</p>}
@@ -230,10 +231,10 @@ function terms(pattern: Record<string, unknown>): string | null {
 
 function FactCard({ c }: { c: FactCitation }) {
   return (
-    <div className="rounded-lg border border-line bg-raised p-3">
+    <div className="border-l-2 border-[var(--vt-ok)] py-1 pl-3">
       <p className="flex items-center gap-1.5 text-[11px] text-subtle">
         <span>Approved fact</span>
-        <span className={`rounded px-1.5 py-px text-[10px] font-medium ${c.valid_today ? "bg-[var(--vt-ok-bg)] text-[var(--vt-ok)]" : "bg-sunken text-muted"}`}>
+        <span className={`rounded px-1.5 py-px text-[11px] font-medium ${c.valid_today ? "bg-[var(--vt-ok-bg)] text-[var(--vt-ok)]" : "bg-sunken text-muted"}`}>
           {c.valid_today ? "Valid today" : "Not valid today"}
         </span>
       </p>

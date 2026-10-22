@@ -7,8 +7,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { type ChatStore, imageToDataUrl, openChatStore, type StoredMessage, type ThreadSummary } from "@/lib/chat-store";
 import { usePersistedFlag } from "@/lib/persisted-flag";
 import { Drawer } from "./Drawer";
-import { ArrowUpIcon, ChatIcon, CloseIcon, HistoryIcon, PanelIcon, PaperclipIcon, PlusIcon, SparkIcon, TrashIcon } from "./Icons";
+import { ArrowRightIcon, ArrowUpIcon, ChatIcon, CloseIcon, HistoryIcon, PanelIcon, PaperclipIcon, PlusIcon, SparkIcon, TrashIcon } from "./Icons";
 import { useToast } from "./Toaster";
+import { useViewer } from "./Viewer";
 
 // Ask Verytas, full page. The model answers in OpenUI Lang (charts, tables,
 // callouts) streamed from /api/chat and drawn by OpenUI's renderer in the app's
@@ -24,12 +25,22 @@ type Conversation = { id: number | null; saving: Promise<void> };
 const fresh = (id: number | null = null): Conversation => ({ id, saving: Promise.resolve() });
 
 const MAX_IMAGES = 4;
-const STARTERS = [
-  { label: "How are my recent posts doing?", prompt: "How are my most recent pieces doing in review? What is still blocking them?" },
-  { label: "Which rules get overridden most?", prompt: "Which rules do reviewers override most, and why might that be?" },
-  { label: "How did blockers trend this month?", prompt: "Show how blockers trended over the last 30 days." },
-  { label: "What should we clarify first?", prompt: "Which guideline should the brand team clarify first, based on the data?" },
-];
+// Each side starts from the questions its own work raises: a creator about their pieces and the rules,
+// the brand team about the queue, the rules and the people.
+const STARTERS = {
+  creator: [
+    { label: "How are my recent posts doing?", prompt: "How are my most recent pieces doing in review? What is still blocking them?" },
+    { label: "What do I get flagged for most?", prompt: "Which issues come up most often in my pieces, and how do I avoid them?" },
+    { label: "Which claims can I make?", prompt: "Which approved facts can I quote in a post right now, with their sources?" },
+    { label: "Which words should I avoid?", prompt: "List the banned and preferred terms I should know, and any confidential names." },
+  ],
+  manager: [
+    { label: "What needs a decision today?", prompt: "What is waiting for a decision, most urgent first, and why?" },
+    { label: "Which rules get overridden most?", prompt: "Which rules do reviewers override most, and why might that be?" },
+    { label: "How did blockers trend this month?", prompt: "Show how blockers trended over the last 30 days." },
+    { label: "Who is drifting from the brand?", prompt: "Which creators' recent pieces drift furthest from the brand, and in what way?" },
+  ],
+};
 
 /** Reads an OpenAI-style SSE stream, calling `onText` with each content delta.
  * Lines are only parsed once complete; an error payload from upstream throws. */
@@ -83,6 +94,7 @@ function when(iso: string): string {
 }
 
 export function AskVerytas() {
+  const { side } = useViewer();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
@@ -337,14 +349,16 @@ export function AskVerytas() {
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
             {empty ? (
               <div className="vt-stagger mx-auto flex h-full max-w-2xl flex-col items-center justify-center px-6 py-10 text-center">
-                <span aria-hidden className="vt-mark grid h-12 w-12 place-items-center rounded-2xl"><SparkIcon size={22} /></span>
-                <h2 className="mt-5 text-xl font-semibold tracking-tight">What would you like to know?</h2>
+                <h2 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+                  <SparkIcon size={20} className="text-accent" aria-hidden />What would you like to know?
+                </h2>
                 <p className="mt-1.5 text-sm text-muted">Ask about your own content or the workspace. Answers come as charts and tables.</p>
                 <div className="mt-8 grid w-full gap-2.5 sm:grid-cols-2">
-                  {STARTERS.map((st) => (
+                  {STARTERS[side === "manager" ? "manager" : "creator"].map((st) => (
                     <button key={st.label} type="button" onClick={() => send(st.prompt)}
-                      className="vt-lift rounded-xl border border-line bg-raised px-4 py-3 text-left text-sm transition hover:text-ink">
+                      className="vt-lift group flex items-center justify-between gap-3 rounded-xl border border-line bg-raised px-4 py-3 text-left text-sm transition hover:text-ink">
                       {st.label}
+                      <ArrowRightIcon size={14} aria-hidden className="shrink-0 text-subtle transition group-hover:translate-x-0.5 group-hover:text-accent" />
                     </button>
                   ))}
                 </div>
