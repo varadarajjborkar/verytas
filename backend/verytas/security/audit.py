@@ -62,7 +62,10 @@ async def append(session: AsyncSession, *, workspace_id: int, actor: str, action
         )
         entry = AuditEntry(
             workspace_id=workspace_id, actor=actor, action=action, object_type=object_type,
-            object_id=None if object_id is None else str(object_id), detail=detail or {},
+            object_id=None if object_id is None else str(object_id),
+            # Normalise to plain JSON once (dates, enums), so what we hash is
+            # exactly what the database stores and later returns.
+            detail=json.loads(canonical(detail or {})),
             created_at=utcnow(), prev_hash=prev or GENESIS, hash="",
         )
         entry.hash = entry_hash(entry.prev_hash, _payload(entry))
