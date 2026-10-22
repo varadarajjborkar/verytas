@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { TrackPoint } from "@/lib/types";
+import { channelName } from "@/lib/channels";
 
 const H = 220;
 const PAD = { left: 34, right: 14, top: 14, bottom: 28 };
@@ -107,7 +108,7 @@ export function DriftChart({ points }: { points: TrackPoint[] }) {
               ...(y(a.distance) > H / 2 ? { bottom: H - y(a.distance) + 14 } : { top: y(a.distance) + 14 }),
             }}>
             <p className="font-semibold text-ink">{a.title}</p>
-            <p className="mt-0.5 text-subtle">{day(a.at)} · {a.channel}{a.event ? ` · ${a.event}` : ""} · {STATUS_LABEL[a.status] ?? a.status}</p>
+            <p className="mt-0.5 text-subtle">{day(a.at)} · {channelName(a.channel)}{a.event ? ` · ${a.event}` : ""} · {STATUS_LABEL[a.status] ?? a.status}</p>
             <p className="mt-2 text-muted">{a.summary}</p>
             {a.issues.length > 0 && (
               <ul className="mt-2 flex flex-col gap-1">

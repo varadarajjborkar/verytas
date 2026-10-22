@@ -19,6 +19,7 @@ import { Checklist, emptyRow, type RowState, sortFindings } from "./Checklist";
 import type { DecideFn } from "./DecisionControls";
 import { AiEditBox, CoverageTag, findingKey, HighlightedBody } from "./parts";
 import { VersionCompare } from "./VersionCompare";
+import { channelName } from "@/lib/channels";
 
 type Phase = "loading" | "checking" | "ready" | "failed" | "missing";
 
@@ -114,6 +115,8 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
       if (live.current !== contentId) return;
       setReview(done);
       setRows({});
+      // Open the most urgent issue, so its explanation, source and fix are the first thing on screen.
+      setActive(sortFindings(done.findings)[0]?.id ?? null);
       if (waited) loadTimeline();
       setPhase(done.status === "failed" ? "failed" : "ready");
       if (done.status === "failed") setError(done.error ?? "The review failed. Re-check to run it again.");
@@ -158,7 +161,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
   // Selecting an issue brings its highlight into view.
   useEffect(() => {
     if (active == null) return;
-    textRef.current?.querySelector(`mark[data-id="${active}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    textRef.current?.querySelector(`mark[data-id="${active}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [active]);
 
   const latest = content?.versions.at(-1);
@@ -288,7 +291,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
           <h2 className={`truncate text-lg font-semibold tracking-tight ${FINISHED.includes(status) ? "text-muted" : ""}`}>{content.title}</h2>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted">
             <span className={`rounded-md px-1.5 py-0.5 font-medium ${STATUS_TONE[status]}`}>{STATUS_LABEL[status]}</span>
-            <span className="capitalize">{content.channel.replace("_", " ")}</span>
+            <span>{channelName(content.channel)}</span>
             <span aria-hidden>·</span>
             <span>Version {latest?.version_no ?? 1}</span>
             <span aria-hidden>·</span>
@@ -344,7 +347,8 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_25rem]">
         {/* The text, with every issue marked where it is. */}
-        <section className="vt-card min-w-0 p-5 md:p-7" aria-label={manager && !author ? "The text" : "Your text"}>
+        {/* Pinned beside a long issue list, so the highlight being discussed stays in sight. */}
+        <section className="vt-card min-w-0 p-5 md:p-7 xl:sticky xl:top-6 xl:max-h-[calc(100dvh-3rem)] xl:overflow-y-auto" aria-label={manager && !author ? "The text" : "Your text"}>
           {versions.length > 1 && !editing && (
             <div role="tablist" aria-label="Show" className="mb-5 inline-flex rounded-lg bg-sunken p-0.5 text-xs font-medium"
               onKeyDown={tabKeys(["text", "compare"] as const, docView, setDocView, `doc-${contentId}`)}>
@@ -395,7 +399,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
         </section>
 
         {/* What to fix, most urgent first. */}
-        <aside className="flex min-w-0 flex-col gap-5 xl:sticky xl:top-6" aria-label="Issues">
+        <aside className="flex min-w-0 flex-col gap-5" aria-label="Issues">
           <p className="-mb-3 text-[11px] text-subtle">
             AI-assisted review: people make the final call.{" "}
             <Link href="/ai" className="underline underline-offset-2 hover:text-ink">How AI is used</Link>
