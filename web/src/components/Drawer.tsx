@@ -1,12 +1,12 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 import { CloseIcon } from "./Icons";
 
-/** A side drawer for small screens: a modal dialog that takes focus, closes on
- * Escape or a tap outside, and hands focus back to whatever opened it. */
-export function Drawer({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
-  const panel = useRef<HTMLDivElement>(null);
+/** Focus handling for a modal panel: focus moves in on open, Tab cycles inside (and comes back in if a
+ * click left it on the page), Escape closes, and focus goes back to whatever opened it. A panel portalled
+ * to the body inside a `data-vt-modal` root also makes the page behind inert and stops it scrolling. */
+export function useModalFocus(panel: RefObject<HTMLElement | null>, onClose: () => void) {
   // Callers pass inline closures; the focus setup below must run once, not on every render.
   const close = useRef(onClose);
   useEffect(() => { close.current = onClose; }, [onClose]);
@@ -20,15 +20,33 @@ export function Drawer({ label, onClose, children }: { label: string; onClose: (
       const items = panel.current.querySelectorAll<HTMLElement>("button:not([disabled]), a[href], input, [tabindex]:not([tabindex='-1'])");
       const first = items[0];
       const last = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      const inside = panel.current.contains(document.activeElement);
+      if (e.shiftKey && (!inside || document.activeElement === first)) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); first?.focus(); }
     };
+    const root = panel.current?.closest<HTMLElement>("[data-vt-modal]");
+    const others = root?.parentElement === document.body
+      ? [...document.body.children].filter((c): c is HTMLElement => c !== root && c instanceof HTMLElement
+        && !["SCRIPT", "STYLE"].includes(c.tagName) && !c.inert)
+      : [];
+    others.forEach((c) => { c.inert = true; });
+    const overflow = document.body.style.overflow;
+    if (others.length) document.body.style.overflow = "hidden";
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
+      others.forEach((c) => { c.inert = false; });
+      if (others.length) document.body.style.overflow = overflow;
       opener?.focus();
     };
-  }, []);
+  }, [panel]);
+}
+
+/** A side drawer for small screens: a modal dialog that takes focus, closes on
+ * Escape or a tap outside, and hands focus back to whatever opened it. */
+export function Drawer({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
+  const panel = useRef<HTMLDivElement>(null);
+  useModalFocus(panel, onClose);
 
   return (
     <div className="fixed inset-0 z-40">
