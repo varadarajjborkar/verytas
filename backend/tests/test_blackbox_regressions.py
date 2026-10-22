@@ -128,3 +128,22 @@ def test_a_suggested_fix_that_restores_a_codename_is_dropped():
     assert _leaks("Silver Quill is hinting at a new upgrade.", ["Silver Quill"])
     assert _leaks("Silver\u200bQuill soon", ["Silver Quill"])
     assert not _leaks("A new upgrade is on the way.", ["Silver Quill"])
+
+
+def test_letter_spaced_terms_and_codenames_are_caught_and_redacted():
+    r = rule("TERM-03", {"type": "banned_terms", "terms": ["synergy"]})
+    assert [f.quote for f in run_deterministic(make_ctx("They call it s y n e r g y now", [r]))] == ["s y n e r g y"]
+    terms = [TermView(1, "Project Glacier", date(2099, 1, 1))]
+    body = "Psst, P.r.o.j.e.c.t G l a c i e r is near"
+    assert any(f.rule_code == "CONF-LEAK" for f in run_deterministic(make_ctx(body, system_rule_views(), terms=terms)))
+    assert "G l a c" not in Redactor(["Project Glacier"]).redact(body)
+    # Ordinary short words and spaced numbers are left alone.
+    assert run_deterministic(make_ctx("I a m fine, a b c. Rated 4 . 5 stars", [r])) == []
+
+
+def test_banned_terms_catch_plurals_but_preferred_terms_do_not():
+    banned = rule("TERM-04", {"type": "banned_terms", "terms": ["game-changer"]})
+    found = run_deterministic(make_ctx("Two game-changers in one week", [banned]))
+    assert [f.quote for f in found] == ["game-changers"]
+    preferred = rule("TERM-05", {"type": "preferred_terms", "map": {"e-mail": "email"}})
+    assert run_deterministic(make_ctx("Check your e-mails", [preferred])) == []

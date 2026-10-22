@@ -62,7 +62,7 @@ def run_deterministic(ctx: CheckContext, problems: list[tuple[str, str, str]] | 
 
 # --- helpers -----------------------------------------------------------------
 
-def _term_regex(term: str) -> re.Pattern[str]:
+def _term_regex(term: str, plural: bool = False) -> re.Pattern[str]:
     # Word boundaries that also work for terms starting/ending in punctuation.
     # Compiled from the folded term, since it is matched against folded text.
     # Emoji in a term are dropped: emoji are matched by banned_emoji rules, and
@@ -70,7 +70,15 @@ def _term_regex(term: str) -> re.Pattern[str]:
     core = fold(term, "drop")[0].strip()
     if not core:
         return _NEVER
-    return re.compile(rf"(?<![\w-]){re.escape(core)}(?![\w-])", re.IGNORECASE)
+    # Banned terms also catch their plural ("game-changers") and any spacing
+    # between their words ("gamechanger", "#insanedeals"). Preferred terms
+    # don't: "e-mail" loosened that way would flag "email", the fix itself.
+    if plural:
+        body = r"[\s_\-]*".join(re.escape(w) for w in re.split(r"[\s_\-]+", core) if w)
+        tail = r"(?:e?s)?" if core[-1:].isalpha() else ""
+    else:
+        body, tail = re.escape(core), ""
+    return re.compile(rf"(?<![\w-]){body}{tail}(?![\w-])", re.IGNORECASE)
 
 
 def _paragraph_for(ctx: CheckContext, offset: int) -> Unit:
@@ -111,7 +119,7 @@ def _finding(ctx: CheckContext, rule: RuleView, start: int, end: int, title: str
 @matcher("banned_terms")
 def banned_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     for term in rule.pattern.get("terms", []):
-        for start, end, _ in find_folded(_term_regex(term), ctx.body):
+        for start, end, _ in find_folded(_term_regex(term, plural=True), ctx.body):
             yield _finding(ctx, rule, start, end, f'Avoid "{ctx.body[start:end]}"', rule.text)
 
 
