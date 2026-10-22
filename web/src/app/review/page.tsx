@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ReviewWorkspace } from "@/components/ReviewWorkspace";
-import { PageHeader } from "@/components/ui";
+import { Suspense } from "react";
+import { PageHeader, PageSkeleton } from "@/components/ui";
 import { demoBody } from "@/lib/demo-data";
 
 export const metadata: Metadata = { title: "Review" };
@@ -8,8 +9,14 @@ export const metadata: Metadata = { title: "Review" };
 export default function Page() {
   return (
     <>
-      <PageHeader title="Review" lead="Check a draft against your rules and facts before it ships." />
-      <ReviewWorkspace initialBody={demoBody} />
+      <PageHeader title="Review" />
+      {/* The open review is read from the URL, which needs a Suspense boundary to prerender. */}
+      <Suspense fallback={<PageSkeleton />}>
+        {/* The open review is read from the URL, which needs a Suspense boundary to prerender. */}
+      <Suspense fallback={<PageSkeleton />}>
+        <ReviewWorkspace initialBody={demoBody} />
+      </Suspense>
+      </Suspense>
     </>
   );
 }

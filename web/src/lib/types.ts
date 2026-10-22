@@ -178,3 +178,30 @@ export type ReviewResult = { review: Review; body: string; source: Source };
 export type Source = "live" | "demo";
 
 export type Sourced<T> = { data: T; source: Source };
+
+export type ContentStatus = "draft" | "in_review" | "changes_requested" | "approved" | "published" | "withdrawn";
+
+/** A row in the review history: GET /contents. */
+export type ContentRow = {
+  id: number;
+  title: string;
+  channel: string;
+  tier: "public" | "internal" | "confidential";
+  status: ContentStatus;
+  created_by: number;
+  created_at: string;
+  version_count: number;
+  updated_at: string | null;
+  latest_review: {
+    id: number; status: Review["status"]; overall: number | null;
+    blockers: number; warnings: number; advisories: number; finished_at: string | null;
+  } | null;
+};
+
+/** GET /contents/{id}. */
+export type ContentDetail = Omit<ContentRow, "version_count" | "updated_at" | "latest_review"> & {
+  versions: { id: number; version_no: number; parent_id: number | null; body: string; created_at: string }[];
+  latest_review_id: number | null;
+};
+
+export type Me = { id: number; email: string; name: string; role: string; clearance: string };
