@@ -37,7 +37,7 @@ class Token:
 
 def stem(word: str) -> str:
     """A light, consistent stem so "elections" and "election" meet. Both sides use it, so it needn't be perfect."""
-    w = unicodedata.normalize("NFC", word.lower().strip("'’"))
+    w = unicodedata.normalize("NFC", word.lower().replace("’", "'").strip("'"))
     if not w.isascii():
         return w  # the suffix rules are English; other words are compared as written
     if w.endswith("'s"):
@@ -102,13 +102,15 @@ def _hits(toks: list[Token], lexicon: tuple[tuple[str, ...], ...]) -> list[Hit]:
 # Domains a brand post can wander into that most brands never want to be seen in. Each is named in the
 # finding, so a reviewer sees "moves to politics" rather than a similarity number. Words a brand uses
 # innocently are left out on purpose, in every language: "government exam prep", "invest in yourself", "a
-# portfolio you can show", "against the odds", "vote for your favourite", "betting big on", "dating back",
-# German "Wahl" (choice), Spanish "elección" (choice), Hindi "neta" (Portuguese for granddaughter).
+# portfolio you can show", "against the odds", "vote for your favourite", "betting big on", "dating back", "an
+# artist's manifesto", German "Wahl" (choice), Spanish "elección" (choice; "elecciones" needs a second hit),
+# Spanish "apuesta" and Portuguese "aposta" (a commitment), Hindi "neta" (Portuguese for granddaughter).
 DOMAINS: dict[str, tuple[tuple[str, ...], ...]] = {
     "politics": _lexicon(
         "election", "minister", "prime minister", "parliament", "politician", "political", "politics",
-        "party leader", "opposition", "bjp", "congress party", "campaign rally", "manifesto", "mla", "democrat",
-        "republican", "left wing", "right wing", "protest", "regime",
+        "party leader", "opposition", "bjp", "congress party", "campaign rally", "election manifesto", "mla",
+        "democrat",
+        "republican", "left wing", "right wing", "regime",
         "chunav", "mantri", "matdan", "चुनाव", "मंत्री", "मतदान",  # Hindi
         "elecciones", "ministro", "diputado", "partido político",  # Spanish
         "élection", "élections", "ministre", "député", "parti politique",  # French
@@ -124,8 +126,8 @@ DOMAINS: dict[str, tuple[tuple[str, ...], ...]] = {
         "criptomoneda", "criptomonedas", "cryptomonnaie", "cryptomonnaies", "kryptowährung", "criptomoeda"),
     "betting": _lexicon(
         "sports betting", "online betting", "casino", "odds", "jackpot", "gamble", "gambling", "poker",
-        "fantasy team", "satta", "lottery", "jua", "सट्टा", "जुआ", "apuestas", "paris sportifs", "glücksspiel",
-        "sportwetten", "apostas"),
+        "fantasy team", "satta", "lottery", "jua", "सट्टा", "जुआ", "apuestas deportivas", "casa de apuestas",
+        "paris sportifs", "glücksspiel", "sportwetten", "apostas esportivas", "casa de apostas"),
     "celebrity gossip": _lexicon("gossip", "breakup", "rumour", "rumor", "celebrity", "bollywood", "scandal",
                                  "paparazzi", "chisme", "potin", "fofoca"),
     "personal life": _lexicon("my girlfriend", "my boyfriend", "my wife", "my husband", "my ex", "hangover",
@@ -134,9 +136,10 @@ DOMAINS: dict[str, tuple[tuple[str, ...], ...]] = {
 # One of these alone is enough; everything else needs two different hits from the same domain.
 _STRONG = frozenset(" ".join(p) for p in _lexicon(
     "election", "bitcoin", "crypto", "cryptocurrency", "casino", "sports betting", "online betting", "bjp",
-    "parliament", "gossip", "satta", "nft", "hangover", "chunav", "चुनाव", "सट्टा", "elecciones", "élection",
-    "élections", "eleição", "eleições", "bundestag", "criptomoneda", "criptomonedas", "cryptomonnaie",
-    "cryptomonnaies", "kryptowährung", "criptomoeda", "apuestas", "apostas", "glücksspiel", "sportwetten"))
+    "parliament", "gossip", "satta", "nft", "hangover", "chunav", "चुनाव", "सट्टा", "élection", "élections",
+    "eleição", "eleições", "bundestag", "criptomoneda", "criptomonedas", "cryptomonnaie", "cryptomonnaies",
+    "kryptowährung", "criptomoeda", "apuestas deportivas", "casa de apuestas", "apostas esportivas",
+    "casa de apostas", "glücksspiel", "sportwetten"))
 
 
 def domain_hits(text: str) -> dict[str, list[Hit]]:
@@ -181,7 +184,8 @@ TONE: dict[str, tuple[tuple[str, ...], ...]] = {
                       "utilize", "stakeholder", "deliverable", "going forward", "circle back", "best in class",
                       "operationalize", "ideate"),
     "hyped": _lexicon("insane", "crazy", "mind blowing", "epic", "unbelievable", "game changer", "revolutionary",
-                      "killer", "ultimate", "unreal", "jaw dropping", "craziest"),
+                      "killer", "ultimate", "unreal", "jaw dropping", "craziest", "hurry", "last chance",
+                      "don't miss", "limited time", "act now"),
 }
 # How many hits make a dimension, when the brand's own work shows none of it.
 _MIN_HITS = {"hostile": 1, "sarcastic": 1, "slangy": 2, "stiff": 2, "hyped": 3}
@@ -192,14 +196,16 @@ _BANGS = re.compile(r"[!！]{2,}")
 
 def tone_spans(text: str) -> dict[str, list[Hit]]:
     """Each tone dimension's triggers with their offsets. "Hyped" also counts shouted punctuation: each run of
-    "!!", and every exclamation when at least half the sentences end in one."""
+    "!!" (a run of three or more counts twice), and, when at least half the sentences end in "!", two more.
+    Exclamations alone never reach the bar: an upbeat launch post is not hype until it also pushes ("hurry",
+    "!!!") or oversells ("insane", "ultimate")."""
     toks = tokens(text)
     found = {name: _hits(toks, lexicon) for name, lexicon in TONE.items()}
-    bangs = [Hit("!!", m.start(), m.end()) for m in _BANGS.finditer(text)]
+    bangs = [Hit("!!!" if m.end() - m.start() >= 3 else "!!", m.start(), m.end()) for m in _BANGS.finditer(text)]
     sentences = [m for m in _SENTENCE.finditer(text) if m.group().strip()]
     shouted = [m for m in sentences if m.group().rstrip().endswith(("!", "！"))]
     if sentences and len(shouted) / len(sentences) >= 0.5:
-        for m in shouted:
+        for m in shouted[:2]:
             end = m.start() + len(m.group().rstrip())
             bangs.append(Hit("!", end - 1, end))
     found["hyped"] = sorted(found["hyped"] + bangs, key=lambda h: h.start)
@@ -211,9 +217,12 @@ def tone_hits(text: str) -> dict[str, list[str]]:
     return {k: [text[h.start:h.end] for h in v] for k, v in tone_spans(text).items()}
 
 
+_PUNCT = {"!!!": 2, "!!": 1, "!": 1}
+
+
 def _count(hits: list[Hit]) -> int:
     # Repeating one insult is one hit for the threshold; punctuation counts per run.
-    return len({h.key for h in hits if h.key not in ("!!", "!")}) + sum(h.key in ("!!", "!") for h in hits)
+    return len({h.key for h in hits if h.key not in _PUNCT}) + sum(_PUNCT.get(h.key, 0) for h in hits)
 
 
 # --- the brand's own baseline ------------------------------------------------------------------------
@@ -258,14 +267,16 @@ def _paragraphs(ctx: CheckContext):
 
 
 def _span(unit, hits: list[Hit]) -> tuple[int, int]:
-    """Body offsets from the first trigger to the last while that stays a short quote, else the first alone."""
+    """Body offsets from the first trigger to the last while that stays a short quote, else the first alone.
+    A sentence's closing "!" counts toward hype but makes a poor quote; words and "!!" runs are quoted instead."""
+    hits = [h for h in hits if h.key != "!"] or hits
     first, last = hits[0], max(hits, key=lambda h: h.end)
     end = last.end if last.end - first.start <= 140 else first.end
     return unit.start + first.start, unit.start + end
 
 
 def _words(text: str, hits: list[Hit], fallback: str) -> str:
-    said = list(dict.fromkeys(text[h.start:h.end] for h in hits if h.key not in ("!!", "!")))
+    said = list(dict.fromkeys(text[h.start:h.end] for h in hits if h.key not in _PUNCT))
     return ", ".join(f"'{w}'" for w in said[:5]) or fallback
 
 

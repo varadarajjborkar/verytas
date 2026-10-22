@@ -63,7 +63,9 @@ function Roster() {
               <td className="px-2 py-3 text-right tabular-nums">{c.by_status.in_review || <span className="text-subtle">0</span>}</td>
               <td className="px-2 py-3 text-right tabular-nums">{c.by_status.changes_requested || <span className="text-subtle">0</span>}</td>
               <td className={`px-2 py-3 text-right tabular-nums ${c.open_escalations ? "font-semibold text-accent" : "text-subtle"}`}>{c.open_escalations}</td>
-              <td className="px-4 py-3 text-right text-muted">{c.last_at ? relativeTime(c.last_at) : "never"}</td>
+              <td className="px-4 py-3 text-right text-muted">
+                {c.last_at ? relativeTime(c.last_at) : c.above_clearance ? "above your clearance" : "never"}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -116,6 +118,12 @@ function Profile({ id }: { id: number }) {
       <Panel title="Distance from the brand, piece by piece">
         <p className="-mt-2 mb-3 text-xs text-muted">Flat along zero means every piece arrived on brand. Hover a point for why; click to open it.</p>
         <DriftChart points={points} />
+        {stats.above_clearance > 0 && (
+          <p className="mt-3 text-xs text-muted">
+            {stats.above_clearance} more {stats.above_clearance === 1 ? "piece is" : "pieces are"} above your clearance and not
+            shown, so this line is not their whole record.
+          </p>
+        )}
         {top.length > 0 && (
           <p className="mt-3 text-xs text-muted">
             Most often: {top.map(([c, n]) => `${CATEGORY[c] ?? c} ${n}`).join(" · ")}
