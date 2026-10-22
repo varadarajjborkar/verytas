@@ -101,7 +101,7 @@ async def create_fact(body: FactIn, session: Session, admin: Admin) -> Fact:
     try:
         await session.flush()
     except IntegrityError:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid fact") from None
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid fact") from None
     if body.supersedes_id:
         old = await session.get(Fact, body.supersedes_id)
         if old and old.workspace_id == admin.workspace_id and (old.valid_to is None or old.valid_to > body.valid_from):

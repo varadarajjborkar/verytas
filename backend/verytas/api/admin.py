@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -55,11 +55,12 @@ async def list_users(session: Session, user: CurrentUser) -> list[User]:
 
 
 @router.get("/audit", response_model=list[AuditOut])
-async def audit_log(session: Session, user: AuditReader, limit: int = 100, object_type: str | None = None) -> list:
+async def audit_log(session: Session, user: AuditReader, limit: Annotated[int, Query(ge=1, le=500)] = 100,
+                    object_type: str | None = None) -> list:
     q = select(AuditEntry).where(AuditEntry.workspace_id == user.workspace_id)
     if object_type:
         q = q.where(AuditEntry.object_type == object_type)
-    return list((await session.scalars(q.order_by(AuditEntry.id.desc()).limit(min(limit, 500)))).all())
+    return list((await session.scalars(q.order_by(AuditEntry.id.desc()).limit(limit))).all())
 
 
 @router.get("/audit/verify")

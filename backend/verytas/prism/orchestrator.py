@@ -53,13 +53,18 @@ _COVERS = {
 }
 
 
-def finding_payload(review_id: int, f: Finding | RawFinding, rule_id: int | None) -> dict[str, Any]:
-    """The exact fields a worker signs. Re-verifying on read uses the same shape."""
+def finding_payload(review_id: int, f: Finding | RawFinding, rule_id: int | None, level: str,
+                    fix: tuple[str, str] | None) -> dict[str, Any]:
+    """The exact fields a worker signs. Re-verifying on read uses the same shape.
+
+    Level and the suggested fix are included because they are what the approval
+    gate and apply-fixes act on; editing either in the database breaks the seal.
+    """
     return {
         "review_id": review_id, "unit_id": f.unit_id, "category": f.category, "title": f.title,
         "explanation": f.explanation, "quote": f.quote, "span": [f.span_start, f.span_end],
         "rule_id": rule_id, "fact_id": f.fact_id, "confidence": round(float(f.confidence), 4),
-        "checker": f.checker, "model": f.model,
+        "checker": f.checker, "model": f.model, "level": level, "fix": list(fix) if fix else None,
     }
 
 
@@ -151,7 +156,8 @@ class Prism:
                 continue
             lvl = level_for(f, rule, blocker_confidence=self.settings.blocker_confidence)
             levelled.append((f, lvl))
-            payload = finding_payload(review.id, f, rule.id if rule else None)
+            fix = (f.suggestion.original, f.suggestion.proposed) if f.suggestion else None
+            payload = finding_payload(review.id, f, rule.id if rule else None, lvl.value, fix)
             signature = self.keyring.sign(worker_of[id(f)], payload)
             if not self.keyring.verify(signature, payload):  # pragma: no cover - defensive
                 raise RuntimeError("signature failed self-verification")
@@ -201,6 +207,9 @@ class Prism:
         # Tier ceiling: a public post is only checked against facts it could
         # legitimately cite. Confidential facts never feed lower-tier content.
         visible_facts = [f for f in facts if f.tier.rank <= content.tier.rank]
+        # Same ceiling for rules: a confidential rule's text and source must not
+        # appear in findings on lower-tier content (or reach a model through it).
+        rules = [r for r in rules if r.tier.rank <= content.tier.rank]
         attachments = version.attachments or {}
         ctx = CheckContext(
             body=version.body,

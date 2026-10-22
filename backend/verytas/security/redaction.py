@@ -15,6 +15,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from verytas.providers.base import Answer, JudgeProvider, LLMProvider, Question, StructuredTask
+from verytas.security.terms import term_pattern
 
 _PII = [
     ("EMAIL", re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")),
@@ -28,7 +29,9 @@ class Redactor:
     def __init__(self, confidential_terms: list[str]) -> None:
         # Longest first so "Project Lumen Pro" is replaced before "Project Lumen".
         terms = sorted({t for t in confidential_terms if t.strip()}, key=len, reverse=True)
-        self._terms = [re.compile(rf"(?<![\w-]){re.escape(t)}(?![\w-])", re.IGNORECASE) for t in terms]
+        # Loose matching: hyphenated, glued, re-spaced and plural variants are
+        # redacted too. Over-redaction is cheap; a leaked codename is not.
+        self._terms = [term_pattern(t, loose=True) for t in terms]
         self._forward: dict[str, str] = {}
         self._reverse: dict[str, str] = {}
         self.count = 0
