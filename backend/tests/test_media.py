@@ -142,7 +142,8 @@ def test_video_captions_and_speech_are_checked_with_timestamps(client, world, mo
     blob = client.post("/media", headers=_auth(world["creator"]),
                        files={"file": ("reel.mp4", clip, "video/mp4")}).json()
     assert blob["media_type"] == "video/mp4" and blob["metrics"]["duration"] > 5
-    _, review = _submit(client, world, body="New reel", attachments={"videos": [{"id": "reel", "blob_id": blob["id"]}]})
+    _, review = _submit(client, world, body="New reel", attachments={"videos": [{"id": "reel", "blob_id": blob["id"]}]},
+                        notes={"brief": "A short reel with captions about the waitlist; I speak over it."})
     leak = next(f for f in review["findings"] if f["source"] == "vid:reel:captions")
     assert leak["category"] == "confidentiality" and leak["locator"]["time"][0] < 3
     said = next(f for f in review["findings"] if f["source"] == "vid:reel:speech")
@@ -217,8 +218,9 @@ def test_coverage_is_plain_json_even_with_numpy_details():
 
 def test_unknown_or_foreign_blob_ids_are_refused(client, world):
     res = client.post("/contents", headers=_auth(world["creator"]), json={
-        "title": "T", "body": "x", "attachments": {"videos": [{"id": "v", "blob_id": "0" * 32}]}})
-    assert res.status_code == 422
+        "title": "T", "body": "x", "attachments": {"videos": [{"id": "v", "blob_id": "0" * 32}]},
+        "creator_notes": {"brief": "A clip of the launch event with our mascot."}})
+    assert res.status_code == 422 and "unknown media" in res.text
 
 
 def test_a_picture_without_text_is_not_reported_unreadable(client, world):

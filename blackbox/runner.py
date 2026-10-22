@@ -215,10 +215,18 @@ async def run_case(api: Api, case: Case, reality: Reality, tokens: dict[str, str
         payload = {"title": case.template.title[:300] or "untitled", "channel": case.template.channel,
                    "tier": "public", "body": case.body, "attachments": case.attachments}
         res = await api.call("POST", "/contents", token=tokens["creator"], json=payload)
-        if res.status_code == 422 and isinstance(res.json().get("detail"), dict):
-            # Irregular upload: give the reason a real creator would, and go ahead.
-            out["irregular"] = [i["code"] for i in res.json()["detail"].get("irregularities", [])]
-            payload["creator_notes"] = {"irregularity": "The campaign brief asks for this exact format"}
+        # The API asks for what a real creator would then give: a reason for an irregular upload, a brief
+        # for a video. Each is answered once and the piece resubmitted.
+        for _ in range(2):
+            detail = res.json().get("detail") if res.status_code == 422 else None
+            if not isinstance(detail, dict):
+                break
+            notes = payload.setdefault("creator_notes", {})
+            if detail.get("code") == "brief_required":
+                notes["brief"] = f"A short video for '{case.template.title[:80]}', with captions and voice-over."
+            else:
+                out["irregular"] = [i["code"] for i in detail.get("irregularities", [])]
+                notes["irregularity"] = "The campaign brief asks for this exact format"
             res = await api.call("POST", "/contents", token=tokens["creator"], json=payload)
         if 400 <= res.status_code < 500:
             # The API refused the case. That is an outcome, not a harness error:

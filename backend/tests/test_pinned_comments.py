@@ -16,7 +16,8 @@ def _piece(client, world, monkeypatch):  # noqa: F811
         "title": "Reel", "channel": "instagram", "tier": "public", "body": "New reel",
         "attachments": {"images": [{"id": "poster", "alt": "The launch poster",
                                     "data_base64": b64(png(text_image(["Launch day"], size=(900, 600))))}],
-                        "videos": [{"id": "reel", "blob_id": clip["id"]}]}})
+                        "videos": [{"id": "reel", "blob_id": clip["id"]}]},
+        "creator_notes": {"brief": "Launch reel: our mascot waves, then the waitlist caption."}})
     assert res.status_code == 201, res.text
     return res.json()["content"]["id"], res.json()["version"]["id"]
 

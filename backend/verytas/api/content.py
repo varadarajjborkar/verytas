@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from verytas.api.deps import CurrentUser, PrismDep, Session, can_read, require
-from verytas.api.media import build_profile
+from verytas.api.media import build_profile, load_blobs
 from verytas.media.files import sniff
 from verytas.models import (
     BrandEvent,
@@ -134,6 +134,7 @@ async def _start_review(session, prism, version: ContentVersion, wait: bool) -> 
 
 
 IRREGULARITY_NOTE_MIN = 15
+BRIEF_MIN = 20
 
 
 async def _intake(session, user: User, channel: str, body: str, attachments: dict,
@@ -144,6 +145,18 @@ async def _intake(session, user: User, channel: str, body: str, attachments: dic
     irregularity is scored as a finding (orchestrator). Without one, the
     creator gets the list of what looks off and what was expected.
     """
+    # A video is checked frame by frame; the creator's own account of what is in it tells the review what
+    # to look for and gives it claims to verify, so a video doesn't go in without one.
+    if attachments.get("videos") and len((notes.get("brief") or "").strip()) < BRIEF_MIN \
+            and not notes.get("brief_audio_blob_id"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail={
+            "code": "brief_required",
+            "message": "A video needs a short brief: in your own words (or a voice note), what is in it: the "
+                       "characters, people and products, and roughly when they appear (creator_notes.brief, at "
+                       f"least {BRIEF_MIN} characters).",
+        })
+    if notes.get("brief_audio_blob_id"):
+        await load_blobs(session, user.workspace_id, {notes["brief_audio_blob_id"]})
     p = await build_profile(session, user, channel, body, attachments)
     reason = (notes.get("irregularity") or "").strip()
     if p.irregularities and len(reason) < IRREGULARITY_NOTE_MIN:

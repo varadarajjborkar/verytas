@@ -39,11 +39,13 @@ def workspace_lock(workspace_id: int) -> asyncio.Lock:
     return _LOCKS.setdefault(workspace_id, asyncio.Lock())
 
 
-def blob_ids(attachments: dict[str, Any] | None) -> set[str]:
-    """The upload ids a version's attachments point at."""
+def blob_ids(attachments: dict[str, Any] | None, notes: dict[str, Any] | None = None) -> set[str]:
+    """The upload ids a version points at: its attachments, and the voice note in its creator's brief."""
     ids: set[str] = set()
     for key in ("images", "documents", "videos"):
         ids |= {a["blob_id"] for a in (attachments or {}).get(key, []) if isinstance(a, dict) and a.get("blob_id")}
+    if (notes or {}).get("brief_audio_blob_id"):
+        ids.add(notes["brief_audio_blob_id"])
     return ids
 
 
@@ -85,11 +87,12 @@ async def reclaim_orphans(session: AsyncSession, *, older_than: timedelta,
     workspaces = {ws for _, ws in candidates}
     used: set[str] = set()
     # Streamed: attachments may carry inline base64 images, so the versions are never all in memory.
-    rows = await session.stream_scalars(
-        select(ContentVersion.attachments).join(Content, Content.id == ContentVersion.content_id)
+    rows = await session.stream(
+        select(ContentVersion.attachments, ContentVersion.creator_notes)
+        .join(Content, Content.id == ContentVersion.content_id)
         .where(Content.workspace_id.in_(workspaces)).execution_options(yield_per=100))
-    async for attachments in rows:
-        used |= blob_ids(attachments)
+    async for attachments, notes in rows:
+        used |= blob_ids(attachments, notes)
     stale = [bid for bid, _ in candidates if bid not in used]
     for i in range(0, len(stale), 500):
         await session.execute(delete(MediaBlob).where(MediaBlob.id.in_(stale[i:i + 500])))

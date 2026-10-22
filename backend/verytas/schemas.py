@@ -244,6 +244,11 @@ class CreatorNotesIn(BaseModel):
     ai_used: bool | None = Field(default=None, description="Was generative AI used to make any part of it?")
     language: str | None = Field(default=None, max_length=60,
                                  description="Language or dialect the audience reads it in, e.g. Hinglish")
+    brief: str | None = Field(default=None, max_length=4000, description=(
+        "What is in the images or video, in the creator's words: characters, people, products, and roughly "
+        "when they appear. Required with a video (or a voice note instead)."))
+    brief_audio_blob_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$",
+                                            description="A voice note saying the same, uploaded with POST /media")
 
 
 class ContentIn(BaseModel):

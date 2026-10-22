@@ -33,7 +33,8 @@ from verytas.config import Settings
 from verytas.ingest.language import NAMES, WORD_LISTS, Language, detect
 from verytas.ingest.segment import image_units, segment
 from verytas.media import assets as asset_match
-from verytas.media.files import decode_b64, open_image, png_b64, shrink
+from verytas.media.files import MediaError, decode_b64, open_image, png_b64, shrink
+from verytas.media.storage import blob_ids
 from verytas.models import (
     BrandAsset,
     BrandEvent,
@@ -192,7 +193,7 @@ class Prism:
 
         ctx, redactor, assets = await self._context(session, version)
         language = detect(version.body)
-        blobs = await _load_blobs(session, content.workspace_id, version.attachments or {})
+        blobs = await _load_blobs(session, content.workspace_id, version.attachments or {}, version.creator_notes or {})
         cleared = await _cleared_disputes(session, content.id)
         # Learned from disputes and reviewer decisions: how sure the judge must
         # be before each model-judged rule flags (prism/disputes.py).
@@ -224,6 +225,13 @@ class Prism:
 
         escalations: list[dict] = []
         notes_realm = dict(version.creator_notes or {})
+        if audio := blobs.get(notes_realm.get("brief_audio_blob_id") or ""):
+            # The voice-note brief, as text: screened like any note below, read by the intent agent, and
+            # the names in it are what the visual checks look for.
+            said = await _transcribe_brief(run, audio)
+            if said:
+                notes_realm["brief"] = " ".join(filter(None, [notes_realm.get("brief"), f"(voice note) {said}"]))
+        run.brief = notes_realm.get("brief") or ""
         # Offers and off-the-record contact in the note go to a person whatever the model makes of it.
         # (Steering is the intent agent's call: it reads the note against each finding.)
         note_text = " ".join(v for v in notes_realm.values() if isinstance(v, str))
@@ -557,15 +565,36 @@ def _prepare_assets(rows, content_rank: int) -> list[OfficialAsset]:
     return prepared
 
 
-async def _load_blobs(session: AsyncSession, workspace_id: int, attachments: dict) -> dict[str, bytes]:
-    ids = {a["blob_id"] for key in ("images", "documents", "videos") for a in attachments.get(key, [])
-           if a.get("blob_id")}
+async def _load_blobs(session: AsyncSession, workspace_id: int, attachments: dict,
+                      notes: dict | None = None) -> dict[str, bytes]:
+    ids = blob_ids(attachments, notes)
     if not ids:
         return {}
     rows = (await session.scalars(
         select(MediaBlob).where(MediaBlob.id.in_(ids), MediaBlob.workspace_id == workspace_id))).all()
     return {b.id: b.data for b in rows}
 
+
+
+async def _transcribe_brief(run: ReviewRun, audio: bytes) -> str:
+    """What the creator said in a voice-note brief, or "" with a note when it can't be read."""
+    from verytas.media import video
+
+    async def listen() -> str:
+        pcm = await run.blocking(video.audio_pcm, audio, max_seconds=600)
+        if pcm is None:
+            return ""
+        cues, _, _ = await run.blocking(video.transcribe, pcm, run.asr_model)
+        return " ".join(c.text for c in cues).strip()
+
+    try:
+        said = await asyncio.wait_for(listen(), run.media_timeout_s)
+    except (TimeoutError, MediaError) as exc:
+        run.notes.append(f"the voice-note brief could not be transcribed ({type(exc).__name__})")
+        return ""
+    if not said:
+        run.notes.append("the voice-note brief has no speech we could transcribe")
+    return said
 
 
 def _gap_notes(gaps) -> list[str]:

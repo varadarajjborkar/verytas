@@ -20,6 +20,7 @@ from PIL import Image, UnidentifiedImageError
 MAX_DOC_BYTES = 20 * 1024 * 1024
 MAX_IMAGE_BYTES = 6 * 1024 * 1024
 MAX_VIDEO_BYTES = 150 * 1024 * 1024
+MAX_AUDIO_BYTES = 25 * 1024 * 1024  # a voice note of several minutes
 # Decoded pixels per image. Larger images are refused, not downscaled: the
 # decoder would already have allocated the full bitmap.
 MAX_PIXELS = 40_000_000
@@ -68,6 +69,14 @@ def sniff(raw: bytes) -> str:
         return "video/webm"
     if raw[:4] == b"RIFF" and raw[8:12] == b"AVI ":
         return "video/x-msvideo"
+    # Voice notes for a creator's brief. Browsers record WebM or MP4 (sniffed above as video); phones and
+    # recorders also save these.
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WAVE":
+        return "audio/wav"
+    if raw.startswith(b"OggS"):
+        return "audio/ogg"
+    if raw.startswith(b"ID3") or (len(raw) > 1 and raw[0] == 0xFF and raw[1] & 0xE0 == 0xE0):
+        return "audio/mpeg"
     return "unknown"
 
 
@@ -152,6 +161,8 @@ def png_b64(img: Image.Image) -> str:
 def limit_for(media_type: str) -> int:
     if media_type.startswith("video/"):
         return MAX_VIDEO_BYTES
+    if media_type.startswith("audio/"):
+        return MAX_AUDIO_BYTES
     if media_type.startswith("image/"):
         return MAX_IMAGE_BYTES
     return MAX_DOC_BYTES
