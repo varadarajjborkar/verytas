@@ -1,0 +1,374 @@
+"""Relational model. Maps to architecture section 11.
+
+Integrity rules from the design board are enforced in the schema, not just in
+code, so a bug in a worker can't produce an uncited finding or a dangling
+version chain.
+"""
+
+from __future__ import annotations
+
+import enum
+from datetime import UTC, date, datetime
+from typing import Any
+
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from verytas.db import Base
+
+
+def utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+class Tier(enum.StrEnum):
+    """Security label carried by every record (architecture section 3)."""
+
+    public = "public"
+    internal = "internal"
+    confidential = "confidential"
+
+    @property
+    def rank(self) -> int:
+        return {"public": 0, "internal": 1, "confidential": 2}[self.value]
+
+
+class Role(enum.StrEnum):
+    creator = "creator"
+    reviewer = "reviewer"
+    approver = "approver"
+    brand_admin = "brand_admin"
+    auditor = "auditor"
+
+
+class RuleKind(enum.StrEnum):
+    deterministic = "deterministic"  # compiled to matchers, no model involved
+    semantic = "semantic"  # judged by Jev against the rule text and examples
+
+
+class RuleStatus(enum.StrEnum):
+    draft = "draft"
+    active = "active"
+    retired = "retired"
+
+
+class Severity(enum.StrEnum):
+    must = "must"  # can become a blocker
+    should = "should"
+    may = "may"
+
+
+class ContentStatus(enum.StrEnum):
+    draft = "draft"
+    in_review = "in_review"
+    changes_requested = "changes_requested"
+    approved = "approved"
+    published = "published"
+    withdrawn = "withdrawn"
+
+
+class ReviewStatus(enum.StrEnum):
+    queued = "queued"
+    running = "running"
+    done = "done"
+    failed = "failed"
+
+
+class Level(enum.StrEnum):
+    """What a finding means for the creator (architecture section 8.1)."""
+
+    blocker = "blocker"
+    warning = "warning"
+    advisory = "advisory"
+
+
+class DecisionAction(enum.StrEnum):
+    accepted = "accepted"
+    rejected = "rejected"
+    edited = "edited"
+    escalated = "escalated"
+
+
+def _enum(e: type[enum.Enum]) -> Enum:
+    # Store values as plain strings so the DB stays readable and portable.
+    return Enum(e, native_enum=False, length=32, values_callable=lambda x: [m.value for m in x])
+
+
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True)
+    name: Mapped[str] = mapped_column(String(200))
+    role: Mapped[Role] = mapped_column(_enum(Role))
+    # Highest tier this person may read; brand admins usually get confidential.
+    clearance: Mapped[Tier] = mapped_column(_enum(Tier), default=Tier.internal)
+    # Only the SHA-256 of the bearer token is stored.
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Rule(Base):
+    __tablename__ = "rules"
+    __table_args__ = (UniqueConstraint("workspace_id", "code", "version"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    code: Mapped[str] = mapped_column(String(40))  # e.g. VOICE-03
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    # tone | terminology | messaging | visual | accessibility | legal | claims | confidentiality
+    category: Mapped[str] = mapped_column(String(40))
+    kind: Mapped[RuleKind] = mapped_column(_enum(RuleKind))
+    severity: Mapped[Severity] = mapped_column(_enum(Severity), default=Severity.should)
+    title: Mapped[str] = mapped_column(String(200))
+    text: Mapped[str] = mapped_column(Text)
+    good_examples: Mapped[list[str]] = mapped_column(JSON, default=list)
+    bad_examples: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Matcher config for deterministic rules (terms, replacements, thresholds, palette).
+    pattern: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    source_ref: Mapped[str | None] = mapped_column(String(300))  # "Brand book v3, p.12"
+    tier: Mapped[Tier] = mapped_column(_enum(Tier), default=Tier.internal)
+    status: Mapped[RuleStatus] = mapped_column(_enum(RuleStatus), default=RuleStatus.draft)
+    system: Mapped[bool] = mapped_column(default=False)  # built-in (WCAG, confidentiality)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Fact(Base):
+    __tablename__ = "facts"
+    __table_args__ = (
+        CheckConstraint("valid_to IS NULL OR valid_to > valid_from", name="fact_validity_window"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    statement: Mapped[str] = mapped_column(Text)  # "Verytas is used by 800+ teams"
+    value: Mapped[float | None] = mapped_column(Float)
+    unit: Mapped[str | None] = mapped_column(String(40))
+    subject: Mapped[str | None] = mapped_column(String(120))  # what the number measures: "teams"
+    source_ref: Mapped[str] = mapped_column(String(300))
+    tier: Mapped[Tier] = mapped_column(_enum(Tier), default=Tier.internal)
+    # The board's "timeline of events chain": a fact is only true inside its window.
+    valid_from: Mapped[date] = mapped_column(Date)
+    valid_to: Mapped[date | None] = mapped_column(Date)
+    supersedes_id: Mapped[int | None] = mapped_column(ForeignKey("facts.id"))
+    approved: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    def valid_on(self, day: date) -> bool:
+        return self.valid_from <= day and (self.valid_to is None or day < self.valid_to)
+
+
+class ConfidentialTerm(Base):
+    __tablename__ = "confidential_terms"
+    __table_args__ = (UniqueConstraint("workspace_id", "term"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    term: Mapped[str] = mapped_column(String(200))
+    note: Mapped[str | None] = mapped_column(String(300))
+    # After this date the term may be published; until then it must not leak.
+    embargo_until: Mapped[date | None] = mapped_column(Date)
+
+
+class Content(Base):
+    __tablename__ = "contents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    channel: Mapped[str] = mapped_column(String(60), default="general")  # blog|linkedin|x|email|...
+    tier: Mapped[Tier] = mapped_column(_enum(Tier), default=Tier.internal)
+    status: Mapped[ContentStatus] = mapped_column(_enum(ContentStatus), default=ContentStatus.draft)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    versions: Mapped[list[ContentVersion]] = relationship(
+        back_populates="content", order_by="ContentVersion.version_no"
+    )
+
+
+class ContentVersion(Base):
+    """One link in the raw -> first cite -> corrected chain."""
+
+    __tablename__ = "content_versions"
+    __table_args__ = (
+        UniqueConstraint("content_id", "version_no"),
+        # Only the first version may lack a parent, and it must lack one, so the
+        # chain can never dangle ("bounds it from having null on the other end").
+        CheckConstraint(
+            "(version_no = 1 AND parent_id IS NULL) OR (version_no > 1 AND parent_id IS NOT NULL)",
+            name="version_chain_closed",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    content_id: Mapped[int] = mapped_column(ForeignKey("contents.id"), index=True)
+    version_no: Mapped[int] = mapped_column(Integer)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("content_versions.id"))
+    body: Mapped[str] = mapped_column(Text)
+    # Non-text parts of the bundle: images (as asset refs + alt text), colours, links.
+    attachments: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    content: Mapped[Content] = relationship(back_populates="versions")
+
+
+class Review(Base):
+    __tablename__ = "reviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("content_versions.id"), index=True)
+    status: Mapped[ReviewStatus] = mapped_column(_enum(ReviewStatus), default=ReviewStatus.queued)
+    # Per-category scores and confidence from the judge.
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Which check families ran, which were skipped and why. Never silently passes.
+    coverage: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    findings: Mapped[list[Finding]] = relationship(back_populates="review", order_by="Finding.id")
+
+
+class Finding(Base):
+    __tablename__ = "findings"
+    __table_args__ = (
+        # No uncited findings: every flag points at the rule or fact behind it.
+        CheckConstraint("rule_id IS NOT NULL OR fact_id IS NOT NULL", name="finding_is_cited"),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="finding_confidence_range"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    review_id: Mapped[int] = mapped_column(ForeignKey("reviews.id"), index=True)
+    unit_id: Mapped[str] = mapped_column(String(40))
+    category: Mapped[str] = mapped_column(String(40))
+    level: Mapped[Level] = mapped_column(_enum(Level))
+    title: Mapped[str] = mapped_column(String(300))
+    explanation: Mapped[str] = mapped_column(Text)
+    quote: Mapped[str | None] = mapped_column(Text)
+    span_start: Mapped[int | None] = mapped_column(Integer)
+    span_end: Mapped[int | None] = mapped_column(Integer)
+    rule_id: Mapped[int | None] = mapped_column(ForeignKey("rules.id"), index=True)
+    fact_id: Mapped[int | None] = mapped_column(ForeignKey("facts.id"))
+    confidence: Mapped[float] = mapped_column(Float)
+    checker: Mapped[str] = mapped_column(String(60))
+    model: Mapped[str | None] = mapped_column(String(80))  # AI disclosure: which model, if any
+    signature: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    review: Mapped[Review] = relationship(back_populates="findings")
+    rule: Mapped[Rule | None] = relationship()
+    fact: Mapped[Fact | None] = relationship()
+    suggestions: Mapped[list[Suggestion]] = relationship(back_populates="finding")
+    decisions: Mapped[list[Decision]] = relationship(back_populates="finding", order_by="Decision.id")
+
+
+class Suggestion(Base):
+    __tablename__ = "suggestions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    finding_id: Mapped[int] = mapped_column(ForeignKey("findings.id"), index=True)
+    original: Mapped[str] = mapped_column(Text)
+    proposed: Mapped[str] = mapped_column(Text)
+    rationale: Mapped[str] = mapped_column(Text)
+    intent_preserved: Mapped[float | None] = mapped_column(Float)  # P(meaning unchanged)
+    model: Mapped[str | None] = mapped_column(String(80))
+
+    finding: Mapped[Finding] = relationship(back_populates="suggestions")
+
+
+class Decision(Base):
+    """The board's "suggestion accepted True/False" table. Rows are never deleted:
+    rejections are the raw material for the ambiguity detector."""
+
+    __tablename__ = "decisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    finding_id: Mapped[int] = mapped_column(ForeignKey("findings.id"), index=True)
+    suggestion_id: Mapped[int | None] = mapped_column(ForeignKey("suggestions.id"))
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[DecisionAction] = mapped_column(_enum(DecisionAction))
+    # false_positive | not_applicable | guideline_unclear | intentional
+    reason_code: Mapped[str | None] = mapped_column(String(40))
+    reason_text: Mapped[str | None] = mapped_column(Text)
+    edited_text: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    finding: Mapped[Finding] = relationship(back_populates="decisions")
+
+
+class Change(Base):
+    """The board's "what exact changes" table: version-to-version diffs."""
+
+    __tablename__ = "changes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_version_id: Mapped[int] = mapped_column(ForeignKey("content_versions.id"))
+    to_version_id: Mapped[int] = mapped_column(ForeignKey("content_versions.id"))
+    diff: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WorkflowEvent(Base):
+    __tablename__ = "workflow_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    content_id: Mapped[int] = mapped_column(ForeignKey("contents.id"), index=True)
+    from_status: Mapped[ContentStatus] = mapped_column(_enum(ContentStatus))
+    to_status: Mapped[ContentStatus] = mapped_column(_enum(ContentStatus))
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Comment(Base):
+    __tablename__ = "comments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    content_id: Mapped[int] = mapped_column(ForeignKey("contents.id"), index=True)
+    version_id: Mapped[int | None] = mapped_column(ForeignKey("content_versions.id"))
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("comments.id"))
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    body: Mapped[str] = mapped_column(Text)
+    span_start: Mapped[int | None] = mapped_column(Integer)
+    span_end: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AuditEntry(Base):
+    """Append-only, hash-chained log (X.800 notarization + audit trail)."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    actor: Mapped[str] = mapped_column(String(120))  # "user:3" or "agent:claims-worker"
+    action: Mapped[str] = mapped_column(String(80))
+    object_type: Mapped[str] = mapped_column(String(40))
+    object_id: Mapped[str | None] = mapped_column(String(40))
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    prev_hash: Mapped[str] = mapped_column(String(64))
+    hash: Mapped[str] = mapped_column(String(64), unique=True)

@@ -19,3 +19,11 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Local data and secrets
+*.db
+*.db-wal
+*.db-shm
+.keys/
+.pytest_cache/
+.ruff_cache/
