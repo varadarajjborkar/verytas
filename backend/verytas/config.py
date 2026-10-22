@@ -15,9 +15,20 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite+aiosqlite:///./verytas.db"
 
-    # "live" talks to Claude and Jev. "offline" swaps in deterministic local
+    # "live" talks to the hosted models. "offline" swaps in deterministic local
     # providers so the whole pipeline runs in tests and demos without keys.
     llm_mode: Literal["live", "offline"] = "live"
+
+    # Which hosted LLM does the text work. Ollama Cloud is the default (free tier);
+    # Claude is kept as a drop-in alternative behind the same interface.
+    llm_backend: Literal["ollama", "claude"] = "ollama"
+
+    ollama_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("OLLAMA_API_KEY", "VERYTAS_OLLAMA_API_KEY")
+    )
+    ollama_base_url: str = "https://ollama.com"
+    ollama_model: str = "gpt-oss:120b"
+    ollama_fast_model: str = "gpt-oss:20b"
 
     # The Anthropic SDK reads ANTHROPIC_API_KEY itself; only model routing lives here.
     claude_model: str = "claude-opus-5-5"

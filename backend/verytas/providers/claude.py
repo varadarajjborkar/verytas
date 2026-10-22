@@ -8,37 +8,15 @@ of failing the check.
 
 from __future__ import annotations
 
-import copy
 from typing import Any
 
 import anthropic
 from pydantic import BaseModel
 
 from verytas.providers.base import ProviderRefusal, ProviderUnavailable, StructuredTask, UsageMeter
+from verytas.providers.schema import strict_schema
 
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
-
-
-def strict_schema(model: type[BaseModel]) -> dict[str, Any]:
-    """Pydantic JSON schema reshaped for structured outputs: refs inlined,
-    every object closed (additionalProperties false) with all fields required."""
-    schema = model.model_json_schema()
-    defs = schema.pop("$defs", {})
-
-    def walk(node: Any) -> Any:
-        if isinstance(node, dict):
-            if "$ref" in node:
-                return walk(copy.deepcopy(defs[node["$ref"].rsplit("/", 1)[-1]]))
-            node = {k: walk(v) for k, v in node.items() if k not in ("title", "default")}
-            if node.get("type") == "object" and "properties" in node:
-                node["additionalProperties"] = False
-                node["required"] = list(node["properties"])
-            return node
-        if isinstance(node, list):
-            return [walk(v) for v in node]
-        return node
-
-    return walk(schema)
 
 
 class ClaudeLLM:

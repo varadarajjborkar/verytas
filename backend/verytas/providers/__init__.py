@@ -24,10 +24,22 @@ def build_providers(settings: Settings, meter: UsageMeter) -> tuple[JudgeProvide
         judge = OfflineJudge()
         notes.append("TYPESAFE_API_KEY not set: semantic rules use the offline heuristic judge")
 
-    from verytas.providers.claude import ClaudeLLM
+    llm: LLMProvider
+    if settings.llm_backend == "claude":
+        from verytas.providers.claude import ClaudeLLM
 
-    llm = ClaudeLLM(
-        model=settings.claude_model, fast_model=settings.claude_fast_model,
-        fallbacks=settings.claude_fallbacks, meter=meter,
-    )
+        llm = ClaudeLLM(
+            model=settings.claude_model, fast_model=settings.claude_fast_model,
+            fallbacks=settings.claude_fallbacks, meter=meter,
+        )
+    elif settings.ollama_api_key is not None:
+        from verytas.providers.ollama import OllamaLLM
+
+        llm = OllamaLLM(
+            settings.ollama_api_key.get_secret_value(), model=settings.ollama_model,
+            fast_model=settings.ollama_fast_model, base_url=settings.ollama_base_url, meter=meter,
+        )
+    else:
+        llm = OfflineLLM()
+        notes.append("OLLAMA_API_KEY not set: claim extraction and rewrites use offline heuristics")
     return judge, llm, notes

@@ -14,9 +14,10 @@ from verytas.providers.base import (
     Question,
     UsageMeter,
 )
-from verytas.providers.claude import ClaudeLLM, strict_schema
+from verytas.providers.claude import ClaudeLLM
 from verytas.providers.jev import JevJudge
 from verytas.providers.offline import OfflineJudge
+from verytas.providers.schema import extract_json_object, strict_schema
 
 JEV = "https://api.typesafe.test"
 
@@ -187,3 +188,80 @@ async def test_claude_refusal_raises():
     fake = _FakeAnthropic(_response(stop_reason="refusal"))
     with pytest.raises(ProviderRefusal, match="cyber"):
         await ClaudeLLM(model="m", fast_model="f", client=fake).run(_Task())
+
+
+# --- Ollama -------------------------------------------------------------------
+
+from verytas.providers.ollama import OllamaLLM  # noqa: E402
+
+OLLAMA = "https://ollama.test"
+
+
+def _ollama(**kw):
+    return OllamaLLM("k", model="gpt-oss:120b", fast_model="gpt-oss:20b", base_url=OLLAMA, **kw)
+
+
+def _chat(content, **extra):
+    return {"model": "gpt-oss:120b", "message": {"role": "assistant", "content": content},
+            "done": True, "prompt_eval_count": 50, "eval_count": 20, **extra}
+
+
+@pytest.mark.parametrize("reply", [
+    '{"items": [], "count": 0}',
+    'Sure! ```json\n{"items": [{"text": "a }", "note": null}], "count": 1}\n```',
+    'Here you go: {"items": [], "count": 2} hope that helps',
+])
+def test_extract_json_object_handles_chatty_replies(reply):
+    assert Outer.model_validate_json(extract_json_object(reply))
+
+
+@respx.mock
+async def test_ollama_puts_schema_in_prompt_and_meters():
+    reply = httpx.Response(200, json=_chat('{"items": [], "count": 3}'))
+    route = respx.post(f"{OLLAMA}/api/chat").mock(return_value=reply)
+    meter = UsageMeter(budget=1000)
+    out = await _ollama(meter=meter).run(_Task())
+    assert out.count == 3 and meter.total == 70
+    sent = httpx.Response(200, content=route.calls.last.request.content).json()
+    assert sent["model"] == "gpt-oss:120b" and sent["think"] == "medium" and sent["stream"] is False
+    assert '"additionalProperties": false' in sent["messages"][0]["content"]
+    assert route.calls.last.request.headers["authorization"] == "Bearer k"
+
+
+@respx.mock
+async def test_ollama_repairs_invalid_json_once():
+    route = respx.post(f"{OLLAMA}/api/chat").mock(side_effect=[
+        httpx.Response(200, json=_chat('{"items": "nope"}')),
+        httpx.Response(200, json=_chat('{"items": [], "count": 1}')),
+    ])
+    out = await _ollama().run(_Task())
+    assert out.count == 1
+    repair_turn = httpx.Response(200, content=route.calls.last.request.content).json()["messages"][-1]
+    assert "did not validate" in repair_turn["content"]
+
+
+@respx.mock
+async def test_ollama_gives_up_after_repair_round():
+    respx.post(f"{OLLAMA}/api/chat").mock(return_value=httpx.Response(200, json=_chat("no json here")))
+    with pytest.raises(ProviderUnavailable, match="never produced valid JSON"):
+        await _ollama().run(_Task())
+
+
+@respx.mock
+async def test_ollama_plan_errors_are_not_retried():
+    route = respx.post(f"{OLLAMA}/api/chat").mock(
+        return_value=httpx.Response(403, json={"error": "this model is not included in your free usage"}))
+    with pytest.raises(ProviderUnavailable, match="403"):
+        await _ollama().run(_Task())
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_ollama_fast_tasks_use_fast_model():
+    reply = httpx.Response(200, json=_chat('{"items": [], "count": 0}'))
+    route = respx.post(f"{OLLAMA}/api/chat").mock(return_value=reply)
+    task = _Task()
+    task.fast = True
+    await _ollama().run(task)
+    sent = httpx.Response(200, content=route.calls.last.request.content).json()
+    assert sent["model"] == "gpt-oss:20b" and sent["think"] == "low"
