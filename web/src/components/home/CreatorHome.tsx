@@ -82,7 +82,7 @@ export function CreatorHome() {
           <div key={s.label} className="vt-card p-4">
             <p className="text-xs font-medium text-muted">{s.label}</p>
             <p className="mt-1.5 text-[1.6rem] font-semibold leading-none tracking-tight tabular-nums">{rows ? s.value : "·"}</p>
-            <p className="mt-2 truncate text-xs text-subtle">{s.hint}</p>
+            <p className="mt-2 line-clamp-2 text-xs leading-5 text-subtle">{s.hint}</p>
           </div>
         ))}
       </section>
