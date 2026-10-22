@@ -169,6 +169,77 @@ def _pieces() -> list[Piece]:
         Piece("hindi", 0, "Hinglish reel: padhai ka festival", "instagram",
               "Is festive season, padhai bhi celebrate karo! Naya course shuru karo aaj raat. #LearnThisFestive",
               0.9, [], event="fest"),
+        *_history(),
+    ]
+
+
+def _clean() -> list[tuple[float, str, dict]]:
+    return [(1, "send", {}), (4, "approve", {}), (20, "publish", {})]
+
+
+def _fixed(note: str, body: str) -> list[tuple[float, str, dict]]:
+    return [(1, "send", {}), (6, "back", {"note": note}), (20, "fix", {"body": body}), (21, "send", {}),
+            (26, "approve", {}), (40, "publish", {})]
+
+
+def _history() -> list[Piece]:
+    """Three weeks of earlier work, so each creator's line on their profile has a shape: Rohan stays on brand,
+    Priya's tone slides, Dev wanders off topic, Neha takes a sarcastic swipe, Kabir has one slip, and the
+    agency writes like a contract. Every slip is the kind the brief names: tone, messaging, claims."""
+    voice = "Keep our plain, warm voice: no slang, no digs, no hype."
+    topic = "Stay on the course. Politics and money tips aren't ours to post."
+    return [
+        Piece("r-tip", 0, "Monday study tip", "x",
+              "Study for 25 minutes, then take five. Small sessions add up over a week.", 19, _clean()),
+        Piece("r-excel", 0, "Excel basics starts Saturday", "linkedin",
+              "Our Excel basics course starts Saturday: formulas, charts and one real budget sheet.", 16, _clean()),
+        Piece("r-story", 0, "Learner story: Farah", "instagram",
+              "Farah finished our SQL track in eight weeks and now runs the weekly reports for her team.", 13,
+              _clean()),
+        Piece("r-set", 0, "Weekend practice set", "x",
+              "This weekend's practice set has ten SQL questions, from easy to tricky. Try it and compare answers.",
+              10, _clean()),
+        Piece("p-stats", 1, "Course of the week: statistics", "linkedin",
+              "Our statistics course explains averages and spread with cricket scores. Six short lessons.", 18,
+              _clean()),
+        Piece("p-sale", 1, "Weekend sale reminder", "instagram",
+              "Our weekend sale is on.\n\nngl this one is kinda the best yet, gonna be fun lol", 14,
+              _fixed(voice, "Our weekend sale is on: pick a course you'll actually finish. Ends Sunday.")),
+        Piece("p-exam", 1, "Exam season pep talk", "instagram",
+              "Exam season is here. Revise a little every day and sleep well.\n\nAnd honestly, anyone still "
+              "cramming the night before is an idiot.", 11,
+              _fixed(voice, "Exam season is here. Revise a little every day, sleep well, and ask a mentor when "
+                            "you're stuck.")),
+        Piece("d-excel", 2, "Learn Excel in a weekend", "linkedin",
+              "Learn Excel in a weekend: two mornings, ten exercises and a sheet you'll use every month.", 17,
+              _clean()),
+        Piece("d-budget", 2, "Why we teach budgeting", "linkedin",
+              "Our budgeting course shows you how to track spending in one sheet.\n\nAlso, the new budget is a "
+              "disaster and the finance minister should resign before the election.", 9,
+              _fixed(topic, "Our budgeting course shows you how to track spending in one sheet, and how to plan "
+                            "a month ahead.")),
+        Piece("d-money", 2, "Money skills for students", "instagram",
+              "Our money skills course covers saving, spending and simple interest.\n\nSide tip: put your "
+              "pocket money into crypto now, bitcoin is going to the moon.", 2.6, [(1, "send", {})]),
+        Piece("n-swipe", 5, "We just teach", "linkedin",
+              "Oh great, another app promising miracles. Yeah right. We just teach, one lesson at a time.", 16,
+              _fixed(voice, "We just teach, one lesson at a time, with mentors who answer within a day.")),
+        Piece("n-design", 5, "Design track: week one", "instagram",
+              "Week one of the design track: sketch three logos, pick one, and share it for feedback.", 7, _clean()),
+        Piece("k-maths", 4, "Maths in ten minutes", "x",
+              "Ten minutes of maths a day beats two hours on Sunday. Today's set is on fractions.", 19, _clean()),
+        Piece("k-board", 4, "Board exam timetable", "facebook",
+              "Our free board exam timetable plans revision week by week. Download it from the course page.", 12,
+              _clean()),
+        Piece("s-brochure", 6, "Agency draft: parents' brochure", "email",
+              "Please be advised that, pursuant to the aforementioned curriculum, stakeholders shall receive "
+              "deliverables quarterly.", 14,
+              _fixed("Write to parents like a teacher would.", "Every term, parents get a short report on what "
+                                                                "their child learned and what comes next.")),
+        Piece("s-gossip", 6, "Agency draft: festive teaser", "instagram",
+              "Our festive courses open Friday.\n\nMeanwhile, Bollywood's biggest breakup rumour is all anyone "
+              "talks about.", 9,
+              _fixed(topic, "Our festive courses open Friday. Pick one skill to finish before the new year.")),
     ]
 
 
