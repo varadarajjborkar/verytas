@@ -3,16 +3,18 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePersistedFlag } from "@/lib/persisted-flag";
-import { ApiError, getMe, listContents, submit } from "@/lib/review-client";
-import type { ContentRow, Me, Review } from "@/lib/types";
+import { ApiError, listContents, listPeople, submit } from "@/lib/review-client";
+import type { ContentRow, Person, Review } from "@/lib/types";
 import { Drawer } from "./Drawer";
-import { HistoryIcon, PanelIcon, PlusIcon } from "./Icons";
+import { DashboardIcon, HistoryIcon, PanelIcon, PlusIcon } from "./Icons";
 import { Checklist, emptyRow, type RowState, sortFindings } from "./review/Checklist";
 import { attachmentsPayload, channelOf, Composer, type Draft, emptyDraft } from "./review/Composer";
 import { HighlightedBody } from "./review/parts";
+import { inQueue, type Queue, QueueOverview, QUEUES } from "./review/QueueOverview";
 import { ReviewHistory } from "./review/ReviewHistory";
 import { ReviewView } from "./review/ReviewView";
 import { useToast } from "./Toaster";
+import { useViewer } from "./Viewer";
 
 /**
  * The review workspace: a history of every piece on the left (like a chat
@@ -20,35 +22,48 @@ import { useToast } from "./Toaster";
  * review. The open review lives in the URL (?id=), so links and Back work.
  * The new-review form stays mounted while a review is open, so a half-written
  * draft survives a look at an older piece.
+ *
+ * Creators see only their own pieces. The brand team sees the workspace's
+ * queue, split by where each piece is (?queue=), and lands on a queue table
+ * rather than a composer.
  */
 export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const selected = Number(params.get("id")) || null;
-  const [rows, setRows] = useState<ContentRow[]>([]);
+  const { me, side, loading: viewerLoading } = useViewer();
+  const manager = side === "manager";
+  const queue: Queue = (params.get("queue") ?? "") in QUEUES ? params.get("queue") as Queue : "waiting";
+  const [all, setAll] = useState<ContentRow[]>([]);
+  const [people, setPeople] = useState<Map<number, Person>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [mine, setMine] = useState(true);
-  const [me, setMe] = useState<Me | null>(null);
   const [demo, setDemo] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
   const [collapsed, setCollapsed] = usePersistedFlag("vt-review-rail-collapsed", false);
-  // Only the newest request may write the list, so flipping Mine/Everyone can't be undone by a slow reply.
+  // Only the newest request may write the list, so a slow reply can't overwrite a newer one.
   const seq = useRef(0);
 
   const refresh = useCallback(() => {
+    if (viewerLoading) return Promise.resolve();
     const ticket = ++seq.current;
-    return listContents(mine)
-      .then((r) => { if (ticket === seq.current) setRows(r); })
+    return listContents(!manager)
+      .then((r) => { if (ticket === seq.current) setAll(r); })
       .catch((err) => { if (err instanceof ApiError && err.status === 503) setDemo(true); })
       .finally(() => { if (ticket === seq.current) setLoading(false); });
-  }, [mine]);
+  }, [manager, viewerLoading]);
 
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => { getMe().then(setMe).catch(() => {}); }, []);
+  useEffect(() => {
+    if (manager && !viewerLoading) listPeople().then((ps) => setPeople(new Map(ps.map((p) => [p.id, p])))).catch(() => {});
+  }, [manager, viewerLoading]);
+  const rows = useMemo(() => (manager ? all.filter(inQueue(queue)) : all), [all, manager, queue]);
+  const scopes = manager
+    ? (Object.keys(QUEUES) as Queue[]).map((k) => ({ key: k, label: QUEUES[k].label, count: all.filter(inQueue(k)).length }))
+    : [];
   // Keep the list fresh while anything in it is still being checked: one request
   // at a time, and none while the tab is in the background.
-  const pending = rows.some((r) => r.latest_review && (r.latest_review.status === "queued" || r.latest_review.status === "running"));
+  const pending = all.some((r) => r.latest_review && (r.latest_review.status === "queued" || r.latest_review.status === "running"));
   useEffect(() => {
     if (!pending) return;
     let stop = false;
@@ -61,17 +76,25 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
     return () => { stop = true; clearTimeout(timer); };
   }, [pending, refresh]);
 
-  const go = (id: number | null) => {
+  // The brand team's queue choice rides along in the URL, so opening a piece and coming back keeps it.
+  const go = (id: number | null, q: Queue = queue) => {
     setRailOpen(false);
-    router.push(id == null ? pathname : `${pathname}?id=${id}`, { scroll: false });
+    const search = new URLSearchParams();
+    if (manager && q !== "waiting") search.set("queue", q);
+    if (id != null) search.set("id", String(id));
+    const qs = search.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
 
+  const homeLabel = manager && !demo ? { text: "Queue overview", icon: "queue" as const } : { text: "New review", icon: "plus" as const };
   const rail = (collapsible: boolean) => (
-    <ReviewHistory rows={rows} loading={loading} selected={selected} mine={mine} demo={demo}
-      onMine={(m) => { setLoading(true); setMine(m); }} onSelect={go} onNew={() => go(null)}
+    <ReviewHistory rows={rows} loading={loading || viewerLoading} selected={selected} scopes={scopes} scope={queue} demo={demo}
+      onScope={(k) => go(selected, k as Queue)} onSelect={(id) => go(id)} onNew={() => go(null)} homeLabel={homeLabel}
       onCollapse={collapsible ? () => setCollapsed(true) : undefined} />
   );
   const showing = selected != null && !demo;
+  // Demo mode has no queue to show, so everyone gets the sample review form.
+  const queueHome = manager && !demo;
 
   return (
     <div className={`grid items-start gap-5 ${collapsed ? "lg:grid-cols-[3.25rem_minmax(0,1fr)]" : "lg:grid-cols-[17rem_minmax(0,1fr)]"}`}>
@@ -81,9 +104,9 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
             className="grid h-9 w-9 place-items-center rounded-lg text-muted transition hover:bg-sunken hover:text-ink">
             <PanelIcon size={16} />
           </button>
-          <button type="button" onClick={() => go(null)} aria-label="New review" title="New review"
+          <button type="button" onClick={() => go(null)} aria-label={homeLabel.text} title={homeLabel.text}
             className="grid h-9 w-9 place-items-center rounded-lg text-muted transition hover:bg-sunken hover:text-ink">
-            <PlusIcon size={16} />
+            {queueHome ? <DashboardIcon size={16} /> : <PlusIcon size={16} />}
           </button>
         </div>
       ) : (
@@ -91,15 +114,25 @@ export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
       )}
       <div className="flex gap-2 lg:hidden">
         <button type="button" onClick={() => setRailOpen(true)} className="vt-btn vt-btn-quiet"><HistoryIcon size={15} /> Reviews</button>
-        {selected != null && <button type="button" onClick={() => go(null)} className="vt-btn vt-btn-quiet"><PlusIcon size={15} /> New</button>}
+        {selected != null && (
+          <button type="button" onClick={() => go(null)} className="vt-btn vt-btn-quiet">
+            {queueHome ? <><DashboardIcon size={15} /> Queue</> : <><PlusIcon size={15} /> New</>}
+          </button>
+        )}
       </div>
       {railOpen && <div className="lg:hidden"><Drawer label="Reviews" onClose={() => setRailOpen(false)}>{rail(false)}</Drawer></div>}
 
       <div className="min-w-0">
         {showing && <ReviewView key={selected} contentId={selected} role={me?.role ?? "creator"} userId={me?.id ?? null} onChanged={refresh} />}
-        <div hidden={showing}>
-          <NewReview initialBody={initialBody} demo={demo} onCreated={(id) => { void refresh(); go(id); }} />
-        </div>
+        {viewerLoading ? (
+          !showing && <div aria-busy="true" aria-label="Loading" className="h-96 animate-pulse rounded-[14px] bg-sunken" />
+        ) : queueHome ? (
+          !showing && <QueueOverview queue={queue} rows={rows} people={people} loading={loading || viewerLoading} onSelect={(id) => go(id)} />
+        ) : (
+          <div hidden={showing}>
+            <NewReview initialBody={initialBody} demo={demo} onCreated={(id) => { void refresh(); go(id); }} />
+          </div>
+        )}
       </div>
     </div>
   );

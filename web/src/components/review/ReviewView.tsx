@@ -1,16 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { journey } from "@/lib/journey";
 import {
-  ApiError, FINISHED, getContent, listDisputes, nextSteps, relativeTime, resubmit, STATUS_LABEL, transition,
-  waitForReview,
+  ApiError, decide as decideFinding, FINISHED, getContent, getReview, getTimeline, listDisputes, listPeople, nextSteps,
+  relativeTime, resubmit, STATUS_LABEL, transition, waitForReview,
 } from "@/lib/review-client";
-import type { ContentDetail, ContentStatus, Dispute, Review } from "@/lib/types";
+import { canDecide, sideOf } from "@/lib/roles";
+import type { ContentDetail, ContentStatus, Dispute, Person, Review, Timeline } from "@/lib/types";
+import { JourneyMap } from "../Journey";
 import { useToast } from "../Toaster";
 import { Details, Meter } from "../ui";
+import { Activity } from "./Activity";
 import { AgentTree, Sources } from "./AgentTree";
 import { Checklist, emptyRow, type RowState, sortFindings } from "./Checklist";
+import type { DecideFn } from "./DecisionControls";
 import { AiEditBox, CoverageTag, findingKey, HighlightedBody } from "./parts";
+import { VersionCompare } from "./VersionCompare";
 
 type Phase = "loading" | "checking" | "ready" | "failed" | "missing";
 
@@ -24,9 +30,13 @@ const STATUS_TONE: Record<ContentStatus, string> = {
 };
 
 /**
- * One piece of content, opened from the history: the text with every issue
- * marked in place, the issues beside it, and the next step in its workflow.
- * Editing happens on the text itself; a re-check makes the next version.
+ * One piece of content, opened from the history: where it is on its way to
+ * published, the text with every issue marked in place, the issues and the
+ * shared activity beside it, and the next step in its workflow.
+ *
+ * The creator edits, applies fixes, disputes and re-checks. The brand team
+ * reads the same piece but decides instead: confirm, dismiss or escalate each
+ * finding, then approve or send it back with a note.
  */
 export function ReviewView({ contentId, role, userId, onChanged }: {
   contentId: number; role: string; userId: number | null; onChanged: () => void;
@@ -49,12 +59,25 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
   const [override, setOverride] = useState<{ to: ContentStatus; message: string } | null>(null);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [announce, setAnnounce] = useState("");
+  const [timeline, setTimeline] = useState<Timeline | null>(null);
+  const [people, setPeople] = useState<Map<number, Person>>(new Map());
+  const [pane, setPane] = useState<"issues" | "activity">("issues");
+  const [docView, setDocView] = useState<"text" | "compare">("text");
+  const [sendingBack, setSendingBack] = useState(false);
   const textRef = useRef<HTMLElement | null>(null);
   const live = useRef(contentId);
   // Stops polling a review nobody is looking at any more.
   const polling = useRef<AbortController | null>(null);
   const decidedSeen = useRef(new Set<number>());
   const toast = useToast();
+
+  const loadTimeline = useCallback(() => {
+    getTimeline(contentId).then((t) => { if (live.current === contentId) setTimeline(t); }).catch(() => {});
+  }, [contentId]);
+  useEffect(() => {
+    loadTimeline();
+    listPeople().then((ps) => setPeople(new Map(ps.map((p) => [p.id, p])))).catch(() => {});
+  }, [loadTimeline]);
 
   // Starts with a request, not a state change: on mount the initial state is already "loading",
   // and a re-check resets it itself before calling this.
@@ -81,6 +104,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
       if (live.current !== contentId) return;
       setReview(done);
       setRows({});
+      if (waited) loadTimeline();
       setPhase(done.status === "failed" ? "failed" : "ready");
       if (done.status === "failed") setError(done.error ?? "The review failed. Re-check to run it again.");
       else if (waited) {
@@ -108,7 +132,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
     }
   // toast is stable for the app's lifetime.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contentId]);
+  }, [contentId, loadTimeline]);
 
   // The shell keys this view by content id, so another review mounts fresh; only the load runs here.
   useEffect(() => {
@@ -171,6 +195,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
       setElapsed(0);
       setPhase("loading");
       await load();
+      loadTimeline();
       onChanged();
     } catch (err) {
       setError((err as Error).message);
@@ -186,6 +211,8 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
       const out = await transition(contentId, to, note, force);
       setContent((c) => (c ? { ...c, status: out.status } : c));
       setOverride(null);
+      setSendingBack(false);
+      loadTimeline();
       toast({ kind: "success", title: STATUS_LABEL[out.status] });
       onChanged();
     } catch (err) {
@@ -197,6 +224,22 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
       setBusy(false);
     }
   }
+
+  // A decision changes the finding (its history) and the timeline; reload both, not the whole review.
+  const decide: DecideFn = async (f, action, reasonCode, reasonText) => {
+    try {
+      await decideFinding(f.id, action, reasonCode, reasonText);
+      if (review) {
+        const fresh = await getReview(review.id);
+        if (live.current === contentId) setReview(fresh);
+      }
+      loadTimeline();
+      onChanged();
+    } catch (err) {
+      toast({ kind: "error", title: "Couldn't record the decision", detail: (err as Error).message });
+      throw err;
+    }
+  };
 
   if (phase === "missing") {
     return <div className="vt-card p-8 text-center text-sm text-muted">This review no longer exists, or you can&apos;t see it.</div>;
@@ -217,6 +260,12 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
   const escalations = coverage?.escalations ?? [];
   const checking = phase === "checking" || phase === "loading";
   const steps = nextSteps(status, role, userId != null && content.created_by === userId);
+  const manager = sideOf(role) === "manager";
+  const author = userId != null && content.created_by === userId;
+  // The creator's tools (edit, apply fixes, dispute, re-check) belong to the author.
+  const creatorTools = !manager || author;
+  const route = timeline ? journey(timeline) : null;
+  const versions = content.versions;
   // New text after approval needs a fresh decision; the API moves it back to review.
   const demotes = status === "approved";
 
@@ -243,14 +292,15 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
               <span className="text-lg font-semibold tabular-nums">{Math.round(summary.overall * 100)}%</span>
             </span>
           )}
-          {!readOnly && !editing && (
+          {!readOnly && !editing && creatorTools && (
             <button type="button" disabled={busy || checking} className="vt-btn vt-btn-quiet"
               onClick={() => { setEditText(body); setEditing(true); }}>
               Edit text
             </button>
           )}
           {steps.filter((s) => s.to !== "withdrawn").map((s) => (
-            <button key={s.to} type="button" disabled={busy || checking} onClick={() => move(s.to)}
+            <button key={s.to} type="button" disabled={busy || checking}
+              onClick={() => (s.to === "changes_requested" ? setSendingBack(true) : move(s.to))}
               className={`vt-btn ${s.primary ? "vt-btn-primary" : "vt-btn-quiet"}`}>
               {s.label}
             </button>
@@ -271,6 +321,10 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
         </div>
       </header>
 
+      {route && <JourneyMap journey={route} status={status} />}
+      {sendingBack && (
+        <SendBackBox busy={busy} onCancel={() => setSendingBack(false)} onConfirm={(note) => move("changes_requested", note)} />
+      )}
       {override && (
         <OverrideBox message={override.message} busy={busy} onCancel={() => setOverride(null)}
           onConfirm={(note) => move(override.to, note, true)} />
@@ -280,7 +334,17 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_25rem]">
         {/* The text, with every issue marked where it is. */}
-        <section className="vt-card min-w-0 p-5 md:p-7" aria-label="Your text">
+        <section className="vt-card min-w-0 p-5 md:p-7" aria-label={manager && !author ? "The text" : "Your text"}>
+          {versions.length > 1 && !editing && (
+            <div role="tablist" aria-label="Show" className="mb-5 inline-flex rounded-lg bg-sunken p-0.5 text-xs font-medium">
+              {([["text", `Version ${latest?.version_no ?? 1}`], ["compare", "Compare versions"]] as const).map(([k, l]) => (
+                <button key={k} type="button" role="tab" aria-selected={docView === k} onClick={() => setDocView(k)}
+                  className={`rounded-md px-3 py-1.5 transition ${docView === k ? "bg-raised text-ink shadow-[var(--vt-shadow)]" : "text-muted hover:text-ink"}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
           {checking && (
             <div className="mb-5 flex items-center gap-3 rounded-xl bg-sunken px-4 py-3 text-sm text-muted" role="status">
               <span aria-hidden className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
@@ -302,6 +366,8 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
                 </span>
               </div>
             </div>
+          ) : docView === "compare" && versions.length > 1 ? (
+            <VersionCompare versions={versions} />
           ) : (
             <HighlightedBody body={body} findings={findings.filter((f) => (f.source ?? "body") === "body")}
               active={active} onSelect={setActive} innerRef={textRef} />
@@ -316,7 +382,18 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
         {/* What to fix, most urgent first. */}
         <aside className="flex min-w-0 flex-col gap-5 xl:sticky xl:top-6" aria-label="Issues">
           <section className="vt-card p-4">
-            <h3 className="mb-3 text-sm font-semibold">Issues</h3>
+            <div role="tablist" aria-label="Side panel" className="mb-3 flex gap-4 border-b border-line text-sm">
+              {([["issues", "Issues", findings.length], ["activity", "Activity", route ? route.comments + route.decisions : null]] as const)
+                .map(([k, l, n]) => (
+                  <button key={k} type="button" role="tab" aria-selected={pane === k} onClick={() => setPane(k)}
+                    className={`-mb-px border-b-2 pb-2 font-semibold transition ${pane === k ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}>
+                    {l}{n ? <span className="ml-1.5 text-xs font-medium tabular-nums text-subtle">{n}</span> : null}
+                  </button>
+                ))}
+            </div>
+            {pane === "activity" ? (
+              <Activity timeline={timeline} contentId={contentId} versionId={latest?.id ?? null} onPosted={loadTimeline} />
+            ) : <>
             {escalations.length > 0 && (
               <div className="mb-3 rounded-xl bg-[var(--vt-warning-bg)] p-3 text-xs" role="status">
                 <p className="font-semibold text-[var(--vt-warning)]">Escalated to the social media manager</p>
@@ -331,9 +408,12 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
               <p className="rounded-xl bg-[var(--vt-ok-bg)] px-4 py-3 text-sm font-medium text-[var(--vt-ok)]">All clear. Every check that ran passed.</p>
             ) : (
               <Checklist findings={findings} rows={rows} disputes={disputeByFinding} active={active} onSelect={setActive}
-                onRow={(id, patch) => setRows((r) => ({ ...r, [id]: { ...(r[id] ?? emptyRow()), ...patch } }))} />
+                onRow={(id, patch) => setRows((r) => ({ ...r, [id]: { ...(r[id] ?? emptyRow()), ...patch } }))}
+                creator={creatorTools} people={people}
+                decide={manager && canDecide(role) && !readOnly ? decide : undefined}
+                canDismissBlockers={role === "approver" || role === "brand_admin"} />
             )}
-            {!readOnly && review && !checking && (
+            {!readOnly && review && !checking && creatorTools && (
               <div className="mt-4 flex items-center gap-3 border-t border-line pt-4">
                 <button type="button" disabled={busy} onClick={() => recheck()} className="vt-btn vt-btn-primary">
                   {changes ? `Apply ${changes} and re-check` : "Re-check"}
@@ -343,6 +423,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
                 </span>
               </div>
             )}
+            </>}
           </section>
 
           {disputes.length > 0 && (
@@ -363,7 +444,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
               </ul>
             </Details>
           )}
-          {!readOnly && review && !checking && <AiEditBox contentId={contentId} onUse={(b) => recheck(b)} />}
+          {!readOnly && review && !checking && creatorTools && <AiEditBox contentId={contentId} onUse={(b) => recheck(b)} />}
           {summary?.categories && !checking && (
             <Details summary="Scorecard">
               <ul className="grid gap-x-6 gap-y-3">
@@ -396,6 +477,24 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
             </Details>
           )}
         </aside>
+      </div>
+    </div>
+  );
+}
+
+/** Sending a piece back: the note is what the creator reads first, on the map and in the feed. */
+function SendBackBox({ busy, onCancel, onConfirm }: { busy: boolean; onCancel: () => void; onConfirm: (note: string) => void }) {
+  const [note, setNote] = useState("");
+  return (
+    <div className="vt-pop vt-card p-4" role="group" aria-label="Request changes">
+      <p className="text-sm font-medium">What should the creator change?</p>
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} autoFocus
+        placeholder="e.g. Drop the 40% claim until legal signs off, and use our product name spelling."
+        aria-label="Note for the creator" className="vt-input mt-3 min-h-16" />
+      <div className="mt-3 flex items-center gap-2">
+        <button type="button" disabled={busy} onClick={() => onConfirm(note.trim())} className="vt-btn vt-btn-primary">Send back</button>
+        <button type="button" onClick={onCancel} className="vt-btn vt-btn-quiet">Cancel</button>
+        <span className="text-xs text-muted">The creator sees this on the piece and on their home page.</span>
       </div>
     </div>
   );

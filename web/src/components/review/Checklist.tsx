@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { PRIORITY, whereLabel } from "@/lib/review-client";
-import type { Dispute, Finding, Level } from "@/lib/types";
+import type { Dispute, Finding, Level, Person } from "@/lib/types";
+import { type DecideFn, DecisionControls, DecisionTag } from "./DecisionControls";
 
 export type RowState = { done: boolean; apply: boolean; dispute: string; language: string; disputing: boolean };
 export const emptyRow = (): RowState => ({ done: false, apply: false, dispute: "", language: "", disputing: false });
@@ -36,13 +37,20 @@ export function PriorityPill({ level }: { level: Level }) {
   );
 }
 
-export function Checklist({ findings, rows, onRow, disputes, active, onSelect }: {
+export function Checklist({ findings, rows, onRow, disputes, active, onSelect, decide, canDismissBlockers = false,
+  people = new Map(), creator = true }: {
   findings: Finding[];
   rows: Record<number, RowState>;
   onRow: (id: number, patch: Partial<RowState>) => void;
   disputes: Record<number, Dispute>;
   active: number | null;
   onSelect: (id: number) => void;
+  /** The brand team's accept/dismiss/escalate; absent on the creator's side. */
+  decide?: DecideFn;
+  canDismissBlockers?: boolean;
+  people?: Map<number, Person>;
+  /** The creator's own tools: ticking done, applying fixes, disputing. Hidden for the brand team. */
+  creator?: boolean;
 }) {
   const [open, setOpen] = useState<number | null>(null);
   const counts = LEVEL_ORDER.map((l) => findings.filter((f) => f.level === l).length);
@@ -54,7 +62,7 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect }:
         {LEVEL_ORDER.map((l, i) => counts[i] > 0 && (
           <span key={l} className="inline-flex items-center gap-1.5"><PriorityPill level={l} /><span className="tabular-nums text-muted">{counts[i]}</span></span>
         ))}
-        <span className="ml-auto tabular-nums text-subtle">{done}/{findings.length} done</span>
+        {creator && <span className="ml-auto tabular-nums text-subtle">{done}/{findings.length} done</span>}
       </div>
       <div className="overflow-hidden rounded-xl border border-line bg-raised">
         <ul className="vt-stagger">
@@ -66,9 +74,11 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect }:
             const fixable = Boolean(s) && (f.source ?? "body") === "body";
             return (
               <li key={f.id} className={`border-b border-line transition-colors last:border-0 ${active === f.id ? "bg-accent/[0.06]" : "hover:bg-sunken/40"}`}>
-                <div className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-x-3 px-3 py-3">
-                  <input type="checkbox" checked={row.done} onChange={(e) => onRow(f.id, { done: e.target.checked })}
-                    aria-label={`Mark "${f.title}" as done`} className="mt-0.5 h-4 w-4 accent-[var(--vt-accent)]" />
+                <div className={`grid items-start gap-x-3 px-3 py-3 ${creator ? "grid-cols-[1.25rem_minmax(0,1fr)]" : "grid-cols-1"}`}>
+                  {creator && (
+                    <input type="checkbox" checked={row.done} onChange={(e) => onRow(f.id, { done: e.target.checked })}
+                      aria-label={`Mark "${f.title}" as done`} className="mt-0.5 h-4 w-4 accent-[var(--vt-accent)]" />
+                  )}
                   {/* Stacked: the list sits in a narrow column beside the text. */}
                   <div className="min-w-0">
                     <div className="mb-1.5"><PriorityPill level={f.level} /></div>
@@ -79,12 +89,13 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect }:
                         <span>{whereLabel(f)}</span>
                         {d && <span className="text-accent">· {DISPUTE_TEXT[d.status]}</span>}
                         {f.assessment?.outcome && <span>· {f.assessment.outcome}</span>}
+                        <DecisionTag f={f} />
                       </span>
                     </button>
                   </div>
                 </div>
                 {isOpen && (
-                  <div className="vt-pop flex flex-col gap-3 border-t border-line py-3 pl-11 pr-4">
+                  <div className={`vt-pop flex flex-col gap-3 border-t border-line py-3 pr-4 ${creator ? "pl-11" : "pl-3"}`}>
                     <p className="text-sm leading-6 text-ink/90">{f.explanation}</p>
                     {f.quote && <p className="rounded-lg bg-sunken px-3 py-2 text-sm text-muted">“{f.quote}”</p>}
                     <p className="text-xs text-subtle">
@@ -107,7 +118,7 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect }:
                       <div className="rounded-lg border border-line p-2.5 text-sm">
                         <p className="text-xs font-medium text-muted">{fixable ? "Suggested fix" : "Suggested change (in the attachment)"}</p>
                         <p className="mt-1"><del className="text-[var(--vt-blocker)]">{s.original}</del> → <ins className="text-[var(--vt-ok)] no-underline">{s.proposed}</ins></p>
-                        {fixable && (
+                        {fixable && creator && (
                           <label className="mt-2 flex items-center gap-2 text-xs">
                             <input type="checkbox" checked={row.apply} onChange={(e) => onRow(f.id, { apply: e.target.checked })}
                               className="h-4 w-4 accent-[var(--vt-accent)]" />
@@ -122,7 +133,8 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect }:
                         {d.verdict.safer_alternative && <><br /><span className="font-semibold">Safer wording:</span> {d.verdict.safer_alternative}</>}
                       </p>
                     )}
-                    {!d && (row.disputing ? (
+                    <DecisionControls f={f} decide={decide} canDismissBlockers={canDismissBlockers} people={people} />
+                    {creator && !d && (row.disputing ? (
                       <div className="flex flex-col gap-2">
                         <label className="text-xs font-medium" htmlFor={`dispute-${f.id}`}>What does it actually mean, and why is this reading wrong?</label>
                         <textarea id={`dispute-${f.id}`} value={row.dispute} maxLength={2000}
