@@ -193,7 +193,8 @@ flowchart LR
 - **Confidential terms never reach a model**: they are redacted from text and blacked out in image pixels first. Confidential-tier content is never sent as pixels at all.
 - **What people type is screened too.** Bribes, "WhatsApp me" style contact swaps and instructions aimed at the AI are refused before they are stored.
 - **Access follows role and clearance**, checked on the server on every request, including in the audit log.
-- **Audited.** A security review with the Cloudflare security-audit method ran on this codebase; its confirmed findings are fixed, each with a regression test.
+- **Audited.** A security review with the Cloudflare security-audit method ran on this codebase; its confirmed findings and the leads it raised are fixed, each with a regression test. The [security report](docs/security/README.md) lists every item, the commit that fixed it, and what is still open.
+- **Locked dependencies.** The backend installs from hashed lock files in CI and on the server, so production runs exactly what the tests ran.
 
 ## Quality
 
