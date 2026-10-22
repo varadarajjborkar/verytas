@@ -291,9 +291,20 @@ async def list_contents(session: Session, user: CurrentUser, state: ContentStatu
             select(Review).where(Review.version_id.in_(list(content_of))).order_by(Review.id.desc()))).all():
         latest.setdefault(content_of[r.version_id], r)
 
+    # When each piece entered its current status: a queue is ordered by how long it has waited
+    # there, not by when its text or check last changed.
+    since: dict[int, datetime] = {}
+    status_of = {c.id: c.status for c in rows}
+    for cid, to, at in (await session.execute(
+            select(WorkflowEvent.content_id, WorkflowEvent.to_status, WorkflowEvent.created_at)
+            .where(WorkflowEvent.content_id.in_(ids)).order_by(WorkflowEvent.id))).all():
+        if to == status_of[cid]:
+            since[cid] = at
+
     out = []
     for c in rows:
         item = ContentListItem.model_validate(c)
+        item.status_since = since.get(c.id, c.created_at)
         item.version_count = count.get(c.id, 0)
         r = latest.get(c.id)
         item.updated_at = max(filter(None, [last_edit.get(c.id), r.finished_at if r else None]), default=c.created_at)
@@ -493,6 +504,7 @@ async def timeline(content_id: int, session: Session, user: CurrentUser) -> dict
     versions = (await session.scalars(select(ContentVersion).where(ContentVersion.content_id == content_id)
                                       .order_by(ContentVersion.version_no))).all()
     version_no = {v.id: v.version_no for v in versions}
+    saved_at = {v.id: v.created_at for v in versions}
     reviews = (await session.scalars(select(Review).where(Review.version_id.in_(list(version_no)))
                                      .order_by(Review.id))).all()
     events = (await session.scalars(select(WorkflowEvent).where(WorkflowEvent.content_id == content_id)
@@ -512,7 +524,8 @@ async def timeline(content_id: int, session: Session, user: CurrentUser) -> dict
                           "version": v.version_no} for v in versions]
     for r in reviews:
         s = r.summary or {}
-        items.append({"type": "review", "at": r.finished_at or r.started_at or versions[0].created_at,
+        # A review not yet started belongs where its version was saved, not at the top of the story.
+        items.append({"type": "review", "at": r.finished_at or r.started_at or saved_at[r.version_id],
                       "actor": None, "version": version_no[r.version_id], "review_id": r.id, "status": r.status,
                       "score": s.get("overall"), "blockers": s.get("blockers", 0), "warnings": s.get("warnings", 0),
                       "advisories": s.get("advisories", 0)})

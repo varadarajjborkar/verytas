@@ -59,6 +59,14 @@ class UserOut(ORM):
     clearance: Tier
 
 
+class PersonOut(ORM):
+    """A colleague as anyone in the workspace sees them: enough to put a name on an action."""
+
+    id: int
+    name: str
+    role: Role
+
+
 class TokenOut(BaseModel):
     user: UserOut
     token: str = Field(description="Shown once. Send as 'Authorization: Bearer <token>'.")
@@ -148,7 +156,7 @@ class FactOut(ORM):
 
 class TermIn(BaseModel):
     term: str = Field(min_length=2, max_length=200)
-    note: str | None = None
+    note: str | None = Field(default=None, max_length=2000)
     embargo_until: date | None = None
 
     @field_validator("term")
@@ -164,7 +172,7 @@ class TermIn(BaseModel):
 
 
 class TermPatch(BaseModel):
-    note: str | None = Field(default=None, max_length=300)
+    note: str | None = Field(default=None, max_length=2000)
     embargo_until: date | None = None
 
 
@@ -302,6 +310,7 @@ class ContentListItem(ContentOut):
 
     version_count: int = 0
     updated_at: datetime | None = None
+    status_since: datetime | None = Field(default=None, description="When it entered its current status")
     latest_review: LatestReview | None = None
 
 

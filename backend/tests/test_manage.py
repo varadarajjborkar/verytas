@@ -98,3 +98,36 @@ def test_the_timeline_tells_one_story_to_both_parties(client, world):
     assert comment["actor"]["name"] == "Approver" and comment["body"] == "Use our spelling."
     assert mine["items"][-1]["to"] == "in_review" and mine["author"]["name"] == "Creator"
     assert all(i["at"].endswith("+00:00") for i in mine["items"])
+
+
+def test_colleagues_see_names_and_only_admins_see_emails(client, world):
+    theirs = client.get("/users", headers=_auth(world["creator"])).json()
+    assert theirs and all(set(p) == {"id", "name", "role"} for p in theirs)
+    assert all("email" in u for u in client.get("/users", headers=_auth(world["admin"])).json())
+
+
+def test_withdrawing_a_scheduled_figure_hands_back_to_the_old_one(client, world):
+    admin = _auth(world["admin"])
+    old = client.post("/facts", headers=admin, json={
+        "statement": "We serve 1 million learners", "value": 1, "unit": "million", "subject": "learners",
+        "source_ref": "Report 2025", "valid_from": "2025-01-01"}).json()
+    new = client.post("/facts", headers=admin, json={
+        "statement": "We serve 2 million learners", "value": 2, "unit": "million", "subject": "learners",
+        "source_ref": "Report 2099", "valid_from": "2099-01-01", "supersedes_id": old["id"]}).json()
+    by_id = {f["id"]: f for f in client.get("/facts", headers=admin).json()}
+    assert by_id[old["id"]]["valid_to"] == "2099-01-01"
+    assert client.post(f"/facts/{new['id']}/retire", headers=admin).status_code == 200
+    by_id = {f["id"]: f for f in client.get("/facts", headers=admin).json()}
+    assert by_id[old["id"]]["valid_to"] is None and by_id[new["id"]]["approved"] is False
+
+
+def test_queue_rows_say_when_they_entered_their_status(client, world):
+    creator = _auth(world["creator"])
+    cid = client.post("/contents?wait=true", headers=creator, json={
+        "title": "Queue", "channel": "linkedin", "body": "Hello there."}).json()["content"]["id"]
+    sent = client.post(f"/contents/{cid}/transition", headers=creator, json={"to": "in_review"})
+    assert sent.status_code == 200
+    row = next(r for r in client.get("/contents", headers=creator).json() if r["id"] == cid)
+    items = client.get(f"/contents/{cid}/timeline", headers=creator).json()["items"]
+    event = [i for i in items if i["type"] == "status"][-1]
+    assert row["status_since"].replace("Z", "+00:00")[:19] == event["at"][:19]
