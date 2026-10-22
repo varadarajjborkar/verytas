@@ -33,7 +33,9 @@ class MediaError(ValueError):
 
 def decode_b64(data: str, limit: int) -> bytes:
     try:
-        raw = base64.b64decode(data, validate=False)
+        # Line-wrapped base64 is common and fine; anything else outside the alphabet is refused
+        # rather than silently dropped, so what is checked is exactly what was sent.
+        raw = base64.b64decode("".join(data.split()), validate=True)
     except (binascii.Error, ValueError) as exc:
         raise MediaError("not valid base64") from exc
     if len(raw) > limit:
@@ -97,17 +99,27 @@ def open_image(raw: bytes) -> Image.Image:
 
 
 def animation_frames(raw: bytes, limit: int = 4) -> tuple[int, list[Image.Image]]:
-    """(frame count, up to `limit` evenly spaced frames after the first) of an animated GIF or WebP."""
-    img = Image.open(io.BytesIO(raw))
-    n = getattr(img, "n_frames", 1)
-    if n <= 1 or img.width * img.height > MAX_PIXELS:
-        return n, []
-    picks = sorted({round(i * (n - 1) / limit) for i in range(1, limit + 1)} - {0})
-    out = []
-    for k in picks:
-        img.seek(k)
-        out.append(flatten(img.copy()))
-    return n, out
+    """(frame count, up to `limit` evenly spaced frames after the first) of an animated GIF or WebP.
+
+    Same guards as open_image: a damaged or oversized file is a MediaError, never a raw crash.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", Image.DecompressionBombWarning)
+        try:
+            img = Image.open(io.BytesIO(raw))
+            n = getattr(img, "n_frames", 1)
+            if n <= 1 or img.width * img.height > MAX_PIXELS:
+                return n, []
+            picks = sorted({round(i * (n - 1) / limit) for i in range(1, limit + 1)} - {0})
+            out = []
+            for k in picks:
+                img.seek(k)
+                out.append(flatten(img.copy()))
+            return n, out
+        except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+            raise MediaError("animation is too large to check safely") from exc
+        except (UnidentifiedImageError, OSError, ValueError, EOFError) as exc:
+            raise MediaError("not a readable animation") from exc
 
 
 def flatten(img: Image.Image) -> Image.Image:
