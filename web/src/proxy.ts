@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { APP, ONLY_FOR, SESSION_COOKIE } from "@/lib/app";
+import { crossOrigin } from "@/lib/same-origin";
 
 // An optimistic gate in front of every page and API route: no session cookie,
 // no entry. It only checks that a cookie exists; the API checks the token
@@ -20,8 +21,7 @@ export function proxy(request: NextRequest) {
 
   // Defence in depth for state-changing calls: they must come from this site.
   if (api && request.method !== "GET" && request.method !== "HEAD") {
-    const origin = request.headers.get("origin");
-    if (origin && new URL(origin).host !== request.nextUrl.host) {
+    if (crossOrigin(request)) {
       return NextResponse.json({ error: "cross-site request refused" }, { status: 403 });
     }
   }

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { z } from "zod/v4";
 import { demoAccounts } from "@/lib/demo-accounts";
 import { SESSION_COOKIE, cookieOptions, signinRequired } from "@/lib/session";
+import { crossOrigin } from "@/lib/same-origin";
 
 const API_URL = process.env.VERYTAS_API_URL;
 const Input = z.object({ token: z.string().trim().min(16).max(512).regex(/^[\w.\-~+/=]+$/) });
@@ -16,8 +17,7 @@ export async function GET() {
  * no preflight) and sign the visitor in as the attacker, so their drafts land in the
  * attacker's workspace. */
 function crossSite(request: Request): boolean {
-  const origin = request.headers.get("origin");
-  if (origin && new URL(origin).host !== new URL(request.url).host) return true;
+  if (crossOrigin(request)) return true;
   return !(request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json");
 }
 
@@ -44,8 +44,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const origin = request.headers.get("origin");
-  if (origin && new URL(origin).host !== new URL(request.url).host) return new Response(null, { status: 403 });
+  if (crossOrigin(request)) return new Response(null, { status: 403 });
   (await cookies()).delete(SESSION_COOKIE);
   return new Response(null, { status: 204 });
 }

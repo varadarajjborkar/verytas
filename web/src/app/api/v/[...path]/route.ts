@@ -1,5 +1,6 @@
 import { backendConfigured, forward } from "@/lib/backend";
 import { sessionToken } from "@/lib/session";
+import { crossOrigin } from "@/lib/same-origin";
 
 // One server-side door to the Verytas API for the console. Calls go out as the
 // signed-in person, and only these get through; the API then checks that
@@ -100,8 +101,7 @@ async function handle(request: Request, ctx: { params: Promise<{ path: string[] 
       { status: 503 });
   }
   // Not behind proxy.ts (see its matcher), so the same-site check lives here too.
-  const origin = request.headers.get("origin");
-  if (request.method !== "GET" && origin && new URL(origin).host !== new URL(request.url).host) {
+  if (request.method !== "GET" && crossOrigin(request)) {
     return Response.json({ error: "cross-site request refused" }, { status: 403 });
   }
   const token = await sessionToken();
