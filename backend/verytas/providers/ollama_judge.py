@@ -75,11 +75,13 @@ class _JudgeTask:
 
 class OllamaJudge:
     def __init__(self, api_key: str, *, model: str, base_url: str = "https://ollama.com",
-                 meter: UsageMeter | None = None, resamples: int = 2, llm: OllamaLLM | None = None) -> None:
+                 meter: UsageMeter | None = None, resamples: int = 2, llm: OllamaLLM | None = None,
+                 fallback_key: str | None = None) -> None:
         self.model = model
         self.name = f"ollama-judge/{model}"
         self._resamples = resamples
-        self._llm = llm or OllamaLLM(api_key, model=model, fast_model=model, base_url=base_url, meter=meter)
+        self._llm = llm or OllamaLLM(api_key, model=model, fast_model=model, base_url=base_url, meter=meter,
+                                    fallback_key=fallback_key)
 
     async def aclose(self) -> None:
         await self._llm.aclose()

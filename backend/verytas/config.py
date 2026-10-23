@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     ollama_api_key: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("OLLAMA_API_KEY", "VERYTAS_OLLAMA_API_KEY")
     )
+    # A second account's key on the same plan, used when the first is refused or out of quota.
+    ollama_api_key_fallback: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OLLAMA_API_KEY_FALLBACK", "VERYTAS_OLLAMA_API_KEY_FALLBACK"),
+    )
     ollama_base_url: str = "https://ollama.com"
     ollama_model: str = "gpt-oss:120b"
     ollama_fast_model: str = "gpt-oss:20b"

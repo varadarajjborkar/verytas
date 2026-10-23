@@ -16,7 +16,9 @@ server's CPU. The language and vision models are reached over HTTPS, after confi
 redacted. Nothing listens publicly except Caddy on 80 and 443.
 
 Secrets live only on the server, in `/srv/verytas/etc/{api,web}.env` (mode 600), and in the seeded
-demo-accounts file. None of them is in this folder.
+demo-accounts file. None of them is in this folder. Both env files may carry `OLLAMA_API_KEY_FALLBACK`, a
+second account's key that the API and the web's model routes switch to (for ten minutes at a time) when
+the first is refused or out of quota.
 
 **`main` is production.** Pushing to `main` runs CI (`.github/workflows/ci.yml`: backend lint and tests,
 web type check, lint and build, a secret scan and dependency audits). When every job passes, CI moves the

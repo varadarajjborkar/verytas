@@ -1,5 +1,6 @@
 import { getItemContext } from "@/lib/backend";
 import { type AssistKind, parseBrief, plainText } from "@/lib/assist";
+import { ollamaConfigured, ollamaPost } from "@/lib/ollama";
 
 // "Summarize" for the brand team: a short brief of one piece or escalation, and a chat about that one
 // item. Same safety model as Ask Verytas (api/chat): the dossier is built, tier-filtered and redacted by
@@ -87,8 +88,7 @@ const MESSAGES = {
 };
 
 export async function POST(request: Request) {
-  const key = process.env.OLLAMA_API_KEY;
-  if (!key) return Response.json({ error: MESSAGES.noKey }, { status: 503 });
+  if (!ollamaConfigured) return Response.json({ error: MESSAGES.noKey }, { status: 503 });
 
   const body = (await request.json().catch(() => null)) as { kind?: unknown; id?: unknown; mode?: unknown } | null;
   const kind = body?.kind === "content" || body?.kind === "escalation" ? (body.kind as AssistKind) : null;
@@ -114,15 +114,10 @@ export async function POST(request: Request) {
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${OLLAMA_URL}/v1/chat/completions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: MODEL, stream: mode === "chat", temperature: 0.2,
-        messages: [{ role: "system", content: system }, ...turns],
-      }),
-      signal: AbortSignal.any([request.signal, AbortSignal.timeout(SUMMARY_TIMEOUT_MS)]),
-    });
+    upstream = await ollamaPost(`${OLLAMA_URL}/v1/chat/completions`, JSON.stringify({
+      model: MODEL, stream: mode === "chat", temperature: 0.2,
+      messages: [{ role: "system", content: system }, ...turns],
+    }), AbortSignal.any([request.signal, AbortSignal.timeout(SUMMARY_TIMEOUT_MS)]));
   } catch (err) {
     console.error("[verytas] assist upstream unreachable:", (err as Error).message);
     return Response.json({ error: MESSAGES.down }, { status: 502 });

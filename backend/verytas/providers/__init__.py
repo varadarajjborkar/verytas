@@ -26,6 +26,7 @@ def build_providers(settings: Settings, meter: UsageMeter) -> tuple[JudgeProvide
         judge = OllamaJudge(
             settings.ollama_api_key.get_secret_value(), model=settings.ollama_judge_model,
             base_url=settings.ollama_base_url, meter=meter, resamples=settings.judge_resamples,
+            fallback_key=_fallback(settings),
         )
     else:
         judge = OfflineJudge()
@@ -45,6 +46,7 @@ def build_providers(settings: Settings, meter: UsageMeter) -> tuple[JudgeProvide
         llm = OllamaLLM(
             settings.ollama_api_key.get_secret_value(), model=settings.ollama_model,
             fast_model=settings.ollama_fast_model, base_url=settings.ollama_base_url, meter=meter,
+            fallback_key=_fallback(settings),
         )
     else:
         llm = OfflineLLM()
@@ -66,7 +68,13 @@ def build_vision(settings: Settings, meter: UsageMeter) -> tuple[LLMProvider, li
         from verytas.providers.ollama import OllamaLLM
 
         vision = OllamaLLM(settings.ollama_api_key.get_secret_value(), model=settings.ollama_vision_model,
-                           fast_model=settings.ollama_vision_model, base_url=settings.ollama_base_url, meter=meter)
+                           fast_model=settings.ollama_vision_model, base_url=settings.ollama_base_url, meter=meter,
+                           fallback_key=_fallback(settings))
         vision.name = f"ollama/{settings.ollama_vision_model}"
         return vision, []
     return OfflineLLM(), ["no OLLAMA_API_KEY: images are read by local OCR only, without scene or asset review"]
+
+
+def _fallback(settings: Settings) -> str | None:
+    key = settings.ollama_api_key_fallback
+    return key.get_secret_value() if key is not None else None
