@@ -40,7 +40,7 @@ export function FindingDeck() {
     if (leaving) return;
     // The top card first drops out below, still in front, then takes the back slot and slides behind.
     setLeaving(true);
-    window.setTimeout(() => { setTop((t) => (t + 1) % CARDS.length); setLeaving(false); }, 260);
+    window.setTimeout(() => { setTop((t) => (t + 1) % CARDS.length); setLeaving(false); }, 130);
   }
 
   const current = CARDS[top];

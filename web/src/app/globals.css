@@ -296,7 +296,7 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
 /* The example deck (components/FindingDeck.tsx). Slot 0 is the top card; the others sit squared up behind
    it, and fan out above and below on hover, just far enough to show their first line (or, below, their
    fix). A clicked top card drops out in front, then takes the back slot and slides behind. */
-.vt-deck-card { transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1); }
+.vt-deck-card { transition: transform 240ms cubic-bezier(0.2, 0.9, 0.3, 1); }
 .vt-slot-0 { z-index: 40; transform: rotate(-1deg); }
 .vt-slot-1 { z-index: 30; transform: rotate(-1deg); }
 .vt-slot-2 { z-index: 20; transform: rotate(2deg); }
@@ -305,7 +305,7 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
 .vt-deck:hover .vt-slot-1, .vt-deck:focus-visible .vt-slot-1 { transform: translate(44px, -58px) rotate(3deg); }
 .vt-deck:hover .vt-slot-2, .vt-deck:focus-visible .vt-slot-2 { transform: translate(18px, 70px) rotate(4deg); }
 .vt-deck:hover .vt-slot-3, .vt-deck:focus-visible .vt-slot-3 { transform: translate(-18px, -116px) rotate(-5deg); }
-.vt-deck .vt-deck-card.vt-deck-leaving, .vt-deck:hover .vt-deck-card.vt-deck-leaving { transform: translate(0, 46%) rotate(4deg) scale(0.97); transition-duration: 260ms; }
+.vt-deck .vt-deck-card.vt-deck-leaving, .vt-deck:hover .vt-deck-card.vt-deck-leaving { transform: translate(0, 46%) rotate(4deg) scale(0.97); transition-duration: 130ms; }
 @media (prefers-reduced-motion: reduce) {
   .vt-deck-card, .vt-deck:hover .vt-deck-card, .vt-deck:hover .vt-deck-card.vt-deck-leaving { transform: none; transition: none; }
 }
