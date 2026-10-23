@@ -272,7 +272,8 @@ async def test_ollama_moves_to_the_backup_key_when_the_first_is_refused():
     ok = httpx.Response(200, json=_chat('{"items": [], "count": 1}'))
 
     def answer(request):
-        return ok if request.headers["authorization"] == "Bearer backup" else httpx.Response(401, json={"error": "quota"})
+        backup = request.headers["authorization"] == "Bearer backup"
+        return ok if backup else httpx.Response(401, json={"error": "quota"})
 
     route = respx.post(f"{OLLAMA}/api/chat").mock(side_effect=answer)
     llm = _ollama(fallback_key="backup")
