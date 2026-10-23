@@ -55,6 +55,16 @@ _NUMBER = re.compile(
     re.IGNORECASE,
 )
 _YEAR = re.compile(r"^(19|20)\d{2}$")
+# Digits that are not quantities: a phone number ("+91 80 4567 8900"), a clock time ("9:30", "10 am") and
+# opening hours ("open 9 to 9", "every day 10-6"). Hours need words that say so: "Class 8 to 10" and
+# "Ages 18-24" are quantities.
+_PHONE = re.compile(r"(?<![\w.])\+?\d[\d \-]{6,}\d(?![\w.])")
+_HOURS_LEAD = re.compile(r"(?:open|opens|opening|timings?|hours|daily|every\s?day|weekdays?|weekends?|mon(?:day)?|"
+                         r"tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b"
+                         r"[^.\n\d]{0,16}$", re.IGNORECASE)
+_CLOCK = re.compile(r"\b\d{1,2}(?::\d{2})?\s?(?:am|pm|a\.m\.|p\.m\.)(?!\w)|\b\d{1,2}:\d{2}\b", re.IGNORECASE)
+_HOURS = re.compile(r"\b(?P<a>\d{1,2})(?::\d{2})?\s?(?:to|-|–|till|until)\s?(?P<b>\d{1,2})(?::\d{2})?\b"
+                    r"(?!\s*(?:%|percent))", re.IGNORECASE)
 _SCALE = re.compile(r"\d\s*(?:out\s+of|/)\s*$", re.IGNORECASE)
 _MULT = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "b": 1e9, "billion": 1e9,
          "lakh": 1e5, "lakhs": 1e5, "crore": 1e7, "crores": 1e7}
@@ -73,10 +83,33 @@ class ParsedNumber:
     raw: str
 
 
+def not_quantities(text: str) -> list[tuple[int, int]]:
+    """Spans of digits that are not quantities: phone numbers, clock times, opening hours."""
+    spans = [m.span() for m in _PHONE.finditer(text) if _phone(m.group(0))]
+    spans += [m.span() for m in _CLOCK.finditer(text)]
+    spans += [m.span() for m in _HOURS.finditer(text) if int(m.group("a")) <= 24 and int(m.group("b")) <= 24
+              and _HOURS_LEAD.search(text[max(0, m.start() - 40):m.start()])]
+    return spans
+
+
+def _phone(run: str) -> bool:
+    """A digit run that is a phone number rather than a range ("12000-15000 users"): a country code, three or
+    more groups, or ten digits that don't read as a rising pair."""
+    groups = re.findall(r"\d+", run)
+    if run.lstrip().startswith("+") or len(groups) >= 3:
+        return sum(len(g) for g in groups) >= 8
+    if len(groups) == 1:
+        return len(groups[0]) >= 10
+    return sum(len(g) for g in groups) >= 10 and int(groups[1]) <= int(groups[0])
+
+
 def parse_numbers(text: str) -> list[ParsedNumber]:
-    """Every quantity in the text, in order. Years and ranks ("#1") are not quantities."""
+    """Every quantity in the text, in order. Years, ranks ("#1"), phone numbers and clock times are not."""
     out = []
+    skip = not_quantities(text)
     for m in _NUMBER.finditer(text):
+        if any(a <= m.start("num") < b for a, b in skip):
+            continue
         raw_num = m.group("num")
         if _YEAR.match(raw_num) and not (m.group("pct") or m.group("plus") or m.group("mult")):
             continue  # "since 2019" is a date, not a quantity
@@ -232,6 +265,20 @@ class _NumberResult:
 _MATCH_FLOOR = 0.5
 _EXACT_TOPIC_FLOOR = 0.2  # with an exact value match, a little topical overlap is enough
 _UNIT_LEAD = 0.25  # how much naming the fact's own unit counts over a shared word
+# A figure per period ("40 learners a week") is a rate, and a rate is not a total: it can't contradict
+# "Kitepath has 1.2 million learners", only another rate.
+_RATE = re.compile(r"\b(?:a|an|per|each|every)\s+(?:day|week|month|year|hour|session|class|batch)\b"
+                   r"|\b(?:daily|weekly|monthly|yearly|annually|hourly)\b|/\s?(?:day|week|month|year|mo|yr|hr)\b",
+                   re.IGNORECASE)
+
+
+def _priced(quote: str, n: ParsedNumber) -> bool:
+    return bool(re.search(r"(?:₹|\$|\brs\.?|\binr)\s?$", quote[:n.start], re.IGNORECASE)
+                or re.match(r"\s?(?:rupees|/-)", quote[n.end:], re.IGNORECASE))
+
+
+def _counts(words: set[str], fact: FactView) -> bool:
+    return bool(words & _content_words(f"{fact.unit or ''} {fact.subject or ''}"))
 
 
 def _subject(quote: str, n: ParsedNumber) -> str:
@@ -269,13 +316,23 @@ def _verify_numbers(quote: str, numbers: list[ParsedNumber], candidates: list[Fa
         # Widening this to words before the number pairs "40" in "800 teams in
         # 40 countries" with the teams fact; the exact-value fallback in the caller
         # covers subjects phrased unlike the fact library instead.
-        scored = [(relevance(subject, f), f) for f in numeric if (f.unit == "%") == n.percent]
+        # A rate only skips totals, and only for counts: "6 days" is still judged against "7 days a week",
+        # and "999 rupees a year" against the annual plan's price.
+        rate = bool(_RATE.search(subject)) and not _priced(quote, n)
+        scored = [(relevance(subject, f), f) for f in numeric if (f.unit == "%") == n.percent
+                  and not (rate and not _RATE.search(f"{f.statement} {f.unit or ''}"))]
         # A fact whose own unit is what the figure counts ("340 courses" and a "courses" fact) leads facts that
         # merely mention the word: "taught in 9 languages" mentions courses too, and "340" is not about
         # languages. Without this the two tie, and the figure is judged against whichever came first.
         unit = _content_words(subject)
-        scored = [(sc + (_UNIT_LEAD if unit & _content_words(f"{f.unit or ''} {f.subject or ''}") else 0.0), f)
+        scored = [(sc + (_UNIT_LEAD if _counts(unit, f) else 0.0), f)
                   for sc, f in scored if sc >= _MATCH_FLOOR]
+        # When some fact counts what the figure counts, a fact that only shares a word ("learners a week" and
+        # "support is open 7 days a week") is not about the figure at all, however many words it shares; and
+        # if the facts that count it don't fit (a total for a rate), nothing does. The whole library is asked:
+        # retrieval ranks by shared words, so the fact that counts the noun may not be among the candidates.
+        if any(_counts(unit, f) for f in ctx.facts if f.value is not None):
+            scored = [(sc, f) for sc, f in scored if _counts(unit, f)]
         if not scored:
             return None
         top = max(sc for sc, _ in scored)

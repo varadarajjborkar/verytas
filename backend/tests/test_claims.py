@@ -281,3 +281,66 @@ def test_a_figure_judged_on_its_own_line_first():
     quote = "1,200 courses\n1,200 mentors"
     first, second = _verify_numbers(quote, parse_numbers(quote), facts, ctx)
     assert first.verdict == "contradicted" and second.verdict == "supported"
+
+
+def test_phone_numbers_clock_times_and_opening_hours_are_not_quantities():
+    from verytas.checks.claims import parse_numbers
+
+    # Seeded demo regression: the support line was a blocker, "4567" and "9" against "open 7 days a week".
+    assert parse_numbers("Our support team is on +91 80 4567 8900, every day 9 to 9.") == []
+    assert parse_numbers("Call 1800-123-4567, open 10 am to 6 pm") == []
+    assert [n.value for n in parse_numbers("Class at 9:30 for 45 minutes")] == [45]
+    # A range with a unit is a quantity; so is a range of percentages.
+    assert [n.value for n in parse_numbers("Delivery in 5 to 7 days")] == [5, 7]
+    assert [n.value for n in parse_numbers("Save 10-20% today")] == [10, 20]
+
+
+def test_a_rate_is_not_judged_against_a_total_or_a_fact_about_something_else():
+    from tests.helpers import make_ctx
+    from verytas.checks.base import FactView
+    from verytas.checks.claims import _verify_numbers, parse_numbers
+
+    facts = [FactView(1, "Kitepath has 1.2 million learners", 1.2, "million", "learners", "r", date(2026, 1, 1), None),
+             FactView(2, "Learner support is open 7 days a week", 7, "days", "support days", "r", date(2026, 1, 1),
+                      None)]
+    ctx = make_ctx("", [], facts=facts)
+
+    def verdicts(quote):
+        return [r.verdict for r in _verify_numbers(quote, parse_numbers(quote), facts, ctx)]
+
+    # Seeded demo regression: one mentor's weekly group was a blocker against the support-days fact.
+    assert verdicts("Meet Ananya, who mentors 40 learners a week in our design track.") == ["unmatched"]
+    assert verdicts("Kitepath has 2 million learners") == ["contradicted"]
+    assert verdicts("Support is open 6 days a week") == ["contradicted"]
+    # Through retrieval, which ranks by shared words and hands over only the support fact.
+    quote = "Meet Ananya, who mentors 40 learners a week in our design track."
+    assert [r.verdict for r in _verify_numbers(quote, parse_numbers(quote), facts[1:], ctx)] == ["unmatched"]
+
+
+def test_ranges_and_quantities_that_look_like_phones_or_hours_are_still_read():
+    from verytas.checks.claims import parse_numbers
+
+    def vals(t):
+        return [n.value for n in parse_numbers(t)]
+
+    # errcheck 360: a rising pair is a range, not a phone number.
+    assert vals("12000-15000 users") == [12000, 15000] and vals("5000 - 6000 students") == [5000, 6000]
+    assert vals("Call 98765 43210") == [] and vals("Call 9876543210") == [] and vals("1800-123-4567") == []
+    # errcheck 362: hours need words that say so, wherever the unit is.
+    assert vals("Open 9 to 9 daily") == [] and vals("Open 9-6 on weekdays") == []
+    assert vals("Class 8 to 10.") == [8, 10] and vals("Ages 18-24") == [18, 24] and vals("Pay ₹5-10") == [5, 10]
+
+
+def test_a_period_on_one_side_only_still_lets_a_contradiction_through():
+    # errcheck 361: the rate rule skips totals for a rate of counts, nothing else.
+    from tests.helpers import make_ctx
+    from verytas.checks.base import FactView
+    from verytas.checks.claims import _verify_numbers, parse_numbers
+
+    for fact, quote in (
+            (FactView(1, "Support is open 7 days a week", 7, "days", "support days", "r", date(2026, 1, 1), None),
+             "Support is open 6 days."),
+            (FactView(2, "The annual plan costs 4999 rupees", 4999, "rupees", "annual plan price", "r",
+                      date(2026, 1, 1), None), "Pay 999 rupees a year for the annual plan")):
+        ctx = make_ctx("", [], facts=[fact])
+        assert [r.verdict for r in _verify_numbers(quote, parse_numbers(quote), [fact], ctx)] == ["contradicted"]
