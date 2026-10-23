@@ -9,7 +9,7 @@ import {
 import { ApiError, listContents, listEvents, listPeople, relativeTime, STATUS_LABEL } from "@/lib/review-client";
 import type { BrandEvent, ContentRow, Person } from "@/lib/types";
 import { BackButton } from "../BackButton";
-import { ArrowRightIcon, CloseIcon, InboxIcon, RefreshIcon } from "../Icons";
+import { ArrowRightIcon, ArrowUpIcon, CloseIcon, InboxIcon, RefreshIcon } from "../Icons";
 import { StageDots } from "../Journey";
 import { tabKeys } from "../ui";
 import { useViewer } from "../Viewer";
@@ -19,6 +19,34 @@ import { useOnRefresh } from "@/lib/refresh";
 import { SearchField } from "../SearchField";
 
 const STAGE_ORDER: ContentRow["status"][] = ["in_review", "changes_requested", "draft", "approved", "published", "withdrawn"];
+
+// Clicking a column header sorts by it: highest first, then lowest first, then back to the queue's own
+// order (the Sort menu). Ties keep that order, since the sort is stable and runs on the sorted list.
+type Column = "priority" | "piece" | "stage" | "check" | "signals" | "age";
+const COLUMNS: Column[] = ["priority", "piece", "stage", "check", "signals", "age"];
+const isColumn = (c: string | null): c is Column => c != null && (COLUMNS as string[]).includes(c);
+const SIGNAL_TAGS: Signal[] = ["mustfix", "escalated", "event", "failed"];
+const COLUMN_WORDS: Record<Column, { name: string; desc: string; asc: string }> = {
+  priority: { name: "priority", desc: "highest first", asc: "lowest first" },
+  piece: { name: "title", desc: "Z to A", asc: "A to Z" },
+  stage: { name: "stage", desc: "earliest first", asc: "furthest along first" },
+  check: { name: "latest check", desc: "best score first", asc: "lowest score first" },
+  signals: { name: "signals", desc: "most first", asc: "fewest first" },
+  age: { name: "time", desc: "oldest first", asc: "newest first" },
+};
+
+function columnValue(col: Column, r: ContentRow, ageOf: (r: ContentRow) => string): number | string {
+  switch (col) {
+    case "priority": return priority(r);
+    case "piece": return r.title.toLocaleLowerCase();
+    // Earlier in the flow ranks higher: waiting on a decision before published.
+    case "stage": return STAGE_ORDER.length - STAGE_ORDER.indexOf(r.status);
+    case "check": return r.latest_review?.overall ?? -1;
+    case "signals": return SIGNAL_TAGS.filter((s) => SIGNALS[s].test(r)).length;
+    // How long ago, so "highest first" is the one waiting longest.
+    case "age": return -Date.parse(ageOf(r));
+  }
+}
 
 /**
  * The brand team's review queue, full width: every creator's pieces, split by
@@ -45,6 +73,8 @@ export function ReviewQueue() {
   const get = (k: string) => params.get(k);
   const queue: Queue = isQueue(get("queue")) ? get("queue") as Queue : "waiting";
   const sort: Sort = isSort(get("sort")) ? get("sort") as Sort : queue === "waiting" || queue === "escalated" ? "priority" : "recent";
+  const col = isColumn(get("col")) ? get("col") as Column : null;
+  const dir = get("dir") === "asc" ? "asc" : "desc";
   const group = (get("group") && Object.hasOwn(GROUPS, get("group")!) ? get("group") : "none") as Group;
   const creator = get("creator") ?? "all";
   const channel = get("channel") ?? "all";
@@ -109,14 +139,28 @@ export function ReviewQueue() {
   const all = useMemo(() => rows ?? [], [rows]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return sortRows(all.filter((r) => QUEUES[queue].test(r)
+    const rows = sortRows(all.filter((r) => QUEUES[queue].test(r)
       && (creator === "all" || String(r.created_by) === creator)
       && (channel === "all" || r.channel === channel)
       && (event === "all" || (event === "none" ? r.event_id == null : String(r.event_id) === event))
       && (!signal || SIGNALS[signal].test(r))
       && (!q || r.title.toLowerCase().includes(q) || nameOf(r.created_by).toLowerCase().includes(q)
         || channelName(r.channel).toLowerCase().includes(q))), sort, nameOf);
-  }, [all, queue, creator, channel, event, signal, query, sort, nameOf]);
+    if (!col) return rows;
+    const ageOf = (r: ContentRow) => queue === "waiting" ? sinceOf(r) : r.updated_at ?? r.created_at;
+    const sign = dir === "asc" ? 1 : -1;
+    return rows.sort((a, b) => {
+      const va = columnValue(col, a, ageOf), vb = columnValue(col, b, ageOf);
+      return sign * (typeof va === "string" ? va.localeCompare(vb as string) : va - (vb as number));
+    });
+  }, [all, queue, creator, channel, event, signal, query, sort, nameOf, col, dir]);
+
+  const orderNote = col ? `Sorted by ${COLUMN_WORDS[col].name}, ${COLUMN_WORDS[col][dir]}.`
+    : sort === "priority" ? "Highest priority first." : "";
+
+  // Highest first, then lowest first, then the queue's own order again.
+  const sortBy = (c: Column) => col !== c ? set({ col: c, dir: "desc" })
+    : dir === "desc" ? set({ col: c, dir: "asc" }) : set({ col: null, dir: null });
 
   const creators = useMemo(() => [...new Set(all.map((r) => r.created_by))].map((id) => ({ id, name: nameOf(id) }))
     .sort((a, b) => a.name.localeCompare(b.name)), [all, nameOf]);
@@ -155,10 +199,10 @@ export function ReviewQueue() {
   return (
     <div className="flex flex-col gap-4">
       <div role="tablist" aria-label="Queue" className="vt-tabs gap-1"
-        onKeyDown={tabKeys(QUEUE_ORDER, queue, (q) => set({ queue: q === "waiting" ? null : q, sort: null }), "queue-tab")}>
+        onKeyDown={tabKeys(QUEUE_ORDER, queue, (q) => set({ queue: q === "waiting" ? null : q, sort: null, col: null, dir: null }), "queue-tab")}>
         {QUEUE_ORDER.map((q) => (
           <button key={q} id={`queue-tab-${q}`} type="button" role="tab" aria-selected={queue === q} aria-controls="queue-panel"
-            tabIndex={queue === q ? 0 : -1} onClick={() => set({ queue: q === "waiting" ? null : q, sort: null })}
+            tabIndex={queue === q ? 0 : -1} onClick={() => set({ queue: q === "waiting" ? null : q, sort: null, col: null, dir: null })}
             className={`flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
               queue === q ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}>
             {q === "escalated" && <InboxIcon size={14} />}{QUEUES[q].label}
@@ -212,7 +256,7 @@ export function ReviewQueue() {
       <section id="queue-panel" role="tabpanel" aria-labelledby={`queue-tab-${queue}`} className="vt-card min-w-0 overflow-hidden">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line px-4 py-3 md:px-5">
           <h2 className="text-sm font-semibold">{QUEUES[queue].title}</h2>
-          <p className="text-xs text-muted">{QUEUES[queue].lead}</p>
+          <p className="text-xs text-muted">{QUEUES[queue].lead}{orderNote ? ` ${orderNote}` : ""}</p>
           {rows && (
             <p className="text-xs tabular-nums text-subtle">
               {filtered.length} piece{filtered.length === 1 ? "" : "s"}{mustFix ? ` · ${mustFix} must-fix` : ""}
@@ -221,7 +265,7 @@ export function ReviewQueue() {
           )}
           {/* Order and grouping shape the list itself, so they sit on it rather than among the filters. */}
           <div className="ml-auto flex items-center gap-1.5">
-            <select value={sort} onChange={(e) => set({ sort: e.target.value })} aria-label="Sort" className="vt-input w-auto py-1 text-xs">
+            <select value={sort} onChange={(e) => set({ sort: e.target.value, col: null, dir: null })} aria-label="Sort" className="vt-input w-auto py-1 text-xs">
               {(Object.keys(SORTS) as Sort[]).map((k) => <option key={k} value={k}>Sort: {SORTS[k]}</option>)}
             </select>
             <select value={group} onChange={(e) => set({ group: e.target.value })} aria-label="Group" className="vt-input w-auto py-1 text-xs">
@@ -268,12 +312,12 @@ export function ReviewQueue() {
               </colgroup>
               <thead>
                 <tr className="border-b border-line text-left text-[11px] font-medium uppercase tracking-wide text-subtle">
-                  <th scope="col" className="w-20 py-2 pl-4 pr-2 font-medium md:pl-5">Priority</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Piece</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Where it is</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Latest check</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Signals</th>
-                  <th scope="col" className="px-3 py-2 font-medium">{queue === "waiting" ? "Waiting" : "Updated"}</th>
+                  <SortHeader col="priority" label="Priority" sorted={col} dir={dir} onSort={sortBy} className="w-20 pl-4 pr-2 md:pl-5" />
+                  <SortHeader col="piece" label="Piece" sorted={col} dir={dir} onSort={sortBy} />
+                  <SortHeader col="stage" label="Where it is" sorted={col} dir={dir} onSort={sortBy} />
+                  <SortHeader col="check" label="Latest check" sorted={col} dir={dir} onSort={sortBy} />
+                  <SortHeader col="signals" label="Signals" sorted={col} dir={dir} onSort={sortBy} />
+                  <SortHeader col="age" label={queue === "waiting" ? "Waiting" : "Updated"} sorted={col} dir={dir} onSort={sortBy} />
                   <th scope="col" className="w-8 py-2 pr-4 md:pr-5"><span className="sr-only">Open</span></th>
                 </tr>
               </thead>
@@ -297,6 +341,25 @@ export function ReviewQueue() {
         )}
       </section>
     </div>
+  );
+}
+
+/** A column header that sorts the queue by its column; the arrow shows the direction, and none means
+ * the queue's own order. */
+function SortHeader({ col, label, sorted, dir, onSort, className = "px-3" }: {
+  col: Column; label: string; sorted: Column | null; dir: "asc" | "desc"; onSort: (c: Column) => void; className?: string;
+}) {
+  const active = sorted === col;
+  return (
+    <th scope="col" aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"} className={`py-2 font-medium ${className}`}>
+      <button type="button" onClick={() => onSort(col)}
+        title={!active ? "Sort, highest first" : dir === "desc" ? "Sort, lowest first" : "Back to the queue's order"}
+        className={`group/sort -mx-1 inline-flex items-center gap-1 rounded px-1 uppercase tracking-wide hover:text-ink ${active ? "text-ink" : ""}`}>
+        {label}
+        <ArrowUpIcon size={11} aria-hidden
+          className={`transition ${active ? (dir === "desc" ? "rotate-180" : "") : "rotate-180 opacity-0 group-hover/sort:opacity-40"}`} />
+      </button>
+    </th>
   );
 }
 

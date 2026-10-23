@@ -134,8 +134,8 @@ function Row({ r, focused, approver, decider, onDone }: {
       focused ? "bg-[color-mix(in_oklab,var(--vt-accent)_5%,var(--vt-surface))]" : "bg-surface"}`}>
       <Cell label="The content">
         <div className="flex items-start justify-between gap-2">
-          <Link href={`/review?id=${r.content.id}`} className="block min-w-0 truncate text-sm font-semibold hover:text-accent">{r.content.title}</Link>
-          <SummarizeButton kind="escalation" id={r.id} title={r.content.title} className="vt-btn vt-btn-quiet h-7 shrink-0 px-2.5 text-xs" />
+          <Link href={`/review?id=${r.content.id}`} className="block min-w-0 text-sm font-semibold leading-5 hover:text-accent [overflow-wrap:anywhere]">{r.content.title}</Link>
+          <SummarizeButton kind="escalation" id={r.id} title={r.content.title} className="vt-btn vt-btn-quiet vt-btn-xs shrink-0" />
         </div>
         <p className="mt-0.5 truncate text-[11px] text-subtle">
           {r.content.author?.name ?? "Creator"} · {channelName(r.content.channel)}
@@ -210,8 +210,8 @@ function RuleCard({ c }: { c: RuleCitation }) {
       <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
         className="flex w-full items-start gap-2 py-1 pl-3 text-left">
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 text-[11px] text-subtle">
-            <span className="rounded bg-sunken px-1.5 py-px font-mono text-[11px] text-muted">{c.code}</span>
+          <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-subtle">
+            <span className="whitespace-nowrap rounded bg-sunken px-1.5 py-px font-mono text-[11px] text-muted">{c.code}</span>
             <span>Rule · {severity}{c.event_id ? " · from an event" : c.system ? " · built in" : ""}</span>
           </p>
           <p className="mt-1 text-[13px] font-medium leading-5">{c.title}</p>

@@ -7,7 +7,7 @@ import type { ContentRow } from "./types";
 export type Queue = "waiting" | "escalated" | "creator" | "approved" | "all";
 
 export const QUEUES: Record<Queue, { label: string; title: string; lead: string; test: (r: ContentRow) => boolean }> = {
-  waiting: { label: "Waiting", title: "Waiting for a decision", lead: "Sent by creators. Highest priority first.",
+  waiting: { label: "Waiting", title: "Waiting for a decision", lead: "Sent by creators.",
     test: (r) => r.status === "in_review" },
   escalated: { label: "Escalated", title: "Escalated to a person", lead: "A creator asked the brand team to look at a finding.",
     test: (r) => (r.open_escalations ?? 0) > 0 },

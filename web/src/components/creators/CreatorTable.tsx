@@ -92,8 +92,14 @@ export function Sparkline({ values, width = 72, height = 22 }: { values: number[
       aria-label={`Last ${values.length} pieces, distance from the brand: ${values.join(", ")}`}>
       <line x1={pad} x2={width - pad} y1={height - pad} y2={height - pad} stroke="var(--vt-line)" strokeWidth="1" />
       {values.length > 1 && (
-        <polyline points={values.map((v, i) => `${x(i)},${y(v)}`).join(" ")} fill="none" stroke="var(--vt-accent)"
-          strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" pathLength={1} className="vt-draw" />
+        <>
+          {/* A faint area under the line: most creators sit near zero, where a bare line would vanish into
+              the baseline. */}
+          <polygon points={`${x(0)},${height - pad} ${values.map((v, i) => `${x(i)},${y(v)}`).join(" ")} ${x(values.length - 1)},${height - pad}`}
+            fill="color-mix(in srgb, var(--vt-accent) 14%, transparent)" />
+          <polyline points={values.map((v, i) => `${x(i)},${y(v)}`).join(" ")} fill="none" stroke="var(--vt-accent)"
+            strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" pathLength={1} className="vt-draw" />
+        </>
       )}
       <circle cx={x(values.length - 1)} cy={y(last)} r="2.75" fill={tone} stroke="var(--vt-surface)" strokeWidth="1.5" />
     </svg>
