@@ -344,3 +344,26 @@ def test_a_period_on_one_side_only_still_lets_a_contradiction_through():
                       date(2026, 1, 1), None), "Pay 999 rupees a year for the annual plan")):
         ctx = make_ctx("", [], facts=[fact])
         assert [r.verdict for r in _verify_numbers(quote, parse_numbers(quote), [fact], ctx)] == ["contradicted"]
+
+
+def test_errcheck_369_to_371_totals_rates_hours_and_spaced_thousands():
+    from tests.helpers import make_ctx
+    from verytas.checks.base import FactView
+    from verytas.checks.claims import _verify_numbers, parse_numbers
+
+    # 369: a total is not judged against a rate fact either.
+    rate = FactView(1, "Ananya mentors 40 learners a week", 40, "learners", "learners a week", "r",
+                    date(2026, 1, 1), None)
+    quote = "Kitepath has 2 million learners"
+    ctx = make_ctx("", [], facts=[rate])
+    assert [r.verdict for r in _verify_numbers(quote, parse_numbers(quote), [rate], ctx)] == ["unmatched"]
+
+    def vals(t):
+        return [n.value for n in parse_numbers(t)]
+
+    # 370: an amount after "open" is still an amount.
+    assert vals("Open to all, 5 to 10 seats") == [5, 10] and vals("Open for 8 to 12 hours") == [8, 12]
+    assert vals("open 10-6, Mon-Sat") == []
+    # 371: spaced thousands are one number; a 5 + 5 mobile number is a phone.
+    assert vals("10 000 000 learners") == [10_000_000] and vals("Join 10 000 learners") == [10_000]
+    assert vals("Call 90000 98765") == [] and vals("12000-15000 users") == [12000, 15000]

@@ -49,7 +49,12 @@ _PROMO = re.compile(
 # read the Western way it would parse as "1" and "40,000".
 _NUMBER = re.compile(
     r"(?P<prefix>\b(?:more than|over|at least|up to|nearly|almost)\s+)?"
-    r"(?P<num>\d{1,2}(?:,\d{2})+,\d{3}(?:\.\d+)?|\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
+    # Thousands may also be spaced: with a no-break or thin space ("10\u202f000"), or a plain space when
+    # no other reading of the digits makes sense ("10 000 000", "10 000").
+    r"(?P<num>\d{1,2}(?:,\d{2})+,\d{3}(?:\.\d+)?|\d{1,3}(?:,\d{3})+(?:\.\d+)?"
+    r"|\d{1,3}(?:[\u00a0\u202f]\d{3})+(?:\.\d+)?(?![\d,])|\d{1,3}(?: \d{3}){2,}(?:\.\d+)?(?![\d,])"
+    r"|\d{1,3} 000(?:\.\d+)?(?![\d,])"
+    r"|\d+(?:\.\d+)?)"
     r"\s?(?P<mult>[kKmMbB]\b|thousand\b|million\b|billion\b|lakhs?\b|crores?\b)?"
     r"(?P<plus>\+)?\s?(?P<pct>%|percent\b)?",
     re.IGNORECASE,
@@ -61,7 +66,11 @@ _YEAR = re.compile(r"^(19|20)\d{2}$")
 _PHONE = re.compile(r"(?<![\w.])\+?\d[\d \-]{6,}\d(?![\w.])")
 _HOURS_LEAD = re.compile(r"(?:open|opens|opening|timings?|hours|daily|every\s?day|weekdays?|weekends?|mon(?:day)?|"
                          r"tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b"
-                         r"[^.\n\d]{0,16}$", re.IGNORECASE)
+                         r"[^.,;\n\d]{0,16}$", re.IGNORECASE)
+# What follows a range that makes it an amount, not a time of day: "open for 8 to 12 hours", "5 to 10 seats".
+_AMOUNT_NEXT = re.compile(r"\s*(?:hours?|hrs?|days?|weeks?|months?|years?|minutes?|mins?|seats?|spots?|people|"
+                          r"students?|learners?|users?|members?|kids|children|teams?|classes|sessions?|%|percent)\b",
+                          re.IGNORECASE)
 _CLOCK = re.compile(r"\b\d{1,2}(?::\d{2})?\s?(?:am|pm|a\.m\.|p\.m\.)(?!\w)|\b\d{1,2}:\d{2}\b", re.IGNORECASE)
 _HOURS = re.compile(r"\b(?P<a>\d{1,2})(?::\d{2})?\s?(?:to|-|–|till|until)\s?(?P<b>\d{1,2})(?::\d{2})?\b"
                     r"(?!\s*(?:%|percent))", re.IGNORECASE)
@@ -88,7 +97,7 @@ def not_quantities(text: str) -> list[tuple[int, int]]:
     spans = [m.span() for m in _PHONE.finditer(text) if _phone(m.group(0))]
     spans += [m.span() for m in _CLOCK.finditer(text)]
     spans += [m.span() for m in _HOURS.finditer(text) if int(m.group("a")) <= 24 and int(m.group("b")) <= 24
-              and _HOURS_LEAD.search(text[max(0, m.start() - 40):m.start()])]
+              and _HOURS_LEAD.search(text[max(0, m.start() - 40):m.start()]) and not _AMOUNT_NEXT.match(text, m.end())]
     return spans
 
 
@@ -96,8 +105,14 @@ def _phone(run: str) -> bool:
     """A digit run that is a phone number rather than a range ("12000-15000 users"): a country code, three or
     more groups, or ten digits that don't read as a rising pair."""
     groups = re.findall(r"\d+", run)
-    if run.lstrip().startswith("+") or len(groups) >= 3:
+    plus = run.lstrip().startswith("+")
+    if (not plus and len(groups) >= 3 and len(groups[0]) <= 3 and not groups[0].startswith("0")
+            and all(len(g) == 3 for g in groups[1:])):
+        return False  # thousands spaced out: "10 000 000 learners"
+    if plus or len(groups) >= 3:
         return sum(len(g) for g in groups) >= 8
+    if len(groups) == 2 and len(groups[0]) == len(groups[1]) == 5 and "-" not in run:
+        return True  # a mobile number written 5 + 5 ("90000 98765"); a range would carry a dash
     if len(groups) == 1:
         return len(groups[0]) >= 10
     return sum(len(g) for g in groups) >= 10 and int(groups[1]) <= int(groups[0])
@@ -117,7 +132,7 @@ def parse_numbers(text: str) -> list[ParsedNumber]:
             continue  # "#1 tool" is a ranking claim, handled as a superlative
         if _SCALE.search(text[:m.start("num")]):
             continue  # the "5" in "4.7 out of 5" or "9/10" is the scale, not a second quantity
-        value = float(raw_num.replace(",", ""))
+        value = float(re.sub(r"[,\s]", "", raw_num))
         if m.group("mult"):
             value *= _MULT[m.group("mult").lower()]
         prefix = (m.group("prefix") or "").strip().lower()
@@ -270,6 +285,13 @@ _UNIT_LEAD = 0.25  # how much naming the fact's own unit counts over a shared wo
 _RATE = re.compile(r"\b(?:a|an|per|each|every)\s+(?:day|week|month|year|hour|session|class|batch)\b"
                    r"|\b(?:daily|weekly|monthly|yearly|annually|hourly)\b|/\s?(?:day|week|month|year|mo|yr|hr)\b",
                    re.IGNORECASE)
+# "7 days a week" measures days, not something per week: a span of time is compared like any count.
+_SPAN = re.compile(r"\b(?:days?|hours?|hrs?|minutes?|mins?|weeks?|months?)\s+(?:a|an|per|each|every|/)\s*\w+",
+                   re.IGNORECASE)
+
+
+def _is_rate(text: str) -> bool:
+    return bool(_RATE.search(_SPAN.sub(" ", text)))
 
 
 def _priced(quote: str, n: ParsedNumber) -> bool:
@@ -316,11 +338,13 @@ def _verify_numbers(quote: str, numbers: list[ParsedNumber], candidates: list[Fa
         # Widening this to words before the number pairs "40" in "800 teams in
         # 40 countries" with the teams fact; the exact-value fallback in the caller
         # covers subjects phrased unlike the fact library instead.
-        # A rate only skips totals, and only for counts: "6 days" is still judged against "7 days a week",
-        # and "999 rupees a year" against the annual plan's price.
-        rate = bool(_RATE.search(subject)) and not _priced(quote, n)
+        # Rates and totals are compared only with their own kind, both ways ("40 learners a week" against
+        # "1.2 million learners", and back), and only for counts: "6 days" is still judged against
+        # "7 days a week", and "999 rupees a year" against the annual plan's price.
+        priced = _priced(quote, n)
+        rate = _is_rate(subject)
         scored = [(relevance(subject, f), f) for f in numeric if (f.unit == "%") == n.percent
-                  and not (rate and not _RATE.search(f"{f.statement} {f.unit or ''}"))]
+                  and (priced or rate == _is_rate(f"{f.statement} {f.unit or ''}"))]
         # A fact whose own unit is what the figure counts ("340 courses" and a "courses" fact) leads facts that
         # merely mention the word: "taught in 9 languages" mentions courses too, and "340" is not about
         # languages. Without this the two tie, and the figure is judged against whichever came first.
