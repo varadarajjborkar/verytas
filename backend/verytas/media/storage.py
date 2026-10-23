@@ -27,7 +27,7 @@ from typing import Any
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from verytas.models import Content, ContentVersion, MediaBlob, utcnow
+from verytas.models import Content, ContentVersion, IntakeItem, MediaBlob, utcnow
 
 log = logging.getLogger(__name__)
 _MB = 1024 * 1024
@@ -93,6 +93,9 @@ async def reclaim_orphans(session: AsyncSession, *, older_than: timedelta,
         .where(Content.workspace_id.in_(workspaces)).execution_options(yield_per=100))
     async for attachments, notes in rows:
         used |= blob_ids(attachments, notes)
+    # Material handed to Intake is kept while its item exists: an asset draft reads its picture from it.
+    used |= set((await session.scalars(select(IntakeItem.blob_id).where(
+        IntakeItem.workspace_id.in_(workspaces), IntakeItem.blob_id.is_not(None)))).all())
     stale = [bid for bid, _ in candidates if bid not in used]
     for i in range(0, len(stale), 500):
         await session.execute(delete(MediaBlob).where(MediaBlob.id.in_(stale[i:i + 500])))

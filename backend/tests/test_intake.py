@@ -1,0 +1,160 @@
+"""Prism Intake: anything a company hands over is read by code, understood, checked, and only drafted."""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import json
+import time
+import zipfile
+
+import pytest
+
+from verytas.intake import fetch, readers, tables
+from verytas.intake.tables import Dedupe, DropHeaderRows, FactPlan, Rename
+
+M = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+
+def xlsx(rows: list[list[str | float]], sheet="Pricing") -> bytes:
+    strings: list[str] = []
+
+    def cell(ref: str, v) -> str:
+        if isinstance(v, (int, float)):
+            return f'<c r="{ref}"><v>{v}</v></c>'
+        strings.append(v)
+        return f'<c r="{ref}" t="s"><v>{len(strings) - 1}</v></c>'
+
+    body = "".join(f'<row r="{i + 1}">' + "".join(cell(f"{chr(65 + j)}{i + 1}", v) for j, v in enumerate(r)) + "</row>"
+                   for i, r in enumerate(rows))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("xl/workbook.xml", f'<workbook xmlns="{M}" xmlns:r="{R}"><sheets><sheet name="{sheet}" '
+                                      f'sheetId="1" r:id="rId1"/></sheets></workbook>')
+        z.writestr("xl/_rels/workbook.xml.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/'
+                   '2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>')
+        z.writestr("xl/worksheets/sheet1.xml", f'<worksheet xmlns="{M}"><sheetData>{body}</sheetData></worksheet>')
+        z.writestr("xl/sharedStrings.xml", f'<sst xmlns="{M}">' + "".join(f"<si><t>{s}</t></si>" for s in strings)
+                   + "</sst>")
+    return buf.getvalue()
+
+
+def pptx(slides: list[str]) -> bytes:
+    a = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("ppt/presentation.xml", "<p/>")
+        for i, text in enumerate(slides, 1):
+            z.writestr(f"ppt/slides/slide{i}.xml", f'<sld xmlns:a="{a}"><a:p><a:r><a:t>{text}</a:t></a:r></a:p></sld>')
+    return buf.getvalue()
+
+
+def test_office_files_and_text_formats_are_read_with_addresses():
+    raw = xlsx([["Kitepath price list", ""], ["Plan", "Price (Rs)", "From"], ["Basic", 299, 46023],
+                ["Pro", 599, 46023], ["", "", ""]])
+    assert readers.office_kind(raw) == readers.XLSX
+    r = readers.read(raw, readers.XLSX)
+    [t] = r.tables
+    # The title row above the table is not taken for the header.
+    assert t.header == ["Plan", "Price (Rs)", "From"] and t.rows[0][:2] == ["Basic", "299"]
+    assert t.cell(1, 1) == "Pricing!B4"
+    assert readers.read(pptx(["Always say Kitepath", "Never mock other apps"]), readers.PPTX).pages[1] \
+        == "Never mock other apps"
+    assert readers.sniff_text(b"plan;price\nBasic;299\nPro;599\n") == "text/plain"
+    assert readers.sniff_text(b"plan,price\nBasic,299\nPro,599\n") == "text/csv"
+    data = readers.read(json.dumps({"data": [{"plan": "Basic", "price": 299}]}).encode(), "application/json", "api")
+    assert data.tables[0].header == ["plan", "price"]
+    assert readers.sniff_text(b"\x00\x01\x02binary") is None
+    # Entities are never expanded: a billion-laughs part reads as nothing, not as gigabytes.
+    bomb = io.BytesIO()
+    with zipfile.ZipFile(bomb, "w") as z:
+        z.writestr("xl/workbook.xml", '<!DOCTYPE x [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;">]>'
+                                      f'<workbook xmlns="{M}"><sheets/></workbook>')
+        z.writestr("xl/_rels/workbook.xml.rels", "<Relationships/>")
+    assert readers.read(bomb.getvalue(), readers.XLSX).tables == []
+
+
+def test_the_model_plans_cleaning_from_a_menu_and_code_makes_one_fact_per_row():
+    t = readers.Table("Pricing", ["Plan", "Price", "Note"],
+                      [["Basic", "₹299/month", ""], ["Pro", "₹599/month", ""], ["Pro", "₹599/month", ""],
+                       ["All prices include GST", "", ""], ["Annual", "4,999", "per year"]], header_row=2)
+    cleaned, origin, skipped = tables.apply(t, [DropHeaderRows(column="Plan", pattern="include GST"),
+                                                Dedupe(columns=["Plan"]), Rename(column="Nope", to="x")])
+    assert [r[0] for r in cleaned.rows] == ["Basic", "Pro", "Annual"] and origin == [0, 1, 4]
+    assert skipped == ["rename: no column named 'Nope'"]
+    rows, problems = tables.facts(cleaned, FactPlan(statement="The {Plan} plan costs {Price}", subject="Plan",
+                                                    value="Price"), origin, "prices.xlsx")
+    assert rows[0]["payload"]["value"] == 299 and rows[0]["payload"]["unit"] == "INR"
+    assert rows[0]["provenance"]["cell"] == "Pricing!B3" and rows[2]["provenance"]["cell"] == "Pricing!B7"
+    assert tables.facts(cleaned, FactPlan(statement="{Missing}"), origin, "x")[1][0].startswith("the plan names")
+    assert tables.number("12%") == (12, "%") and tables.number("no") is None
+    assert tables.as_date("31/12/2026").isoformat() == "2026-12-31"
+
+
+def test_a_live_source_must_be_public_https():
+    for url, why in (("http://example.com/a.csv", "only https"), ("https://user:pw@example.com/x", "no password")):
+        with pytest.raises(fetch.FetchRefused, match=why):
+            fetch.check_url(url)
+    with pytest.raises(fetch.FetchRefused, match="private network"):
+        asyncio.run(fetch.fetch("https://127.0.0.1/prices.csv"))
+
+
+def _wait(client, h, batch_id, timeout=20.0) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        b = client.get(f"/intake/{batch_id}", headers=h).json()
+        if b["status"] in ("done", "failed") and all(i["status"] not in ("queued", "reading") for i in b["items"]):
+            return b
+        time.sleep(0.1)
+    raise AssertionError(f"intake {batch_id} did not finish: {b}")
+
+
+def test_an_admin_hands_over_material_and_approves_only_what_reads_right(client):
+    h = {"Authorization": "Bearer " + client.post("/bootstrap", json={
+        "workspace_name": "Kitepath", "admin_email": "a@k.io", "admin_name": "Meera"}).json()["token"]}
+    up = client.post("/intake/files", headers=h, files={"file": ("prices.xlsx", xlsx(
+        [["Plan", "Price (Rs)"], ["Basic", 299], ["Pro", 599], ["Pro", 649]]))}).json()
+    assert up["media_type"] == readers.XLSX
+    from PIL import Image
+
+    png = io.BytesIO()
+    Image.new("RGB", (400, 300), (30, 90, 200)).save(png, "PNG")
+    pic = client.post("/intake/files", headers=h, files={"file": ("chart.png", png.getvalue())}).json()
+    started = client.post("/intake", headers=h, json={"note": None, "items": [
+        {"blob_id": up["id"]},
+        {"text": "Always write Kitepath with a capital K. Never mock other learning apps. Project Falcon is our "
+                 "unreleased tutor app.", "name": "Brand book extract"},
+        {"blob_id": pic["id"]}]})
+    assert started.status_code == 201, started.text
+    b = _wait(client, h, started.json()["id"])
+    by_name = {i["name"]: i for i in b["items"]}
+    assert by_name["prices.xlsx"]["status"] == "understood"
+    # A picture with nothing said about it is a question, and adds nothing until answered.
+    assert by_name["chart.png"]["status"] == "needs_context" and by_name["chart.png"]["questions"]
+    assert not [d for d in b["drafts"] if d["item_id"] == by_name["chart.png"]["id"]]
+    facts = [d for d in b["drafts"] if d["target"] == "fact"]
+    assert {d["payload"]["value"] for d in facts} == {299, 599, 649}
+    assert all(d["provenance"]["cell"].startswith("Pricing!B") for d in facts)
+    # Two prices for Pro in one sheet: flagged, so bulk approval leaves it for a person.
+    flagged = [d for d in facts if any(i["kind"] == "conflict" for i in d["issues"])]
+    assert [d["payload"]["value"] for d in flagged] == [649]
+    assert {d["target"] for d in b["drafts"]} >= {"rule", "term", "fact"}
+    assert any(d["payload"]["term"] == "Falcon" or "Falcon" in d["payload"]["term"] for d in b["drafts"]
+               if d["target"] == "term")
+    # Nothing is in the library yet.
+    assert client.get("/facts", headers=h).json() == []
+    res = client.post(f"/intake/{b['id']}/decide", headers=h, json={"ids": [d["id"] for d in facts]}).json()
+    assert set(res["skipped"]) == {flagged[0]["id"]} and len(res["done"]) == 2
+    assert sorted(f["value"] for f in client.get("/facts", headers=h).json()) == [299, 599]
+    one = client.post(f"/intake/drafts/{flagged[0]['id']}", headers=h, json={"action": "reject"}).json()
+    assert one["status"] == "rejected"
+    # Answering the question reads the picture again with the answer.
+    ans = client.post(f"/intake/items/{by_name['chart.png']['id']}/answer", headers=h,
+                      json={"context": "Our brand blue, as a colour swatch for designers."})
+    assert ans.status_code == 200
+    again = _wait(client, h, b["id"])
+    assert {i["name"]: i for i in again["items"]}["chart.png"]["status"] == "understood"
+    # Brand admins only; and a creator can't even see that an intake exists.
+    creator = client.post("/users", headers=h, json={"email": "c@k.io", "name": "Cy", "role": "creator"}).json()
+    assert client.get(f"/intake/{b['id']}", headers={"Authorization": f"Bearer {creator['token']}"}).status_code == 403

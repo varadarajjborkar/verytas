@@ -648,3 +648,71 @@ class Escalation(Base):
     resolution: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class IntakeBatch(Base):
+    """One drop of company material into Prism Intake (prism/intake): files, links and the admin's note on them.
+
+    Nothing in a batch governs anything until an admin approves its drafts; the batch is the record of what
+    came in, what was understood, and what was asked back."""
+
+    __tablename__ = "intake_batches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    note: Mapped[str | None] = mapped_column(Text)  # what the admin says the material is
+    tier: Mapped[Tier] = mapped_column(_enum(Tier), default=Tier.internal)
+    status: Mapped[str] = mapped_column(String(12), default="queued")  # queued | running | done | failed
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class IntakeItem(Base):
+    """One file, link or pasted text in a batch, as it was read and understood."""
+
+    __tablename__ = "intake_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("intake_batches.id"), index=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    blob_id: Mapped[str | None] = mapped_column(String(32))
+    source_url: Mapped[str | None] = mapped_column(String(500))  # a read-only live source
+    text: Mapped[str | None] = mapped_column(Text)  # pasted material
+    media_type: Mapped[str | None] = mapped_column(String(100))
+    context: Mapped[str | None] = mapped_column(Text)  # what the admin said about this item, or answered
+    # queued | reading | understood | needs_context | failed
+    status: Mapped[str] = mapped_column(String(16), default="queued")
+    kind: Mapped[str | None] = mapped_column(String(40))  # brand book, price sheet, chart, logo...
+    purpose: Mapped[str | None] = mapped_column(Text)
+    confidence: Mapped[float | None] = mapped_column(Float)
+    questions: Mapped[list[str]] = mapped_column(JSON, default=list)
+    reading: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # what the readers found, previewed
+    issues: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    model: Mapped[str | None] = mapped_column(String(80))
+    error: Mapped[str | None] = mapped_column(Text)
+    refreshed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class IntakeDraft(Base):
+    """Something an item would add to the library: a rule, fact, term or asset, with where it came from.
+    pending until an admin approves (it is then created through the same checks as by hand) or rejects it."""
+
+    __tablename__ = "intake_drafts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("intake_items.id"), index=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    target: Mapped[str] = mapped_column(String(10))  # rule | fact | term | asset
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # page, sheet and cell, box, quote
+    confidence: Mapped[float] = mapped_column(Float, default=0.5)
+    issues: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(10), default="pending")  # pending | approved | rejected
+    created_object: Mapped[str | None] = mapped_column(String(40))  # "fact:12" once approved
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
