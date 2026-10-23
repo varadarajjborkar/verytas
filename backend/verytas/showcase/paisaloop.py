@@ -763,7 +763,7 @@ DECISIONS = [
     ("k-fee", 2, "LEGAL-FEES", "approver", "rejected", "guideline_unclear", "Is 'no questions asked' a fee claim, or only a tone?"),
     ("t-fin", 3, "LEGAL-FINFLUENCER", "reviewer", "accepted", None, None),
     ("a-news", 3, "LEGAL-MFDISC", "approver", "rejected", "false_positive", "The risk line is in the body; this is a statement email."),
-    ("k-risk", 2, "CLAIM-IMPLIED", "approver", "accepted", None, None),
+    ("k-risk", 2, "CLAIM-UNSUPPORTED", "approver", "accepted", None, None),
     ("m-film", 2, "CLAIM-ASSURED", "reviewer", "accepted", None, None),
 ]
 

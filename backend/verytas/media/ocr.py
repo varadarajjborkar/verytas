@@ -153,9 +153,11 @@ def restore_names(text: str, names: list[str]) -> tuple[str, int]:
 
 
 def _foreign(text: str) -> bool:
-    """Read from a script the engine has no model for: two or more such glyphs, or a quarter of the line."""
+    """Read from a script the engine has no model for: two or more such glyphs, or one that is a quarter
+    of a longer line ("市149"). A glyph alone is a shape: a pharmacy's cross in a box reads as "中"."""
     n = len(_FOREIGN.findall(text))
-    return n >= 2 or (n == 1 and n / max(1, len(text.replace(" ", ""))) >= 0.25)
+    chars = len(text.replace(" ", ""))
+    return n >= 2 or (n == 1 and chars > 1 and n / chars >= 0.25)
 
 
 def _meaningful(text: str, score: float) -> bool:

@@ -490,6 +490,11 @@ def test_one_stray_glyph_is_dropped_and_the_line_still_checked(monkeypatch):
     result = ocr.read(Image.new("RGB", (400, 40), "white"))
     assert result.text == "Guaranteed 100% returns, call 9876543210" and not result.foreign
 
+    # A glyph on its own is a shape in the artwork (a cross in a box reads as one), not unread text.
+    out.txts, out.scores = ["\u4e2d"], [0.77]
+    result = ocr.read(Image.new("RGB", (400, 40), "white"))
+    assert not result.foreign and not result.lines and len(result.noise) == 1
+
 
 def test_speech_vocabulary_has_the_brands_public_names_and_never_a_confidential_term():
     from types import SimpleNamespace

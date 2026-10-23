@@ -769,7 +769,6 @@ DECISIONS = [
     ("s-glow", 5, "MSG-RIVALS", "approver", "rejected", "false_positive", "The competitor name is caught by MSG-COMPETITOR already."),
     ("s-hinglish", 5, "TERM-HOUSE", "reviewer", "rejected", "not_applicable", "Hinglish; the house words do not apply."),
     ("s-reapply", 4, "CLAIM-UNSUPPORTED", "reviewer", "rejected", "false_positive", "General advice about reapplying, not a claim about us."),
-    ("m-pharmacy", 4, "CLAIM-UNSUPPORTED", "approver", "rejected", "not_applicable", "A partner announcement, not a product claim."),
     ("cr-ack", 1, "CLAIM-UNSUPPORTED", "reviewer", "rejected", "not_applicable", "Public care number, not a promotion."),
     ("fs-clean", 3, "TONE-WARM", "reviewer", "rejected", "false_positive", "Warm enough for a sale post."),
 ]
