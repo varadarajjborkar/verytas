@@ -297,6 +297,25 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
 .vt-signin-sample:hover { transform: rotate(0deg) translateY(-2px); }
 @media (prefers-reduced-motion: reduce) { .vt-signin-sample, .vt-signin-sample:hover { transform: none; } }
 
+/* The cards behind it rest hidden, centred on it; on hover they slide out at a tilt, above and below,
+   just far enough to show their first line. */
+.vt-deck-card {
+  translate: 0 -50%;
+  transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1), opacity 240ms ease-out;
+  opacity: 0;
+}
+.vt-deck-0 { transform: rotate(-2deg); }
+.vt-deck-1 { transform: rotate(2deg); }
+.vt-deck-2 { transform: rotate(-1deg); }
+.vt-deck:hover .vt-deck-card { opacity: 1; }
+.vt-deck:hover .vt-deck-0 { transform: translate(-16px, -186px) rotate(-5deg); }
+.vt-deck:hover .vt-deck-1 { transform: translate(20px, 150px) rotate(4deg); }
+.vt-deck:hover .vt-deck-2 { transform: translate(26px, -132px) rotate(3deg); }
+.vt-deck:hover .vt-signin-sample { transform: rotate(0deg) translateY(-2px); }
+@media (prefers-reduced-motion: reduce) {
+  .vt-deck-card, .vt-deck:hover .vt-deck-card { transform: none; opacity: 0; transition: none; }
+}
+
 /* Chart hover layers glide between data points rather than jumping. */
 .vt-glide { transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), left 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
   bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1), top 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease-out; }

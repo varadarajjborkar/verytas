@@ -2,6 +2,13 @@ import type { ReactNode } from "react";
 import { CheckIcon, OctagonIcon } from "./Icons";
 import { Wordmark } from "./Wordmark";
 
+// The cards behind the example: other kinds of finding, one line each.
+const DECK = [
+  { level: "Warning", kind: "Tone", tone: "text-[var(--vt-warning)]", text: "“Hurry!!! Only 2 seats left” reads as pressure. Try “Seats are limited this month.”" },
+  { level: "Blocker", kind: "Visual", tone: "text-[var(--vt-blocker)]", text: "The logo is stretched to 130% of its width. Use it at its own proportions." },
+  { level: "Advisory", kind: "Accessibility", tone: "text-accent", text: "#learnwithkitepath is hard to read aloud. Try #LearnWithKitepath." },
+];
+
 const PROMISES = [
   "Claims are checked against facts the brand approved",
   "Every flag says why and cites its source",
@@ -28,7 +35,19 @@ export function SignInShell({ children }: { children: ReactNode }) {
           </p>
         </div>
 
-        <figure aria-label="An example finding" className="vt-signin-sample my-auto hidden max-w-md flex-col gap-3 rounded-2xl border border-line bg-raised p-4 shadow-[var(--vt-shadow-pop)] sm:flex">
+        {/* A deck: on hover, the findings behind the top one fan out at a tilt, far enough to read their
+            first line and no further, then settle back when the pointer leaves. */}
+        <div className="vt-deck relative my-auto hidden max-w-md sm:block">
+          {DECK.map((c, i) => (
+            <div key={c.kind} aria-hidden className={`vt-deck-card vt-deck-${i} absolute inset-x-3 top-1/2 flex flex-col gap-1.5 rounded-2xl border border-line bg-raised px-4 py-3 shadow-[var(--vt-shadow-pop)] ${i === 1 ? "justify-end" : ""}`}>
+              <div className={`flex items-center gap-2 text-xs font-semibold ${c.tone}`}>
+                <span className="h-2 w-2 shrink-0 rounded-full bg-current" />{c.level}
+                <span className="truncate font-normal text-subtle">· {c.kind}</span>
+              </div>
+              <p className="truncate text-xs leading-5 text-muted">{c.text}</p>
+            </div>
+          ))}
+        <figure aria-label="An example finding" className="vt-signin-sample relative z-10 flex flex-col gap-3 rounded-2xl border border-line bg-raised p-4 shadow-[var(--vt-shadow-pop)]">
           <div className="flex items-center gap-2 text-xs font-semibold text-[var(--vt-blocker)]">
             <OctagonIcon size={14} />Blocker
             <span className="font-normal text-subtle">· Claim contradicts an approved fact</span>
@@ -45,6 +64,7 @@ export function SignInShell({ children }: { children: ReactNode }) {
             <span className="shrink-0 rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-accent-ink">Accept fix</span>
           </div>
         </figure>
+        </div>
 
         <ul className="hidden flex-col gap-2.5 text-sm sm:flex">
           {PROMISES.map((p) => (
