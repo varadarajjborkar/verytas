@@ -5,7 +5,7 @@ import { SESSION_COOKIE, cookieOptions } from "@/lib/session";
 import { crossOrigin } from "@/lib/same-origin";
 
 const API_URL = process.env.VERYTAS_API_URL;
-const Input = z.object({ key: z.string().regex(/^[a-z0-9]{1,20}$/) });
+const Input = z.object({ key: z.string().regex(/^[a-z0-9]{1,20}$/), company: z.string().regex(/^[a-z0-9]{1,20}$/).optional() });
 
 /** Sign in as one of the demo's people. Same-site JSON only, like the token sign-in. */
 export async function POST(request: Request) {
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Sign in from this console." }, { status: 403 });
   }
   const parsed = Input.safeParse(await request.json().catch(() => null));
-  const token = parsed.success ? demoToken(parsed.data.key) : null;
+  const token = parsed.success ? demoToken(parsed.data.key, parsed.data.company) : null;
   if (!API_URL || !token) return Response.json({ error: "That demo account isn't available." }, { status: 404 });
   // Checked against the API first: after a reset the file has new tokens, and a stale one must not stick.
   const res = await fetch(`${API_URL}/me`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store",

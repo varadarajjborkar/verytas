@@ -1,10 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { useStored, writeStored } from "@/lib/stored";
 import { ArrowRightIcon, CalendarIcon, InfoIcon, RefreshIcon, UsersIcon } from "./Icons";
 import { SignInShell } from "./SignInShell";
 
 type Person = { key: string; name: string; side: "manager" | "creator"; title: string; blurb: string };
+type Company = { slug: string; brand: string; industry: string; people: Person[] };
+
+const PICKED = "vt_demo_company";
 
 const SIDES = [
   { side: "manager" as const, label: "Brand team", lead: "Decide on what creators send, keep the brand library, read the dashboards." },
@@ -12,19 +17,25 @@ const SIDES = [
 ];
 
 /**
- * The shared demo's front door: pick a person, and you are signed in as that real account. Come back
- * here (Switch account, in the sidebar) to be someone else; everything done as each person stays.
+ * The shared demo's front door: pick a company, then a person, and you are signed in as that real account.
+ * Come back here (Switch account, in the sidebar) to be someone else, or someone at another company;
+ * everything done as each person stays. Where the server takes sign-ups, a link at the top leads to a
+ * separate page for an account of your own, so the two never share a screen.
  */
-export function DemoSignIn({ brand, resetsOn, people, next }: { brand: string; resetsOn: string; people: Person[]; next: string }) {
+export function DemoSignIn({ companies, resetsOn, next, selfSignup }:
+  { companies: Company[]; resetsOn: string; next: string; selfSignup: boolean }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const picked = useStored(PICKED);
+  const company = companies.find((c) => c.slug === picked) ?? companies[0];
+  const { brand, people } = company;
 
   async function enter(key: string) {
     setBusy(key);
     setError(null);
     try {
       const res = await fetch("/api/session/demo", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key }) });
+        body: JSON.stringify({ key, company: company.slug }) });
       if (!res.ok) {
         setError((await res.json().catch(() => null))?.error ?? "Couldn't sign in.");
         setBusy(null);
@@ -43,13 +54,38 @@ export function DemoSignIn({ brand, resetsOn, people, next }: { brand: string; r
   return (
     <SignInShell>
       <header className="flex flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-accent">Live demo</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-accent">Live demo</p>
+          {selfSignup && (
+            <Link href={next === "/" ? "/signin/account" : `/signin/account?next=${encodeURIComponent(next)}`}
+              className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:border-accent hover:text-accent">
+              Sign in or sign up
+            </Link>
+          )}
+        </div>
         <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Pick someone at {brand} to be</h1>
         <p className="max-w-xl text-sm leading-6 text-muted">
-          {brand} is a made-up online learning brand with three weeks of work already in it. Each person below is a
-          real account with their own role, so you see exactly what they would.
+          {brand} is a made-up brand with eight weeks of work already in it. Each person below is a real account with
+          their own role, so you see exactly what they would.
         </p>
       </header>
+
+      {companies.length > 1 && (
+        <section aria-labelledby="pick-company" className="flex flex-col gap-2">
+          <h2 id="pick-company" className="text-sm font-semibold">Company</h2>
+          <div role="radiogroup" aria-labelledby="pick-company" className="flex flex-wrap gap-2">
+            {companies.map((c) => (
+              <button key={c.slug} type="button" role="radio" aria-checked={c.slug === company.slug}
+                onClick={() => writeStored(PICKED, c.slug)} disabled={busy !== null}
+                className={`rounded-full border px-3.5 py-1.5 text-sm font-medium transition ${c.slug === company.slug
+                  ? "border-accent bg-accent text-accent-ink shadow-sm" : "border-line text-muted hover:border-accent/60 hover:text-ink"}`}>
+                {c.brand}
+              </button>
+            ))}
+          </div>
+          {company.industry && <p className="text-xs leading-5 text-subtle">{company.industry}.</p>}
+        </section>
+      )}
 
       {SIDES.map(({ side, label, lead }) => (
         <section key={side} aria-labelledby={`side-${side}`} className="flex flex-col gap-3">

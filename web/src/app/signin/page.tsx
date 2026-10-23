@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { DemoSignIn } from "@/components/DemoSignIn";
 import { SignInForm } from "@/components/SignInForm";
 import { SignInShell } from "@/components/SignInShell";
+import { safeNext, selfSignup } from "@/lib/accounts";
 import { demoAccounts } from "@/lib/demo-accounts";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -22,10 +23,8 @@ async function SignIn({ searchParams }: { searchParams: PageProps<"/signin">["se
   await connection();
   const demo = demoAccounts();
   if (demo) {
-    const asked = (await searchParams).next;
-    // Only same-site paths, as in the token form.
-    const next = typeof asked === "string" && /^\/(?![/\\])/.test(asked) && !/[\\\s\u0000-\u001f]/.test(asked) ? asked : "/";
-    return <DemoSignIn brand={demo.brand} resetsOn={demo.resetsOn} people={demo.people} next={next} />;
+    const next = safeNext((await searchParams).next);
+    return <DemoSignIn companies={demo.companies} resetsOn={demo.resetsOn} next={next} selfSignup={await selfSignup()} />;
   }
   return (
     <SignInShell>

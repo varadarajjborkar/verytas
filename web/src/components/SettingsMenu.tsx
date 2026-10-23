@@ -63,6 +63,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [meError, setMeError] = useState<string | null>(null);
   const [signin, setSignin] = useState<boolean | null>(null);
   const [demo, setDemo] = useState(false);
+  const [joinCode, setJoinCode] = useState<string | null>(null);
   const saved = useStored(SOCIAL_KEY);
   const savedSocials = useMemo<Record<string, string>>(() => {
     try {
@@ -86,8 +87,17 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
     fetch("/api/session").then((r) => r.json()).then((j) => { setSignin(Boolean(j.required)); setDemo(Boolean(j.demo)); })
       .catch(() => setSignin(false));
     fetch("/api/v/me").then(async (r) => {
-      if (r.ok) setMe(await r.json());
-      else setMeError(r.status === 503 ? "Demo mode: no account is connected." : "Couldn't load the account.");
+      if (!r.ok) {
+        setMeError(r.status === 503 ? "Demo mode: no account is connected." : "Couldn't load the account.");
+        return;
+      }
+      const who: Me = await r.json();
+      setMe(who);
+      // Only a company made by signing up has one; seeded workspaces answer 404.
+      if (who.role === "brand_admin") {
+        const code = await fetch("/api/v/accounts/join-code").then((c) => (c.ok ? c.json() : null)).catch(() => null);
+        setJoinCode(code?.join_code ?? null);
+      }
     }).catch(() => setMeError("Couldn't load the account."));
   }, []);
 
@@ -216,8 +226,15 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
                   </div>
                 </dl>
               )}
+              {joinCode && (
+                <div className="rounded-xl border border-line p-3">
+                  <p className="text-sm font-medium">Join code for your creators</p>
+                  <p className="mt-0.5 text-xs text-muted">They enter it when they create their account on the sign-in page.</p>
+                  <p className="mt-2 select-all font-mono text-lg font-semibold tracking-[0.3em]">{joinCode}</p>
+                </div>
+              )}
               <p className="text-xs leading-5 text-muted">
-                {signin ? "Signed in with your own token." : "Using a workspace demo account."}
+                {signin ? "Signed in with your own account." : "Using a workspace demo account."}
               </p>
               {viewer.canSwitch && (
                 <div className="rounded-xl border border-line p-3">
