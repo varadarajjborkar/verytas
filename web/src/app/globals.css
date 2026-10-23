@@ -293,22 +293,21 @@ mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
     radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--vt-ink) 9%, transparent) 1px, transparent 0) 0 0 / 18px 18px,
     var(--vt-bg);
 }
-.vt-signin-sample { transform: rotate(-1deg); transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1); }
-.vt-signin-sample:hover { transform: rotate(0deg) translateY(-2px); }
-@media (prefers-reduced-motion: reduce) { .vt-signin-sample, .vt-signin-sample:hover { transform: none; } }
-
-/* The cards behind it are the same size and sit squared up as a deck; on hover they slide out at a tilt,
-   above and below, just far enough to show their first line (or, below, their fix). */
+/* The example deck (components/FindingDeck.tsx). Slot 0 is the top card; the others sit squared up behind
+   it, and fan out above and below on hover, just far enough to show their first line (or, below, their
+   fix). A clicked top card drops out in front, then takes the back slot and slides behind. */
 .vt-deck-card { transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1); }
-.vt-deck-0 { transform: rotate(-2.5deg); }
-.vt-deck-1 { transform: rotate(2deg); }
-.vt-deck-2 { transform: rotate(-1deg); }
-.vt-deck:hover .vt-deck-0 { transform: translate(-18px, -116px) rotate(-5deg); }
-.vt-deck:hover .vt-deck-1 { transform: translate(18px, 70px) rotate(4deg); }
-.vt-deck:hover .vt-deck-2 { transform: translate(44px, -58px) rotate(3deg); }
-.vt-deck:hover .vt-signin-sample { transform: rotate(0deg) translateY(-2px); }
+.vt-slot-0 { z-index: 40; transform: rotate(-1deg); }
+.vt-slot-1 { z-index: 30; transform: rotate(-1deg); }
+.vt-slot-2 { z-index: 20; transform: rotate(2deg); }
+.vt-slot-3 { z-index: 10; transform: rotate(-2.5deg); }
+.vt-deck:hover .vt-slot-0, .vt-deck:focus-visible .vt-slot-0 { transform: rotate(0deg) translateY(-2px); }
+.vt-deck:hover .vt-slot-1, .vt-deck:focus-visible .vt-slot-1 { transform: translate(44px, -58px) rotate(3deg); }
+.vt-deck:hover .vt-slot-2, .vt-deck:focus-visible .vt-slot-2 { transform: translate(18px, 70px) rotate(4deg); }
+.vt-deck:hover .vt-slot-3, .vt-deck:focus-visible .vt-slot-3 { transform: translate(-18px, -116px) rotate(-5deg); }
+.vt-deck .vt-deck-card.vt-deck-leaving, .vt-deck:hover .vt-deck-card.vt-deck-leaving { transform: translate(0, 46%) rotate(4deg) scale(0.97); transition-duration: 260ms; }
 @media (prefers-reduced-motion: reduce) {
-  .vt-deck-card, .vt-deck:hover .vt-deck-card { transform: none; transition: none; }
+  .vt-deck-card, .vt-deck:hover .vt-deck-card, .vt-deck:hover .vt-deck-card.vt-deck-leaving { transform: none; transition: none; }
 }
 
 /* Chart hover layers glide between data points rather than jumping. */

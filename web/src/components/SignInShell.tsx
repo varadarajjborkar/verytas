@@ -1,19 +1,7 @@
 import type { ReactNode } from "react";
-import { AlertIcon, CheckIcon, InfoIcon, OctagonIcon } from "./Icons";
+import { FindingDeck } from "./FindingDeck";
+import { CheckIcon } from "./Icons";
 import { Wordmark } from "./Wordmark";
-
-// The cards behind the example: other kinds of finding, laid out exactly like it.
-const DECK = [
-  { level: "Warning", Icon: AlertIcon, tone: "text-[var(--vt-warning)]", bg: "bg-[var(--vt-warning-bg)]", kind: "Pressure in the tone",
-    before: "“", mark: "Hurry!!! Only 2 seats left", after: ". Join today.”", chips: ["Rule: no countdown pressure", "Brand book, p.7"],
-    fix: <>Seats are <strong className="font-semibold">limited this month</strong>. Join today.</> },
-  { level: "Blocker", Icon: OctagonIcon, tone: "text-[var(--vt-blocker)]", bg: "bg-[var(--vt-blocker-bg)]", kind: "Official artwork distorted",
-    before: "Kitepath logo on the poster, ", mark: "stretched to 130% of its width", after: ".", chips: ["Rule: keep its proportions", "Logo kit 2026"],
-    fix: <>Use the logo at <strong className="font-semibold">its own proportions</strong></> },
-  { level: "Advisory", Icon: InfoIcon, tone: "text-accent", bg: "bg-accent/12", kind: "Hashtag hard to read aloud",
-    before: "“Start today ", mark: "#learnwithkitepath", after: "”", chips: ["Rule: CamelCase hashtags", "WCAG 2.2"],
-    fix: <>Start today <strong className="font-semibold">#LearnWithKitepath</strong></> },
-];
 
 const PROMISES = [
   "Claims are checked against facts the brand approved",
@@ -41,42 +29,7 @@ export function SignInShell({ children }: { children: ReactNode }) {
           </p>
         </div>
 
-        {/* A deck: on hover, the findings behind the top one fan out at a tilt, far enough to read their
-            first line and no further, then settle back when the pointer leaves. */}
-        <div className="vt-deck relative my-auto hidden max-w-md sm:block">
-          {DECK.map(({ level, Icon, tone, bg, kind, before, mark, after, chips, fix }, i) => (
-            <div key={kind} aria-hidden className={`vt-deck-card vt-deck-${i} absolute inset-0 flex flex-col gap-3 rounded-2xl border border-line bg-raised p-4 shadow-[var(--vt-shadow-pop)]`}>
-              <div className={`flex items-center gap-2 text-xs font-semibold ${tone}`}>
-                <Icon size={14} />{level}<span className="font-normal text-subtle">· {kind}</span>
-              </div>
-              <p className="text-sm leading-6">{before}<mark className={`rounded px-0.5 ${bg} ${tone}`}>{mark}</mark>{after}</p>
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                {chips.map((c) => <span key={c} className="rounded-full border border-line bg-surface px-2.5 py-1 text-muted">{c}</span>)}
-              </div>
-              <div className="mt-auto flex items-center justify-between gap-3 rounded-xl bg-sunken px-3 py-2 text-sm">
-                <span className="min-w-0 truncate">{fix}</span>
-                <span className="shrink-0 rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-accent-ink">Accept fix</span>
-              </div>
-            </div>
-          ))}
-        <figure aria-label="An example finding" className="vt-signin-sample relative z-10 flex flex-col gap-3 rounded-2xl border border-line bg-raised p-4 shadow-[var(--vt-shadow-pop)]">
-          <div className="flex items-center gap-2 text-xs font-semibold text-[var(--vt-blocker)]">
-            <OctagonIcon size={14} />Blocker
-            <span className="font-normal text-subtle">· Claim contradicts an approved fact</span>
-          </div>
-          <p className="text-sm leading-6">
-            “Learn with India&apos;s favourite app: Kitepath has <mark className="rounded bg-[var(--vt-blocker-bg)] px-0.5 text-[var(--vt-blocker)]">2 million learners</mark>.”
-          </p>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded-full border border-line bg-surface px-2.5 py-1 text-muted">Approved fact: 1.2 million learners</span>
-            <span className="rounded-full border border-line bg-surface px-2.5 py-1 text-muted">Annual report 2026, p.4</span>
-          </div>
-          <div className="flex items-center justify-between gap-3 rounded-xl bg-sunken px-3 py-2 text-sm">
-            <span className="min-w-0 truncate">Kitepath has <strong className="font-semibold">1.2 million learners</strong></span>
-            <span className="shrink-0 rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-accent-ink">Accept fix</span>
-          </div>
-        </figure>
-        </div>
+        <FindingDeck />
 
         <ul className="hidden flex-col gap-2.5 text-sm sm:flex">
           {PROMISES.map((p) => (
