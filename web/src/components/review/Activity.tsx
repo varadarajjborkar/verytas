@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { addComment, relativeTime } from "@/lib/review-client";
 import { ROLE_LABEL } from "@/lib/roles";
 import type { ContentStatus, Timeline, TimelineItem } from "@/lib/types";
@@ -82,15 +82,18 @@ export function Activity({ timeline, contentId, versionId, onPosted }: {
   }
   return (
     <div className="flex flex-col gap-4">
-      <ol className="relative flex max-h-[32rem] flex-col gap-3.5 overflow-y-auto pr-1">
+      <ol className="relative flex max-h-[32rem] flex-col gap-2.5 overflow-y-auto pr-1">
         {feed.map((i, n) => (
-          <li key={`${i.type}-${i.at}-${n}`}>
-            {i.type === "comment" ? (
-              <CommentItem c={i} replies={replies.get(i.id) ?? []} onReply={setReplyTo} />
-            ) : (
-              <EventItem i={i} />
-            )}
-          </li>
+          <Fragment key={`${i.type}-${i.at}-${n}`}>
+            {n > 0 && <Divider before={feed[n - 1].at} after={i.at} />}
+            <li>
+              {i.type === "comment" ? (
+                <CommentItem c={i} replies={replies.get(i.id) ?? []} onReply={setReplyTo} />
+              ) : (
+                <EventItem i={i} />
+              )}
+            </li>
+          </Fragment>
         ))}
       </ol>
       <div className="border-t border-line pt-3">
@@ -111,6 +114,21 @@ export function Activity({ timeline, contentId, versionId, onPosted }: {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * A hairline between entries. Across the full width when the entries fall on different days (in the
+ * reader's own time zone), and shorter, centred, between entries of the same day: the change of day reads
+ * at a glance without a date header taking a line of its own.
+ */
+function Divider({ before, after }: { before: string; after: string }) {
+  const day = (at: string) => new Date(at).toDateString();
+  const newDay = day(before) !== day(after);
+  return (
+    <li role="presentation" className={`h-px shrink-0 bg-[var(--vt-line)] opacity-70 ${newDay ? "w-full" : "mx-auto w-[79%]"}`}>
+      {newDay && <span className="sr-only">{new Date(after).toLocaleDateString(undefined, { dateStyle: "medium" })}</span>}
+    </li>
   );
 }
 
