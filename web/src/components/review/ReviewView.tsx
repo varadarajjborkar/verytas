@@ -6,10 +6,10 @@ import { journey } from "@/lib/journey";
 import {
   ApiError, decide as decideFinding, escalate, FINISHED, getContent, getReview, getTimeline, listDisputes,
   listEscalations, listPeople, nextSteps,
-  relativeTime, resubmit, STATUS_LABEL, transition, waitForReview,
+  relativeTime, resubmit, STATUS_LABEL, transition, waitForReview, whereLabel,
 } from "@/lib/review-client";
 import { canDecide, sideOf } from "@/lib/roles";
-import type { ContentDetail, ContentStatus, Dispute, EscalationRequest, Person, Review, Timeline } from "@/lib/types";
+import type { ContentDetail, ContentStatus, Dispute, EscalationRequest, Person, Review, SecondLooks, Timeline } from "@/lib/types";
 import { JourneyMap } from "../Journey";
 import { useToast } from "../Toaster";
 import { SummarizeButton } from "../assist/SummarizeButton";
@@ -502,8 +502,10 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
               <div className="flex flex-col gap-5">
                 {coverage.agents && coverage.agents.length > 0 && <AgentTree agents={coverage.agents} />}
                 {coverage.sources && coverage.sources.length > 1 && <Sources sources={coverage.sources} />}
+                {coverage.second_looks && <SecondLookList looks={coverage.second_looks} />}
                 <p className="text-xs leading-5 text-muted">
-                  Judged by <code>{coverage.models?.judge}</code>, written by <code>{coverage.models?.llm}</code>
+                  Judged by <code>{coverage.models?.judge}</code>
+                  {coverage.models?.second_judge && <> (must rules also by <code>{coverage.models.second_judge}</code>)</>}, written by <code>{coverage.models?.llm}</code>
                   {coverage.models?.vision && <>, images seen by <code>{coverage.models.vision}</code></>}.
                   {" "}{coverage.redactions ?? 0} confidential item{coverage.redactions === 1 ? "" : "s"} redacted before leaving Verytas.
                   {coverage.not_checked && coverage.not_checked.length > 0 && ` Not checked: ${coverage.not_checked.join(", ")}.`}
@@ -513,6 +515,34 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+const LOOK_OUTCOME: Record<SecondLooks["asked"][number]["outcome"], string> = {
+  flagged: "raised a finding", cleared: "cleared it", "confirmed flag": "agreed it breaks the rule",
+  "confirmed clear": "agreed it is fine", unavailable: "could not answer; the first answer stands",
+};
+
+/** Must-rule questions answered by both judges: the first answer, the larger model's, and what changed. */
+function SecondLookList({ looks }: { looks: SecondLooks }) {
+  if (!looks.asked.length && !looks.unasked) return null;
+  return (
+    <div className="flex flex-col gap-1.5 text-xs">
+      <p className="text-muted">
+        Second looks by <code>{looks.model}</code>: questions on must rules also go to the larger judge, and its answer decides.
+        {looks.unasked > 0 && <span className="font-medium text-[var(--vt-warning)]"> {looks.unasked} paragraph{looks.unasked === 1 ? " was" : "s were"} left to the first judge (budget reached).</span>}
+      </p>
+      <ul className="flex flex-col gap-1 rounded-lg border border-line bg-surface p-3">
+        {looks.asked.map((l, i) => (
+          <li key={i} className="flex flex-wrap items-baseline gap-x-2">
+            <code className="font-medium">{l.rule}</code>
+            <span className="text-muted">{whereLabel({ source: l.source })}, {l.unit}</span>
+            <span className="tabular-nums">{Math.round(l.first * 100)}%{l.second != null && <> → {Math.round(l.second * 100)}%</>}</span>
+            <span className="text-muted">{LOOK_OUTCOME[l.outcome]}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

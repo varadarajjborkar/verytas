@@ -82,10 +82,21 @@ export type Finding = {
   /** "body" for typed text; otherwise a derived source such as "img:hero:ocr" or "vid:reel:speech". */
   source?: string;
   locator?: { image?: string; document?: string; page?: number; video?: string; time?: [number, number];
-    box?: number[]; intake?: string } | null;
+    box?: number[]; intake?: string; evidence?: Evidence[] } | null;
   assessment?: { by: string; outcome?: string; view?: string; reader_reading?: string; suggestion?: string;
     reader_probability?: number; dispute_id?: number } | null;
 };
+
+/** Must-rule questions answered by the larger judge too, with both answers. */
+export type SecondLooks = {
+  model: string;
+  unasked: number;
+  asked: { rule: string; source: string; unit: string; first: number; second: number | null; threshold: number;
+    outcome: "flagged" | "cleared" | "confirmed flag" | "confirmed clear" | "unavailable"; ms: number }[];
+};
+
+/** The other side of a cross-source finding: where the same thing reads differently. */
+export type Evidence = { source: string; quote: string; time?: [number, number]; box?: number[] };
 
 export type AgentNode = {
   id: string;
@@ -159,7 +170,7 @@ export type Review = {
   coverage: {
     not_checked?: string[];
     notes?: string[];
-    models?: { llm: string; judge: string; vision?: string };
+    models?: { llm: string; judge: string; vision?: string; second_judge?: string };
     redactions?: number;
     workers?: Record<string, { status: string; note: string | null; findings: number; ms: number }>;
     agents?: AgentNode[];
@@ -168,6 +179,9 @@ export type Review = {
       text_in_image?: string }>;
     escalations?: Escalation[];
     usage?: Record<string, { input: number; output: number; calls: number }>;
+    /** What the agents posted for each other to compare, by kind (figure, person). */
+    evidence?: Record<string, number>;
+    second_looks?: SecondLooks | null;
   };
   error: string | null;
   findings: Finding[];

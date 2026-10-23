@@ -137,6 +137,17 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                     {f.quote && (f.source ?? "body") !== "body" && (
                       <p className="border-l-2 border-line-strong pl-3 text-sm text-muted">“{f.quote}”</p>
                     )}
+                    {/* A cross-source finding: the other places the same thing reads differently. */}
+                    {(f.locator?.evidence?.length ?? 0) > 0 && (
+                      <div className="border-l-2 border-line-strong pl-3 text-sm">
+                        <p className="text-xs font-medium text-muted">Compared with</p>
+                        <ul className="mt-0.5 flex flex-col gap-0.5">
+                          {f.locator!.evidence!.map((e, i) => (
+                            <li key={i}><span className="text-muted">{whereLabel({ source: e.source, locator: { time: e.time } })}:</span> “{e.quote}”</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     {s && (
                       <div className="border-l-2 border-[var(--vt-ok)] pl-3 text-sm">
                         <p className="text-xs font-medium text-muted">{fixable ? "Suggested fix" : "Suggested change (in the attachment)"}</p>

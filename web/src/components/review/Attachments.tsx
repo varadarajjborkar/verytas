@@ -31,11 +31,22 @@ export function Attachments({ contentId, version, findings, active, onSelect }: 
       <ul className={`grid gap-4 ${images.length > 1 ? "sm:grid-cols-2" : ""}`}>
         {images.map((img) => (
           <Figure key={img.id} src={versionImageUrl(contentId, version.id, img.id)} alt={img.alt} decorative={img.decorative}
-            name={img.id} marks={findings.filter((f) => f.locator?.image === `img:${img.id}`)} active={active} onSelect={onSelect} />
+            name={img.id} marks={marksOn(findings, img.id)} active={active} onSelect={onSelect} />
         ))}
       </ul>
     </div>
   );
+}
+
+/** Findings to outline on one image: its own, and those elsewhere that cite text read off it. */
+function marksOn(findings: Finding[], id: string): Finding[] {
+  return findings.flatMap((f) => {
+    const own = f.locator?.image === `img:${id}` ? [f] : [];
+    const cited = (f.locator?.evidence ?? [])
+      .filter((e) => e.source.startsWith(`img:${id}:`) && e.box?.length === 4)
+      .map((e) => ({ ...f, locator: { ...f.locator, image: `img:${id}`, box: e.box } }));
+    return [...own, ...cited];
+  });
 }
 
 function Figure({ src, alt, decorative, name, marks, active, onSelect }: {
@@ -58,11 +69,11 @@ function Figure({ src, alt, decorative, name, marks, active, onSelect }: {
               onLoad={(e) => setSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
               onError={() => setFailed(true)} />
           )}
-          {size && boxed.map((f) => {
+          {size && boxed.map((f, i) => {
             const [x0, y0, x1, y1] = f.locator!.box!;
             const on = active === f.id;
             return (
-              <button key={f.id} type="button" onClick={() => onSelect(f.id)} aria-label={`${f.title}: show this issue`}
+              <button key={`${f.id}-${i}`} type="button" onClick={() => onSelect(f.id)} aria-label={`${f.title}: show this issue`}
                 title={f.title} aria-pressed={on}
                 className={`absolute rounded-md border-2 transition-[box-shadow,background-color] duration-200 ${RING[f.level]} ${
                   on ? "bg-accent/10 shadow-[0_0_0_4px_color-mix(in_srgb,var(--vt-accent)_35%,transparent)]" : "border-dashed hover:bg-accent/5"}`}
