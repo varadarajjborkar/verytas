@@ -34,6 +34,16 @@ def test_casing_flags_only_wrong_case():
     assert [(f.quote, f.suggestion.proposed) for f in findings] == [("github", "GitHub"), ("VERYTAS", "Verytas")]
 
 
+def test_casing_leaves_handles_urls_and_addresses_alone():
+    r = rule("TERM-03", {"type": "casing", "terms": ["Kitepath"]})
+    for fine in ("Follow @kitepath for more.", "Join at kitepath.in/learn today.", "Visit www.kitepath.com.",
+                 "Write to hello@kitepath.in.", "See https://kitepath.in", "Find us: @kitepath"):
+        assert run_deterministic(make_ctx(fine, [r])) == [], fine
+    # The brand name in running text is still held to its casing, including at the end of a sentence.
+    assert [f.quote for f in run_deterministic(make_ctx("We love kitepath. KITEPATH.Join now.", [r]))] \
+        == ["kitepath", "KITEPATH"]
+
+
 def test_confidential_terms_respect_embargo():
     rules = system_rule_views()
     terms = [TermView(1, "Project Lumen", date(2026, 12, 1)), TermView(2, "Old Codename", date(2026, 1, 1))]

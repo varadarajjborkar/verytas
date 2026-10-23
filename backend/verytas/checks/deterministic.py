@@ -193,11 +193,30 @@ def preferred_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
             )
 
 
+# A handle, an address or a domain is written lowercase by convention, and the platform or the DNS makes
+# that the correct form: "@kitepath" and "kitepath.in" are not the brand name misspelt.
+_DOMAIN = re.compile(r"(?:^|[^\w-])[Ww]{3}\.|[\w-]\.[a-z]{2,}(?:[/:?#]|$)")
+
+
+def _is_address(body: str, start: int, end: int) -> bool:
+    """Whether the match sits in a handle, e-mail address, URL or domain name: the whitespace-delimited
+    token around it, minus sentence punctuation, has an @, a scheme, a www. or a dotted domain ending
+    in a lowercase suffix ("kitepath.in"; "Kitepath.Join" is a sentence missing its space)."""
+    left = start
+    while left > 0 and not body[left - 1].isspace():
+        left -= 1
+    right = end
+    while right < len(body) and not body[right].isspace():
+        right += 1
+    token = body[left:right].rstrip(".,;:!?)\"'")
+    return "@" in token or "://" in token or bool(_DOMAIN.search(token))
+
+
 @matcher("casing")
 def casing(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     for term in rule.pattern.get("terms", []):
         for start, end, folded in find_folded(_term_regex(term), ctx.body):
-            if folded != fold(term)[0]:
+            if folded != fold(term)[0] and not _is_address(ctx.body, start, end):
                 original = ctx.body[start:end]
                 yield _finding(
                     ctx, rule, start, end, f'Write "{term}" with its official casing', rule.text,

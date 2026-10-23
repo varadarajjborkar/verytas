@@ -209,3 +209,75 @@ def test_fix_numbers_are_written_plainly():
     assert _format_like("2M", 12_345_678) == "12.345678M"
     assert _format_like("800+", 1200) == "1200"
     assert _format_like("12 lakh", 1_500_000) == "15 lakh"
+
+
+COURSES = FactView(7, "Kitepath offers 340 courses", 340, "courses", "courses", "Catalogue, October 2026",
+                   date(2026, 10, 1), None)
+LANGUAGES = FactView(8, "Kitepath courses are taught in 9 languages", 9, "languages", "languages",
+                     "Catalogue, October 2026", date(2026, 10, 1), None)
+
+
+@pytest.mark.parametrize("facts", [[COURSES, LANGUAGES], [LANGUAGES, COURSES]])
+async def test_two_figures_are_each_compared_with_the_fact_about_their_own_unit(facts):
+    # "taught in 9 languages" also contains the word "courses", so it is as relevant to "340" as the
+    # courses fact is; the figure must not be called contradicted by the fact that is about languages.
+    assert await _run("340 courses in 9 languages, short lessons and real mentors.", facts) == []
+
+
+async def test_a_wrong_figure_is_still_caught_against_its_own_unit():
+    [f] = await _run("340 courses in 12 languages.", [LANGUAGES, COURSES])
+    assert f.rule_code == "CLAIM-CONTRADICTED" and f.fact_id == 8 and '"12"' in f.explanation
+    [g] = await _run("400 courses in 9 languages.", [LANGUAGES, COURSES])
+    assert g.rule_code == "CLAIM-CONTRADICTED" and g.fact_id == 7 and '"400"' in g.explanation
+
+
+async def test_a_figure_one_equally_relevant_fact_states_is_not_contradicted_by_another():
+    # Same relevance and no unit to tell them apart: the fact that states the figure supports it.
+    a = FactView(9, "Kitepath serves learners in 9 states", 9, "states", "reach", "Annual report",
+                 date(2026, 1, 1), None)
+    b = FactView(10, "Kitepath serves learners in 28 cities", 28, "cities", "reach", "Annual report",
+                 date(2026, 1, 1), None)
+    assert await _run("Kitepath serves learners in 28 places.", [a, b]) == []
+
+
+PRICE = FactView(11, "The Kitepath annual plan costs 4,999 rupees", 4999, "rupees", "annual plan price",
+                 "Pricing page, Aug 2026", date(2026, 8, 1), None)
+MENTORS = FactView(12, "Kitepath has 1,200 verified mentors", 1200, "mentors", "mentors", "Mentor desk report",
+                   date(2026, 8, 1), None)
+
+
+@pytest.mark.parametrize("facts", [[PRICE, MENTORS], [MENTORS, PRICE]])
+async def test_a_figure_on_its_own_line_is_not_about_the_next_line(facts):
+    # Text read off a picture: the words that follow 4,999 are the next line's, not what it counts.
+    card = "Annual plan\nRs 4,999\nAsk a mentor anything\n1,200 verified mentors"
+    assert await _run(card, facts) == []
+    [f] = await _run(card.replace("4,999", "5,999"), facts)
+    assert f.rule_code == "CLAIM-CONTRADICTED" and '"5,999"' in f.explanation and f.fact_id == 11
+
+
+def test_a_wrong_total_is_not_excused_by_another_facts_value():
+    # "12 teams per workspace" is a different quantity from the total; 12 is still the wrong total.
+    from tests.helpers import make_ctx
+    from verytas.checks.base import FactView
+    from verytas.checks.claims import _verify_numbers, parse_numbers
+
+    facts = [FactView(1, "Kitepath has 800 active teams", 800, "teams", "teams", "r", date(2026, 1, 1), None),
+             FactView(2, "Each workspace holds up to 12 teams", 12, "teams per workspace", "workspace", "r",
+                      date(2026, 1, 1), None)]
+    ctx = make_ctx("", [], facts=facts)
+    quote = "Kitepath has 12 teams."
+    [r] = _verify_numbers(quote, parse_numbers(quote), facts, ctx)
+    assert r.verdict == "contradicted"
+
+
+def test_a_figure_judged_on_its_own_line_first():
+    from tests.helpers import make_ctx
+    from verytas.checks.base import FactView
+    from verytas.checks.claims import _verify_numbers, parse_numbers
+
+    facts = [FactView(1, "Kitepath offers 340 courses", 340, "courses", "courses", "r", date(2026, 1, 1), None),
+             FactView(2, "Kitepath has 1,200 mentors", 1200, "mentors", "mentors", "r", date(2026, 1, 1), None)]
+    ctx = make_ctx("", [], facts=facts)
+    quote = "1,200 courses\n1,200 mentors"
+    first, second = _verify_numbers(quote, parse_numbers(quote), facts, ctx)
+    assert first.verdict == "contradicted" and second.verdict == "supported"

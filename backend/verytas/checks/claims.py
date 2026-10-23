@@ -231,6 +231,7 @@ class _NumberResult:
 
 _MATCH_FLOOR = 0.5
 _EXACT_TOPIC_FLOOR = 0.2  # with an exact value match, a little topical overlap is enough
+_UNIT_LEAD = 0.25  # how much naming the fact's own unit counts over a shared word
 
 
 def _subject(quote: str, n: ParsedNumber) -> str:
@@ -242,49 +243,82 @@ def _subject(quote: str, n: ParsedNumber) -> str:
     return " ".join(quote[:n.start].split()[-4:])
 
 
+def _subjects(quote: str, n: ParsedNumber) -> list[str]:
+    """The readings of what a number counts, most likely first.
+
+    In running text that is `_subject`. Text read off a picture keeps its line breaks, and the words after
+    a figure can then belong to the next line: in "Annual plan / Rs 4,999 / Ask a mentor anything" the
+    4,999 is the plan's price, not the mentors'. So the rest of the figure's own line comes first, and
+    the words before it (the label above or beside it) are the last resort."""
+    first = _subject(quote, n)
+    tail = quote[n.end:]
+    words = re.match(r"(?:\s*\S+){1,3}", tail)
+    if not words or "\n" not in words.group(0):
+        return [first]
+    own_line = " ".join(tail.split("\n", 1)[0].split()[:3])
+    before = " ".join(quote[:n.start].split()[-4:])
+    return [s for s in dict.fromkeys([own_line, before, first]) if _content_words(s)] or [first]
+
+
 def _verify_numbers(quote: str, numbers: list[ParsedNumber], candidates: list[FactView],
                     ctx: CheckContext) -> list[_NumberResult]:
     numeric = [f for f in candidates if f.value is not None]
-    results = []
-    for n in numbers:
-        subject = _subject(quote, n)
+
+    def against(n: ParsedNumber, subject: str) -> _NumberResult | None:
+        """The figure judged against the facts about `subject`, or None when no fact is about it."""
         # Widening this to words before the number pairs "40" in "800 teams in
-        # 40 countries" with the teams fact; the exact-value fallback below
+        # 40 countries" with the teams fact; the exact-value fallback in the caller
         # covers subjects phrased unlike the fact library instead.
         scored = [(relevance(subject, f), f) for f in numeric if (f.unit == "%") == n.percent]
-        scored = [(sc, f) for sc, f in scored if sc >= _MATCH_FLOOR]
+        # A fact whose own unit is what the figure counts ("340 courses" and a "courses" fact) leads facts that
+        # merely mention the word: "taught in 9 languages" mentions courses too, and "340" is not about
+        # languages. Without this the two tie, and the figure is judged against whichever came first.
+        unit = _content_words(subject)
+        scored = [(sc + (_UNIT_LEAD if unit & _content_words(f"{f.unit or ''} {f.subject or ''}") else 0.0), f)
+                  for sc, f in scored if sc >= _MATCH_FLOOR]
         if not scored:
-            # A figure equal to a currently valid approved value on a related
-            # topic is that fact, worded differently. Found by the black-box
-            # simulator: true statistics were flagged "unsupported" when the post
-            # phrased the subject unlike the fact library.
-            exact = next((f for f in ctx.facts if f.value is not None and f.valid_on(ctx.today)
-                          and (f.unit == "%") == n.percent and compare_numbers(n, _amount(f)) == "supported"
-                          and abs(n.value - _amount(f)) <= 0.02 * max(1.0, abs(_amount(f)))
-                          and relevance(quote, f) >= _EXACT_TOPIC_FLOOR), None)
-            results.append(_NumberResult(n, "supported", exact) if exact else _NumberResult(n, "unmatched"))
-            continue
+            return None
         top = max(sc for sc, _ in scored)
         family = [f for sc, f in scored if sc >= top - 1e-9]  # same subject: e.g. last quarter's and this quarter's
         valid = [f for f in family if f.valid_on(ctx.today)]
         past = [f for f in family if f.valid_to is not None and ctx.today >= f.valid_to]
         future = [f for f in family if ctx.today < f.valid_from]
         if valid:
+            # Not "any equally relevant fact that states this figure": with "800 active teams" and "12 teams
+            # per workspace", "Kitepath has 12 teams" would pass on the per-workspace fact. The unit lead
+            # above is what separates facts that only share a word.
             fact = valid[0]
             if compare_numbers(n, _amount(fact)) == "supported":
-                results.append(_NumberResult(n, "supported", fact))
-                continue
+                return _NumberResult(n, "supported", fact)
             # Wrong today but right in the past is stale copy: report it as outdated.
             stale = next((f for f in past if compare_numbers(n, _amount(f)) == "supported"), None)
-            results.append(_NumberResult(n, "outdated", stale, fact) if stale
-                           else _NumberResult(n, "contradicted", fact, fact))
-        elif past:
+            return _NumberResult(n, "outdated", stale, fact) if stale else _NumberResult(n, "contradicted", fact, fact)
+        if past:
             fact = past[0]
             successor = next((f for f in ctx.facts if f.valid_on(ctx.today) and f.value is not None
                               and relevance(fact.statement, f) >= 0.6), None)
-            results.append(_NumberResult(n, "outdated", fact, successor))
-        else:
-            results.append(_NumberResult(n, "future", future[0]))
+            return _NumberResult(n, "outdated", fact, successor)
+        return _NumberResult(n, "future", future[0])
+
+    results = []
+    for n in numbers:
+        # Several readings only for text with line breaks, most likely first; the first that finds a fact
+        # about the figure decides. A later reading that happens to agree must not overrule a contradiction
+        # on the figure's own line ("1,200 courses / 1,200 mentors" with 340 courses).
+        found = [r for r in (against(n, s) for s in _subjects(quote, n)) if r is not None]
+        picked = found[0] if found else None
+        if picked is not None:
+            results.append(picked)
+            continue
+        # A figure equal to a currently valid approved value on a related
+        # topic is that fact, worded differently. Found by the black-box
+        # simulator: true statistics were flagged "unsupported" when the post
+        # phrased the subject unlike the fact library.
+        exact = next((f for f in ctx.facts if f.value is not None and f.valid_on(ctx.today)
+                      and (f.unit == "%") == n.percent and compare_numbers(n, _amount(f)) == "supported"
+                      and abs(n.value - _amount(f)) <= 0.02 * max(1.0, abs(_amount(f)))
+                      and relevance(quote, f) >= _EXACT_TOPIC_FLOOR), None)
+        results.append(_NumberResult(n, "supported", exact) if exact else _NumberResult(n, "unmatched"))
     return results
 
 
