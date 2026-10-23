@@ -164,6 +164,35 @@ SYSTEM_RULES: list[dict[str, Any]] = [
         "pattern": {"type": "brand_assets"},
     },
     {
+        "code": "VIS-ASSET-DISTORTED",
+        "category": "visual",
+        "kind": "deterministic",
+        "severity": "must",
+        "title": "Official artwork keeps its proportions",
+        "text": "Logos, wordmarks, icons and characters may be resized and placed, but never stretched, "
+        "squashed, skewed or mirrored. Scale both sides together.",
+        "pattern": {"type": "brand_assets"},
+    },
+    {
+        "code": "VIS-ASSET-RETIRED",
+        "category": "visual",
+        "kind": "deterministic",
+        "severity": "must",
+        "title": "Use the current version of brand artwork",
+        "text": "The brand has retired this version of its artwork. Use the current one from the Library.",
+        "pattern": {"type": "brand_assets"},
+    },
+    {
+        "code": "VIS-COMPETITOR-MARK",
+        "category": "messaging",
+        "kind": "deterministic",
+        "severity": "should",
+        "title": "No other brands' logos without a reason",
+        "text": "A competitor's logo in our content draws a comparison, or borrows their name, and needs legal "
+        "sign-off. Leave it out, or escalate with the reason it is there.",
+        "pattern": {"type": "brand_assets"},
+    },
+    {
         "code": "CTX-IMPLIED",
         "category": "messaging",
         "kind": "deterministic",

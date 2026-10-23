@@ -28,7 +28,8 @@ class FakeClient:
 
 
 def _asset(id_, name, restricted=False, kind="mascot"):
-    return SimpleNamespace(id=id_, name=name, kind=kind, restricted=restricted, image=Image.new("RGBA", (8, 8)))
+    return SimpleNamespace(id=id_, name=name, kind=kind, restricted=restricted, official=kind != "competitor",
+                           image=Image.new("RGBA", (8, 8)))
 
 
 def _run(client, assets, brief=""):

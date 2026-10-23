@@ -592,7 +592,7 @@ def _prepare_assets(rows, content_rank: int) -> list[OfficialAsset]:
         img, fingerprint, b64 = hit
         prepared.append(OfficialAsset(
             id=row.id, name=row.name, kind=row.kind, part=row.part, restricted=row.tier.rank > content_rank,
-            image=img, prepared=fingerprint, b64=b64, wordmark=row.wordmark,
+            image=img, prepared=fingerprint, b64=b64, wordmark=row.wordmark, retired=bool(row.retired),
         ))
     return prepared
 

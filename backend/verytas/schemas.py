@@ -548,13 +548,28 @@ class ApprovedPersonOut(ORM):
 
 class BrandAssetIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    kind: Literal["logo", "mascot", "other"]
+    # What the artwork is to the brand. A competitor's mark is registered so a post that shows it is
+    # caught, and is never shown to a model as ours. The other kinds are matched alike and differ only in
+    # how findings name them.
+    kind: Literal["logo", "wordmark", "icon", "mascot", "packaging", "product", "pattern", "partner",
+                  "competitor", "other"]
     part: Literal["full", "face", "head", "body", "wordmark", "icon"] = "full"
     media_type: Literal["image/png", "image/jpeg", "image/webp"] = "image/png"
     data_base64: str = Field(min_length=16, max_length=8_000_000)
     wordmark: str | None = Field(default=None, max_length=120, description="Exact spelling of text in the artwork")
     notes: str | None = Field(default=None, max_length=2000)
+    # A version the brand no longer uses (last year's logo, the old pack): found like any asset, and
+    # reported as out of date instead of passed as official.
+    retired: bool = False
     tier: Tier = Tier.public
+
+
+class BrandAssetPatch(BaseModel):
+    """Mark a version as retired (still matched, reported as out of date) or current again. Removing an
+    asset from matching altogether is DELETE."""
+
+    retired: bool | None = None
+    notes: str | None = Field(default=None, max_length=2000)
 
 
 class BrandAssetOut(ORM):
@@ -565,6 +580,7 @@ class BrandAssetOut(ORM):
     wordmark: str | None
     media_type: str
     notes: str | None
+    retired: bool | None = False
     tier: Tier
     active: bool
     created_at: datetime

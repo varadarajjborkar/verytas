@@ -25,6 +25,7 @@ from verytas.prism.disputes import workspace_redactor
 from verytas.schemas import (
     BrandAssetIn,
     BrandAssetOut,
+    BrandAssetPatch,
     FactIn,
     FactOut,
     RuleIn,
@@ -324,7 +325,8 @@ async def create_asset(body: BrandAssetIn, session: Session, admin: Admin) -> Br
     await session.flush()
     await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}", action="asset.created",
                  object_type="brand_asset", object_id=asset.id,
-                 detail={"name": body.name, "kind": body.kind, "part": body.part, "tier": body.tier})
+                 detail={"name": body.name, "kind": body.kind, "part": body.part, "tier": body.tier,
+                         "retired": body.retired})
     await session.commit()
     if asset_match.flat(prepared):
         asset.warning = ("flat artwork with little texture: it will be found in content only at its own "
@@ -342,12 +344,28 @@ async def asset_image(asset_id: int, session: Session, user: CurrentUser) -> Res
                     headers={"Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff"})
 
 
+@router.patch("/brand-assets/{asset_id}", response_model=BrandAssetOut)
+async def update_asset(asset_id: int, body: BrandAssetPatch, session: Session, admin: Admin) -> BrandAsset:
+    asset = await session.get(BrandAsset, asset_id)
+    if asset is None or asset.workspace_id != admin.workspace_id or not asset.active:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
+    changes = body.model_dump(exclude_unset=True)
+    for key, value in changes.items():
+        setattr(asset, key, value)
+    await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}",
+                 action="asset.version_retired" if changes.get("retired") else "asset.updated",
+                 object_type="brand_asset", object_id=asset.id, detail=changes)
+    await session.commit()
+    return asset
+
+
 @router.delete("/brand-assets/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def retire_asset(asset_id: int, session: Session, admin: Admin) -> None:
     asset = await session.get(BrandAsset, asset_id)
     if asset is None or asset.workspace_id != admin.workspace_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
-    # Retired, not deleted: past reviews cite it.
+    # Taken out of the library (no longer matched), not deleted: past reviews cite it. The audit action
+    # keeps its old name; a version that should still be caught in posts is PATCHed retired instead.
     asset.active = False
     await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}", action="asset.retired",
                  object_type="brand_asset", object_id=asset.id, detail={})

@@ -77,6 +77,9 @@ WORKER_COVERS = {
 # What an unreadable image or document leaves unchecked.
 MEDIA_COVERS = {"terminology", "confidentiality", "claims", "visual"}
 MAX_VISION_REFERENCES = 4  # reference images per vision call; more dilutes the comparison
+# Similarity a retired version must lead the current artwork by, at the same spot, to be called the one
+# that is there: versions differing in a detail score within a hair of each other on either.
+RETIRED_LEAD = 0.02
 SCANNED_FALLBACK_CHARS = 40  # a scanned page with less OCR text than this is re-read by the vision model
 _EXTENDABLE_PARTS = {"face", "head", "icon", "wordmark"}
 
@@ -155,6 +158,12 @@ class OfficialAsset:
     prepared: asset_match.PreparedAsset
     b64: str
     wordmark: str | None = None
+    retired: bool = False  # an old version: finding it means the post uses out-of-date artwork
+
+    @property
+    def official(self) -> bool:
+        """Current artwork of the brand's own: what the vision model is shown and copies are judged by."""
+        return self.kind != "competitor" and not self.retired
 
 
 @dataclass
@@ -389,10 +398,11 @@ async def image_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_i
         await run.tree.spawn(node, "contrast", "Measure text contrast",
                              lambda n: _contrast_agent(run, n, pil, image_id, locator, lines, contrast))
     if image_id in run.layouts:
-        names = {a.id: f"{a.kind} '{a.name}'" for a in run.assets}
+        # Only the brand's current artwork: a cropped rival logo or old version is not "our asset cut off".
+        names = {a.id: f"{a.kind} '{a.name}'" for a in run.assets if a.official}
         run.layouts[image_id]["lines"] = [(ln.text, ln.box) for ln in lines]
-        run.layouts[image_id]["assets"] = [(names.get(m.asset_id, "official asset"), m.box)
-                                          for m in matches or [] if m.found]
+        run.layouts[image_id]["assets"] = [(names[m.asset_id], m.box)
+                                          for m in matches or [] if m.found and m.asset_id in names]
 
     # A second opinion on text: if the vision model read substantially more
     # than local OCR (stylised lettering, handwriting), check that text too.
@@ -543,10 +553,17 @@ def _redacted_png(img: Image.Image, ocr: local_ocr.OcrResult, patterns, side: in
     return png_b64(shrink(hidden_img, side) if side else shrink(hidden_img)), hidden
 
 
+def _shareable(run: ReviewRun) -> list[OfficialAsset]:
+    """The artwork the vision model compares against. Retired versions and competitors' marks are found
+    by pixels only: shown to the model as references, they would be judged as if they were the brand's
+    approved artwork."""
+    return [a for a in run.assets if not a.restricted and a.official]
+
+
 async def scene_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_id: str,
                       ocr: local_ocr.OcrResult, context: str) -> SceneReport:
     encoded, hidden = await run.blocking(_redacted_png, pil, ocr, run.leak_patterns(), 1400)
-    shareable = [a for a in run.assets if not a.restricted]
+    shareable = _shareable(run)
     refs = [Reference(a.name, a.kind, a.part, a.b64) for a in shareable[:MAX_VISION_REFERENCES]]
     node.detail = {"redacted_regions": hidden, "references": len(refs)}
     if len(shareable) > len(refs):
@@ -589,7 +606,7 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
     """
     verdicts = {}
     if scene:
-        shown = [a for a in run.assets if not a.restricted][:MAX_VISION_REFERENCES]
+        shown = _shareable(run)[:MAX_VISION_REFERENCES]
         verdicts = {shown[v.reference - 1].id: v for v in scene.assets if 0 < v.reference <= len(shown)}
     vision_name = run.vision.name
     out: list[RawFinding] = []
@@ -605,11 +622,41 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
             locator={**locator, "image": image_id, **({"box": list(box)} if box else {})}, model=model,
         ))
 
+    # An old version shares most of its keypoints with the current artwork, so both can match the same
+    # spot. Where a retired version fits better there, the image shows the old one: report that, not the
+    # current artwork as "altered" into it.
+    stale = [(by_id[a.id], a) for a in run.assets if a.retired and by_id.get(a.id) and by_id[a.id].found]
+    current = [by_id[a.id] for a in run.assets if a.official and by_id.get(a.id) and by_id[a.id].found]
+
+    def superseded(m: asset_match.AssetMatch) -> bool:
+        return any(_iou(m.box, old.box) >= 0.5 and (old.similarity or 0) > (m.similarity or 0) for old, _ in stale)
+
+    def outdated(old: asset_match.AssetMatch) -> bool:
+        """The retired version is what's there, not the current one matching it nearly as well: two
+        versions that differ in a detail both match either, and only a clear lead says which it is."""
+        return not any(_iou(old.box, m.box) >= 0.5 and (m.similarity or 0) >= (old.similarity or 0) - RETIRED_LEAD
+                       for m in current)
+
     for asset in run.assets:
         m = by_id.get(asset.id)
         v = verdicts.get(asset.id)
         found = bool(m and m.found)
         label = f"official {asset.kind} '{asset.name}'"
+
+        if not asset.official:
+            # Old versions and other brands' marks are not unreleased artwork, whatever their tier; above
+            # the content's tier they are reported by number, like anything else the reader can't see.
+            name = f"asset #{asset.id}" if asset.restricted else asset.name
+            if found and asset.kind == "competitor":
+                finding("VIS-COMPETITOR-MARK", f"{name} appears in this image" if not asset.restricted
+                        else "Another brand's registered mark appears in this image",
+                        f"The pixels match the registered mark of {name}, another brand.", 0.9, m.box)
+            elif found and outdated(m):
+                finding("VIS-ASSET-RETIRED", f"Old version of the artwork: {name}",
+                        f"This image uses {name}, a version the brand has retired.", 0.9, m.box)
+            continue
+        if found and not asset.restricted and superseded(m):
+            continue
 
         if asset.restricted and found:
             # Unreleased artwork in lower-tier content is a leak, whatever its quality.
@@ -625,6 +672,10 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
                     locator={**locator, "image": image_id, "box": list(m.box or [])},
                 ))
             continue
+
+        if found and m.distortions:
+            finding("VIS-ASSET-DISTORTED", f"{asset.name} is {m.distortions[0].split(':')[0]}",
+                    f"Compared with {label}, this copy is {'; '.join(m.distortions)}.", 0.9, m.box)
 
         if found and m.altered:
             cells = ", ".join(f"r{c['row'] + 1}c{c['col'] + 1} ({c['change']})" for c in m.altered_cells[:6])
@@ -737,6 +788,15 @@ async def _drawn_text(run: ReviewRun, node: AgentNode, page, base: str, locator:
                  parent=doc_id)
     run.glance.append(f"page {page.number} of {doc_id} has text drawn as shapes, not in its text layer")
     await run.tree.spawn(node, "text", "Text found only in the drawing", lambda n: text_agent(run, n, src))
+
+
+def _iou(a: tuple[int, int, int, int] | None, b: tuple[int, int, int, int] | None) -> float:
+    if a is None or b is None:
+        return 0.0
+    w = max(0, min(a[2], b[2]) - max(a[0], b[0]))
+    h = max(0, min(a[3], b[3]) - max(a[1], b[1]))
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - w * h
+    return w * h / union if union > 0 else 0.0
 
 
 def _overlaps(a: tuple[int, int, int, int], b: tuple[int, int, int, int] | None, pad: float = 0.0) -> bool:

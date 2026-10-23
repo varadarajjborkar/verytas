@@ -471,7 +471,7 @@ class BrandAsset(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
-    kind: Mapped[str] = mapped_column(String(20))  # logo | mascot | other
+    kind: Mapped[str] = mapped_column(String(20))  # schemas.BrandAssetIn.kind
     part: Mapped[str] = mapped_column(String(20), default="full")  # full | face | head | body | wordmark | icon
     # Exact spelling of any text in the artwork. Logo generators garble
     # lettering, so OCR'd text near a matched logo is checked against this.
@@ -479,6 +479,8 @@ class BrandAsset(Base):
     media_type: Mapped[str] = mapped_column(String(40))
     data_base64: Mapped[str] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Nullable so an existing database gains it in place; None reads as current.
+    retired: Mapped[bool | None] = mapped_column(default=False)
     tier: Mapped[Tier] = mapped_column(_enum(Tier), default=Tier.public)
     active: Mapped[bool] = mapped_column(default=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))

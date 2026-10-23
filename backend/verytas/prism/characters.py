@@ -114,7 +114,7 @@ async def characters_agent(run: Any, node: Any, frames: list[tuple[float | None,
 
     `skip` holds assets pixel matching already found: a copy of the artwork is judged by the pixels."""
     client = run.characters
-    mascots = {str(a.id): a for a in run.assets if a.kind == "mascot" and a.id not in skip}
+    mascots = {str(a.id): a for a in run.assets if a.kind == "mascot" and a.official and a.id not in skip}
     if not mascots:
         node.note = "no mascot artwork to compare with"
         return
