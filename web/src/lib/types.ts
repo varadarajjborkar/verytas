@@ -424,3 +424,10 @@ export type CreatorTrack = {
   categories: Record<string, number>;
   points: TrackPoint[];
 };
+
+// --- global search (GET /search) ---------------------------------------------------------------
+
+export type SearchHitType = "content" | "finding" | "escalation" | "creator" | "rule" | "fact" | "term" | "asset" | "event";
+
+/** One result, already scoped to what the caller may open. `section` is set only on the suggestions for an empty query. */
+export type SearchHit = { type: SearchHitType; id: number; title: string; subtitle: string; href: string; section?: string | null };
