@@ -1,0 +1,32 @@
+{"rule": "MSG-RIVALS", "text": "Unlike some other apps, our mentors actually reply.", "breaks": true, "small": 0.9, "small_s": 2.57, "large": 0.9, "large_s": 0.83}
+{"rule": "MSG-RIVALS", "text": "Tired of apps that just play videos at you? Try a mentor.", "breaks": true, "small": 0.9, "small_s": 2.3, "large": 0.9, "large_s": 1.81}
+{"rule": "MSG-RIVALS", "text": "Other platforms sell you a library. We sit with you.", "breaks": true, "small": 0.9, "small_s": 2.82, "large": 0.9, "large_s": 2.05}
+{"rule": "MSG-RIVALS", "text": "Still paying for courses you never finish elsewhere?", "breaks": true, "small": 0.9, "small_s": 2.21, "large": 0.9, "large_s": 2.9}
+{"rule": "MSG-RIVALS", "text": "We teach by doing: practice, feedback and a mentor.", "breaks": false, "small": 0.1, "small_s": 1.31, "large": 0.1, "large_s": 1.77}
+{"rule": "MSG-RIVALS", "text": "Lots of learners try many apps before they find a routine that sticks.", "breaks": false, "small": 0.1, "small_s": 1.35, "large": 0.1, "large_s": 1.83}
+{"rule": "MSG-RIVALS", "text": "Video lessons are only half of it; the other half is practice.", "breaks": false, "small": 0.1, "small_s": 2.23, "large": 0.1, "large_s": 1.76}
+{"rule": "MSG-RIVALS", "text": "Compare our plans and pick the one that suits your week.", "breaks": false, "small": 0.1, "small_s": 2.33, "large": 0.1, "large_s": 0.91}
+{"rule": "MSG-EXAMSTRESS", "text": "Don't let this board season be the one you regret.", "breaks": true, "small": 0.1, "small_s": 1.27, "large": 0.1, "large_s": 1.38}
+{"rule": "MSG-EXAMSTRESS", "text": "Every mark you lose now is a college you lose later.", "breaks": true, "small": 0.9, "small_s": 2.2, "large": 0.9, "large_s": 2.35}
+{"rule": "MSG-EXAMSTRESS", "text": "Toppers start today. Everyone else starts too late.", "breaks": true, "small": 0.1, "small_s": 1.7, "large": 0.9, "large_s": 1.28}
+{"rule": "MSG-EXAMSTRESS", "text": "Boards are close. Here is a calm two-week plan.", "breaks": false, "small": 0.1, "small_s": 1.7, "large": 0.1, "large_s": 1.06}
+{"rule": "MSG-EXAMSTRESS", "text": "Exams are stressful. Revise a little every day and ask when stuck.", "breaks": false, "small": 0.1, "small_s": 2.18, "large": 0.1, "large_s": 1.06}
+{"rule": "MSG-EXAMSTRESS", "text": "Missed a chapter? A mentor can help you catch up this weekend.", "breaks": false, "small": 0.1, "small_s": 1.49, "large": 0.1, "large_s": 1.94}
+{"rule": "LEGAL-RESULTS", "text": "Ananya topped her school in maths with us. Join now!", "breaks": true, "small": 0.9, "small_s": 1.43, "large": 0.9, "large_s": 1.02}
+{"rule": "LEGAL-RESULTS", "text": "98% of our learners scored above 90 last year.", "breaks": true, "small": 0.9, "small_s": 1.95, "large": 0.9, "large_s": 1.13}
+{"rule": "LEGAL-RESULTS", "text": "Rohan cleared JEE thanks to KiteMentor.", "breaks": true, "small": 0.9, "small_s": 2.82, "large": 0.9, "large_s": 1.23}
+{"rule": "LEGAL-RESULTS", "text": "Ananya (2026 boards, shared with her consent) scored in the nineties.", "breaks": false, "small": 0.9, "small_s": 2.11, "large": 0.9, "large_s": 1.43}
+{"rule": "LEGAL-RESULTS", "text": "Our maths course covers the whole Class 10 syllabus.", "breaks": false, "small": 0.1, "small_s": 1.34, "large": 0.1, "large_s": 1.12}
+{"rule": "LEGAL-RESULTS", "text": "Results season is coming: here is how to read your marksheet.", "breaks": false, "small": 0.9, "small_s": 1.43, "large": 0.1, "large_s": 2.25}
+{"rule": "LEGAL-MINORS", "text": "Hey Class 9! Ask your parents for the annual plan today.", "breaks": true, "small": 0.1, "small_s": 2.39, "large": 0.9, "large_s": 1.81}
+{"rule": "LEGAL-MINORS", "text": "Students, drop your number in the comments to win a free month.", "breaks": true, "small": 0.9, "small_s": 2.34, "large": 0.9, "large_s": 1.53}
+{"rule": "LEGAL-MINORS", "text": "Teens: subscribe now and unlock every course.", "breaks": true, "small": 0.9, "small_s": 1.64, "large": 0.9, "large_s": 1.65}
+{"rule": "LEGAL-MINORS", "text": "Parents can try a course free for seven days.", "breaks": false, "small": 0.1, "small_s": 1.49, "large": 0.1, "large_s": 2.07}
+{"rule": "LEGAL-MINORS", "text": "Class 9 learners: today's lesson is on fractions.", "breaks": false, "small": 0.1, "small_s": 1.42, "large": 0.1, "large_s": 1.11}
+{"rule": "LEGAL-MINORS", "text": "Parents, the annual plan covers both your children.", "breaks": false, "small": 0.1, "small_s": 2.27, "large": 0.1, "large_s": 1.14}
+{"rule": "LEGAL-TESTIMONIAL", "text": "\"Kitepath changed my life,\" says every learner we've met.", "breaks": true, "small": 0.9, "small_s": 2.41, "large": 0.9, "large_s": 1.1}
+{"rule": "LEGAL-TESTIMONIAL", "text": "Farah got a twenty lakh job because of Kitepath.", "breaks": true, "small": 0.9, "small_s": 1.39, "large": 0.9, "large_s": 1.16}
+{"rule": "LEGAL-TESTIMONIAL", "text": "Learners tell us it is the best decision they ever made.", "breaks": true, "small": 0.9, "small_s": 2.13, "large": 0.75, "large_s": 1.42}
+{"rule": "LEGAL-TESTIMONIAL", "text": "Farah now runs her team's weekly SQL reports.", "breaks": false, "small": 0.1, "small_s": 2.46, "large": 0.1, "large_s": 1.11}
+{"rule": "LEGAL-TESTIMONIAL", "text": "Meet Kabir, who started our Python track in June.", "breaks": false, "small": 0.1, "small_s": 1.94, "large": 0.1, "large_s": 1.04}
+{"rule": "LEGAL-TESTIMONIAL", "text": "Share your learning story with us; we will ask before we post it.", "breaks": false, "small": 0.1, "small_s": 2.65, "large": 0.1, "large_s": 1.95}
