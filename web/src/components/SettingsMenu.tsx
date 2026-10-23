@@ -30,15 +30,32 @@ const TABS = [
   { value: "social", label: "Socials" },
   { value: "theme", label: "Appearance" },
 ] as const;
-type Tab = (typeof TABS)[number]["value"];
+export type SettingsTab = (typeof TABS)[number]["value"];
+type Tab = SettingsTab;
+
+/** Dispatched on window (detail: a tab) by anything that wants Settings opened there, such as the search bar. */
+export const OPEN_SETTINGS = "vt-open-settings";
 
 /** The settings button, and the settings window it opens over a blurred page. */
 export function SettingsMenu({ compact = false }: { compact?: boolean }) {
   const [open, setOpen] = useState(false);
+  const [first, setFirst] = useState<Tab>("profile");
   const button = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => {
     setOpen(false);
     button.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      // The phone header and the sidebar each mount a menu; only the one on screen answers.
+      if (!button.current || button.current.offsetParent === null) return;
+      const tab = (e as CustomEvent<string>).detail;
+      setFirst(TABS.some((t) => t.value === tab) ? (tab as Tab) : "profile");
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_SETTINGS, onOpen);
+    return () => window.removeEventListener(OPEN_SETTINGS, onOpen);
   }, []);
 
   return (
@@ -52,13 +69,13 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
           className="shrink-0 transition-transform duration-500 ease-out group-hover:rotate-45" />
         {!compact && <span className="text-sm font-medium">Settings</span>}
       </button>
-      {open && <SettingsDialog onClose={close} />}
+      {open && <SettingsDialog onClose={close} first={first} />}
     </>
   );
 }
 
-function SettingsDialog({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<Tab>("profile");
+function SettingsDialog({ onClose, first }: { onClose: () => void; first: Tab }) {
+  const [tab, setTab] = useState<Tab>(first);
   const [me, setMe] = useState<Me | null>(null);
   const [meError, setMeError] = useState<string | null>(null);
   const [signin, setSignin] = useState<boolean | null>(null);

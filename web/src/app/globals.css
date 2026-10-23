@@ -36,6 +36,18 @@
   --vt-ok-bg: light-dark(#ddf1e6, #10261c);
   --vt-shadow: 0 1px 2px rgba(18, 24, 40, 0.04), 0 1px 3px rgba(18, 24, 40, 0.05);
   --vt-shadow-pop: 0 12px 32px -8px rgba(18, 24, 40, 0.18), 0 2px 6px rgba(18, 24, 40, 0.06);
+  /* Glass (the search bar): a translucent fill that lets the page blur through, a bright rim where light
+     catches the top edge, and a soft long shadow. The strong fill is for panels holding text. */
+  --vt-glass: light-dark(rgba(255, 255, 255, 0.5), rgba(34, 39, 51, 0.46));
+  --vt-glass-strong: light-dark(rgba(250, 251, 253, 0.76), rgba(22, 25, 33, 0.74));
+  --vt-glass-sheen: light-dark(rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.08));
+  --vt-glass-rim: light-dark(rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.24));
+  --vt-glass-rim-low: light-dark(rgba(18, 24, 40, 0.14), rgba(255, 255, 255, 0.05));
+  --vt-glass-hover: light-dark(rgba(18, 24, 40, 0.055), rgba(255, 255, 255, 0.07));
+  --vt-glass-active: color-mix(in srgb, var(--vt-accent) 15%, transparent);
+  --vt-glass-scrim: color-mix(in srgb, var(--vt-bg) 38%, transparent);
+  --vt-glass-shadow: 0 18px 44px -14px light-dark(rgba(18, 24, 40, 0.3), rgba(0, 0, 0, 0.6)),
+    0 2px 8px light-dark(rgba(18, 24, 40, 0.07), rgba(0, 0, 0, 0.3));
 }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
@@ -176,6 +188,63 @@ table, .tabular-nums { font-variant-numeric: tabular-nums; }
   select.vt-input option { background: var(--vt-raised); color: var(--vt-ink); }
   .vt-input:focus { outline: none; border-color: var(--vt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vt-accent) 18%, transparent); }
 }
+
+/* --- glass ---------------------------------------------------------------- */
+/* Liquid-glass surface: the page behind is blurred and saturated, a specular rim (the ::before ring)
+   brightens the top-left edge and fades toward the bottom-right, and an inset line sits under it. Children
+   that need a blur of their own must be siblings, not descendants: a backdrop filter makes its element the
+   edge of what its children can see through. In the components layer so a utility (absolute) still wins. */
+@layer components {
+.vt-glass {
+  position: relative;
+  background: linear-gradient(180deg, var(--vt-glass-sheen), transparent 62%), var(--vt-glass);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+  box-shadow: inset 0 1px 0 var(--vt-glass-rim), inset 0 -1px 0 var(--vt-glass-rim-low), var(--vt-glass-shadow);
+}
+.vt-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(150deg, var(--vt-glass-rim), transparent 38%, transparent 62%, var(--vt-glass-rim-low));
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+.vt-glass-strong { --vt-glass: var(--vt-glass-strong); }
+/* Opaque for anyone who asked for less transparency or more contrast: the same shape on a solid surface. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .vt-glass {
+    background: var(--vt-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: 0 0 0 1px var(--vt-line-strong), var(--vt-shadow-pop);
+  }
+  .vt-glass::before { display: none; }
+}
+}
+/* The bar draws its own focus ring around the whole pill, so the field inside carries none (the page-wide
+   :focus-visible rule is unlayered, which a utility class cannot beat). */
+.vt-glass input:focus-visible { outline: none; }
+/* What the search matched, inside a result. */
+.vt-hit { background: transparent; color: var(--vt-accent); font-weight: 650; }
+.vt-kbd {
+  display: inline-grid;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  padding: 0 0.3rem;
+  border-radius: 6px;
+  border: 1px solid var(--vt-line);
+  background: var(--vt-glass-hover);
+  font: 500 0.6875rem/1 var(--font-geist-sans), system-ui, sans-serif;
+  color: var(--vt-muted);
+}
+/* The bar sits above the page in flow, so the page's own top padding shrinks to match. */
+.vt-topbar + main { padding-top: 0.25rem; }
+@media (min-width: 48rem) { .vt-topbar + main { padding-top: 0.5rem; } }
 
 /* A fixed azure, not the theme accent, so the white mark stays readable (5:1+) in both themes. */
 .vt-mark {
