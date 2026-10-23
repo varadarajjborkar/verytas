@@ -15,6 +15,7 @@ import asyncio
 import base64
 import hashlib
 import logging
+import os
 import threading
 import time
 from collections import OrderedDict
@@ -240,7 +241,9 @@ class Prism:
             blobs=blobs, profile=(version.attachments or {}).get("profile") or {},
             declared_ai=bool((version.creator_notes or {}).get("ai_used")),
             asr_model=self.settings.asr_model, asr_long_model=self.settings.asr_long_model,
-            asr_long_seconds=self.settings.asr_long_seconds, asr_vocabulary=_vocabulary(ctx, assets),
+            asr_long_seconds=_small_model_seconds(self.settings.asr_long_seconds, self.settings.media_timeout_s),
+            asr_vocabulary=_vocabulary(ctx, assets),
+            brand_names=_brand_names(ctx, assets),
             video_max_seconds=self.settings.video_max_seconds,
             media_timeout_s=self.settings.media_timeout_s,
             rule_thresholds=thresholds,
@@ -631,12 +634,36 @@ async def _people(session: AsyncSession, content: Content, ctx: CheckContext, se
         avoid=[t.term for t in ctx.terms])
 
 
+# Whisper small ran at 0.66 times real time on 8 cores (evals/speech) and slows about in step with fewer.
+SMALL_RTF_8_CORES = 0.66
+
+
+def _small_model_seconds(configured: int, timeout_s: float, cores: int | None = None) -> int:
+    """The longest audio the better speech model gets on this machine: the configured length, cut so the
+    expected transcription takes at most half the media timeout. On the 2 vCPU server that is about half
+    a minute; a minute and a half of speech on small would run past the timeout and leave it unchecked."""
+    cores = cores or os.cpu_count() or 1
+    rtf = SMALL_RTF_8_CORES * 8 / min(cores, 8)
+    return min(configured, int(timeout_s / 2 / rtf))
+
+
 VOCABULARY_CHARS = 400  # Whisper reads at most 224 prompt tokens; names past this would be cut anyway
 
 
 def _vocabulary(ctx, assets: list[OfficialAsset]) -> str:
-    """The brand's public names, for speech recognition: product and brand spellings from its rules, and
-    the names and lettering of its current artwork. Confidential terms and restricted artwork stay out."""
+    """The brand's public names as a Whisper prompt."""
+    out = ""
+    for name in _brand_names(ctx, assets):  # whole names only: a cut one is a new word to listen for
+        if len(out) + len(name) + 2 > VOCABULARY_CHARS:
+            break
+        out = f"{out}, {name}" if out else name
+    return out
+
+
+def _brand_names(ctx, assets: list[OfficialAsset]) -> list[str]:
+    """The brand's public names, for speech recognition and OCR repair: product and brand spellings from
+    its rules, and the lettering of its current artwork. Confidential terms and restricted artwork stay
+    out."""
     names: list[str] = []
     for r in ctx.rules:
         kind = (r.pattern or {}).get("type")
@@ -650,10 +677,12 @@ def _vocabulary(ctx, assets: list[OfficialAsset]) -> str:
     seen, out = set(), []
     for n in names:
         n = str(n).strip()
-        if n and n.lower() not in seen and not any(t.term.lower() in n.lower() for t in ctx.terms):
+        # Either way round: "Falcon" primes Whisper toward a confidential "Project Falcon" too.
+        low = n.lower()
+        if n and low not in seen and not any(t.term.lower() in low or low in t.term.lower() for t in ctx.terms):
             seen.add(n.lower())
             out.append(n)
-    return ", ".join(out)[:VOCABULARY_CHARS]
+    return out
 
 
 async def _transcribe_brief(run: ReviewRun, audio: bytes) -> str:

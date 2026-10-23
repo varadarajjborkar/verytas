@@ -10,6 +10,8 @@ for those clips:
   brand_prompt     the brand names as initial_prompt for the English clips (a review knows the brand's own
                    names, so this costs nothing at run time). The test brands are the ones in the prompt,
                    as they would be for the brand being reviewed; unknown brands get no such help.
+  brand_hotwords   the same names as hotwords, which production uses: an initial prompt is dropped after the
+                   first 30 s window when previous text is not carried over, hotwords lead every window.
 
     .venv/bin/python -m evals.speech.whatif            # runs base and small, writes speech_whatif.{jsonl,md}
 """
@@ -32,10 +34,11 @@ VARIANTS = {
     "hindi_forced": (lambda c: c["lang"] in ("hi", "hinglish"), {"language": "hi"}),
     "hinglish_en": (lambda c: c["lang"] == "hinglish", {"language": "en"}),
     "brand_prompt": (lambda c: c["lang"] == "en", {"initial_prompt": PROMPT}),
+    "brand_hotwords": (lambda c: c["lang"] == "en", {"hotwords": PROMPT}),
 }
 
 
-def run(data: Path, out: Path, models: list[str], limit: int | None) -> None:
+def run(data: Path, out: Path, models: list[str], limit: int | None, only: list[str] | None = None) -> None:
     from verytas.media import video
 
     cases = [json.loads(line) for line in (data / "cases.jsonl").read_text().splitlines() if line.strip()]
@@ -44,6 +47,8 @@ def run(data: Path, out: Path, models: list[str], limit: int | None) -> None:
         video.transcribe(np.zeros(video.SAMPLE_RATE, dtype=np.float32), model)  # loads and caches the model
         whisper = video._asr_models[model]
         for name, (pick, extra) in VARIANTS.items():
+            if only and name not in only:
+                continue
             chosen = [c for c in cases if pick(c)][:limit]
             for n, case in enumerate(chosen, 1):
                 pcm = video.audio_pcm((data / case["file"]).read_bytes(), max_seconds=600)
@@ -59,7 +64,11 @@ def run(data: Path, out: Path, models: list[str], limit: int | None) -> None:
                              "rtf": round(secs / (pcm.size / video.SAMPLE_RATE), 3)} | grade(case, hyp))
                 if n % 20 == 0:
                     print(f"{model} {name} {n}/{len(chosen)}", flush=True)
-    out.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+    # A run of some variants keeps the rows of the others already in the file.
+    kept = [line for line in (out.read_text().splitlines() if only and out.is_file() else [])
+            if line.strip() and json.loads(line)["variant"] not in only]
+    out.write_text("".join(line + "\n" for line in kept) + "".join(json.dumps(r, ensure_ascii=False) + "\n"
+                                                                   for r in rows))
 
 
 def report(rows: list[dict], base: list[dict]) -> str:
@@ -106,10 +115,11 @@ def main() -> None:
     p.add_argument("--md", type=Path, default=RESULTS / "speech_whatif.md")
     p.add_argument("--model", action="append")
     p.add_argument("--limit", type=int)
+    p.add_argument("--variant", action="append", choices=list(VARIANTS), help="run only these (others kept)")
     p.add_argument("--report", action="store_true")
     args = p.parse_args()
     if not args.report:
-        run(args.data, args.out, args.model or ["base", "small"], args.limit)
+        run(args.data, args.out, args.model or ["base", "small"], args.limit, args.variant)
     rows = [json.loads(line) for line in args.out.read_text().splitlines() if line.strip()]
     base = [json.loads(line) for line in (RESULTS / "speech.jsonl").read_text().splitlines() if line.strip()]
     args.md.write_text(report(rows, base))

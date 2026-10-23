@@ -221,7 +221,8 @@ def transcribe(pcm: np.ndarray, model_name: str, vocabulary: str | None = None) 
 
     `vocabulary` is the brand's own names, given to Whisper as the text that came before: it can't know
     "Zestora" or "LoopSIP" otherwise, and on evals/speech names were heard 32% of the time without it
-    and 90% with it."""
+    and 90% with it. They go in as hotwords, which lead the prompt of every 30 s window; an initial
+    prompt is dropped after the first window when the previous text is not carried over."""
     from faster_whisper import WhisperModel
 
     with _ASR_LOCK:
@@ -229,7 +230,7 @@ def transcribe(pcm: np.ndarray, model_name: str, vocabulary: str | None = None) 
         if model is None:
             model = _asr_models[model_name] = WhisperModel(model_name, device="cpu", compute_type="int8")
         segments, info = model.transcribe(pcm, vad_filter=True, beam_size=1, condition_on_previous_text=False,
-                                          initial_prompt=vocabulary or None)
+                                          hotwords=vocabulary or None)
         cues = [Cue(round(s.start, 2), round(s.end, 2), s.text.strip(), float(np.exp(s.avg_logprob)))
                 for s in segments if s.text.strip()]
     return cues, info.language, float(info.language_probability)

@@ -194,6 +194,8 @@ class ReviewRun:
     # The brand's public names for speech recognition (see video.transcribe); never confidential terms,
     # which a prompted Whisper can echo into silence and so report a leak that never happened.
     asr_vocabulary: str = ""
+    # The same public names as a list: OCR lines are repaired against them (local_ocr.restore_names).
+    brand_names: list[str] = field(default_factory=list)
     video_max_seconds: int = 900
     media_timeout_s: float = 180.0
     rule_thresholds: dict[str, float] = field(default_factory=dict)
@@ -424,11 +426,14 @@ async def image_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_i
 async def ocr_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_id: str, locator: dict[str, Any],
                     *, scanned: bool) -> local_ocr.OcrResult:
     result = await run.blocking(local_ocr.read, pil)
-    text, route, confidence = result.text, "ocr:local", result.confidence
+    text, restored = local_ocr.restore_names(result.text, run.brand_names)
+    route, confidence = "ocr:local", result.confidence
     # "Weak" needs real text read badly, not a stray fragment on a picture.
     weak = sum(ch.isalnum() for ch in text) >= 8 and confidence < run.ocr_min_confidence
     thin_scan = scanned and len(text) < SCANNED_FALLBACK_CHARS
     node.detail = {"engine": result.engine, "lines": len(result.lines), "confidence": round(confidence, 3)}
+    if restored:
+        node.detail["restored_names"] = restored
     if result.foreign:
         # Text in a script local OCR has no model for (Hindi, most likely): the vision model reads it, or
         # the review says it went unread.
@@ -815,6 +820,12 @@ async def _drawn_text(run: ReviewRun, node: AgentNode, page, base: str, locator:
     # A chart's tick labels or a map's squiggles read as low-confidence noise, not text someone drew.
     drawn = [ln for ln in result.lines if ln.confidence >= DRAWN_MIN_CONFIDENCE and _drawn_only(ln.text, known)]
     node.detail = {"lines_read": len(result.lines), "only_drawn": len(drawn)}
+    # Lettering in a script OCR can't read is only in the drawing when the text layer has no such script
+    # either; Hindi in the layer was checked as text already.
+    if result.foreign and not any("\u0900" <= ch <= "\u0dff" for ch in page.text):
+        node.detail["unreadable_script_lines"] = len(result.foreign)
+        _unreadable(run, node, f"{base}:drawn", locator,
+                    "drawn lettering in a script local OCR cannot read (likely Devanagari or another Indic script)")
     if not drawn:
         return
     text = "\n".join(ln.text for ln in drawn)
@@ -949,8 +960,19 @@ async def video_agent(run: ReviewRun, node: AgentNode, vid: dict[str, Any]) -> N
     signals: dict[str, Any] = {"speech": False, "burned_in": False, "track": False, "music_only": False}
 
     async def captions(n: AgentNode) -> None:
-        cues, passes, cut_at = await run.blocking(video.caption_cues, samples, local_ocr.read)
+        unread = [0]
+
+        def read(img: Image.Image) -> local_ocr.OcrResult:
+            result = local_ocr.read(img)
+            unread[0] += len(result.foreign)
+            return result
+
+        cues, passes, cut_at = await run.blocking(video.caption_cues, samples, read)
         n.detail = {"ocr_passes": passes, "cues": len(cues), "read_until_s": cut_at}
+        if unread[0]:
+            n.detail["unreadable_script_lines"] = unread[0]
+            _unreadable(run, n, video_id, locator,
+                        "on-screen text in a script local OCR cannot read (likely Devanagari or another Indic script)")
         if cut_at is not None:
             n.status, n.note = "not_checked", f"on-screen text read only up to {cut_at:.0f} s (OCR budget reached)"
         if samples:

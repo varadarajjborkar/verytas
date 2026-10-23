@@ -123,6 +123,24 @@ def test_a_screenshot_on_a_drawn_page_is_reported_once(client, world):
     assert leaks == ["doc:cat:p1:img1:ocr"]
 
 
+def test_drawn_lettering_in_an_unreadable_script_is_said_to_be_unread(client, world, monkeypatch):
+    from verytas.media import ocr
+
+    real = ocr.read
+
+    def with_hindi(img):
+        out = real(img)
+        out.foreign.append(ocr.OcrLine("\u5e02H\u5e02149", 0.9, (0, 0, 50, 20)))
+        return out
+
+    monkeypatch.setattr(ocr, "read", with_hindi)
+    doc = pdf([{"text": ["Spring catalogue", "Courses for every learner"], "outlined": ["Spring sale"]}])
+    _, review = _submit(client, world, body="See the catalogue", channel="linkedin",
+                        attachments={"documents": [{"id": "cat", "data_base64": b64(doc)}]})
+    assert any(f["citations"][0]["label"].startswith("MEDIA-UNREAD") and f["source"] == "doc:cat:p1:drawn"
+               for f in review["findings"])
+
+
 def test_a_drawn_word_among_layer_words_is_caught_and_ocr_slips_are_not():
     from verytas.prism.agents import _drawn_only
 
@@ -458,6 +476,21 @@ def test_glyphs_from_a_script_ocr_cannot_read_are_set_aside_not_checked(monkeypa
     assert result.text == "Diwali sale" and [ln.text for ln in result.foreign] == ["市H市149"]
 
 
+def test_one_stray_glyph_is_dropped_and_the_line_still_checked(monkeypatch):
+    # A dash or a box can come back as a single CJK glyph; the contact number beside it must still be read.
+    from types import SimpleNamespace
+
+    from PIL import Image
+
+    from verytas.media import ocr
+
+    out = SimpleNamespace(txts=["Guaranteed 100% returns, call 9876543210 \u4e00"], scores=[0.95],
+                          boxes=[[[0, 0], [300, 0], [300, 20], [0, 20]]], word_results=None)
+    monkeypatch.setattr(ocr, "_get_engine", lambda: (lambda *a, **k: out))
+    result = ocr.read(Image.new("RGB", (400, 40), "white"))
+    assert result.text == "Guaranteed 100% returns, call 9876543210" and not result.foreign
+
+
 def test_speech_vocabulary_has_the_brands_public_names_and_never_a_confidential_term():
     from types import SimpleNamespace
 
@@ -473,6 +506,18 @@ def test_speech_vocabulary_has_the_brands_public_names_and_never_a_confidential_
               SimpleNamespace(official=False, restricted=False, wordmark="SkillSprint")]
     said = _vocabulary(ctx, assets)
     assert said == "Kitepath, KiteLearn, live class"
+    # A public name inside a confidential term primes it too, and a long list ends on a whole name.
+    rules.append(SimpleNamespace(pattern={"type": "casing", "terms": ["Falcon", *(f"Name{i:03d}" for i in range(80))]}))
+    said = _vocabulary(ctx, assets)
+    assert "Falcon" not in said and len(said) <= 400 and said.split(", ")[-1].startswith("Name")
+    assert len(said.split(", ")[-1]) == 7
+
+
+def test_the_better_speech_model_gets_less_audio_on_fewer_cores():
+    from verytas.prism.orchestrator import _small_model_seconds
+
+    assert _small_model_seconds(180, 180, cores=2) < 60 < _small_model_seconds(180, 180, cores=8) <= 180
+    assert _small_model_seconds(0, 180, cores=8) == 0
 
 
 def test_long_audio_uses_the_lighter_speech_model():
@@ -484,3 +529,13 @@ def test_long_audio_uses_the_lighter_speech_model():
     run.asr_model, run.asr_long_model, run.asr_long_seconds = "small", "base", 180
     assert run.asr_for(np.zeros(16_000 * 60)) == "small"
     assert run.asr_for(np.zeros(16_000 * 600)) == "base"
+
+
+def test_ocr_puts_back_brand_names_whose_i_and_l_strokes_were_swapped():
+    from verytas.media.ocr import restore_names
+
+    text, n = restore_names("Proud to be #Madelnlndia with lnkloom, by INKLOOM", ["MadeInIndia", "Inkloom", "AI"])
+    assert text == "Proud to be #MadeInIndia with Inkloom, by INKLOOM" and n == 2
+    # Case and spelling are the casing check's to judge, and a name inside a longer word is not the name.
+    for kept in ("#madeinindia", "Madelnlndias", "Inkl00m", "Al Jazeera"):
+        assert restore_names(kept, ["MadeInIndia", "Inkloom", "AI"]) == (kept, 0)

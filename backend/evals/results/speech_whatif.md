@@ -66,3 +66,22 @@ Critical phrases heard by kind (production, what-if):
 | price | 100.0% | 100.0% | 100.0% | 87.5% |
 | url | 12.5% | 50.0% | 0.0% | 75.0% |
 
+## brand_hotwords
+
+| Group | Model | Clips | WER production | WER what-if | Critical production | Critical what-if | Devanagari / Arabic / Latin what-if |
+|---|---|---|---|---|---|---|---|
+| English, Indian voices | small | 30 | 9.6% | 5.3% | 68.8% (53/77) | 93.5% (72/77) | 0% / 0% / 100% |
+| English, US and UK voices | small | 24 | 10.3% | 4.9% | 74.5% (38/51) | 86.3% (44/51) | 0% / 0% / 100% |
+
+Critical phrases heard by kind (production, what-if):
+
+| Kind | base | base what-if | small | small what-if |
+|---|---|---|---|---|
+| brand | - | - | 44.0% | 92.0% |
+| date | - | - | 90.0% | 80.0% |
+| number | - | - | 100.0% | 100.0% |
+| percent | - | - | 100.0% | 100.0% |
+| phone | - | - | 100.0% | 92.9% |
+| price | - | - | 100.0% | 87.5% |
+| url | - | - | 0.0% | 75.0% |
+

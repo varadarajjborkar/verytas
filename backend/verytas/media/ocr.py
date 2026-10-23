@@ -80,9 +80,13 @@ def read(img: Image.Image) -> OcrResult:
         line = OcrLine(text.strip(), float(score), _bbox(box, scale),
                        [(w, _bbox(b, scale)) for w, _, b in (words_per_line[i] if i < len(words_per_line) else ())
                         if w.strip()])
-        if _FOREIGN.search(text):
+        if _foreign(text):
             foreign.append(line)
         else:
+            if _FOREIGN.search(line.text):
+                # One stray glyph is the engine's reading of a dash or a box, not a script it can't read:
+                # setting the line aside would hide "call 98765 43210" from every check.
+                line.text = re.sub(r"\s+", " ", _FOREIGN.sub(" ", line.text)).strip()
             (lines if _meaningful(text, float(score)) else noise).append(line)
     return OcrResult(_reading_order(lines), noise=noise, foreign=foreign)
 
@@ -119,6 +123,39 @@ def _bbox(points, scale: float) -> tuple[int, int, int, int]:
 # Chinese, Japanese and Korean characters. Brands here don't write in them; the engine produces them when
 # it meets a script it has no model for.
 _FOREIGN = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]")
+
+
+# Glyphs the recogniser trades for one another in sans-serif type, where capital I and lowercase l are
+# the same stroke: "#MadeInIndia" comes back as "#Madelnlndia" (evals/ocr, every time it appeared).
+_LOOKALIKE = "Il1|"
+
+
+def restore_names(text: str, names: list[str]) -> tuple[str, int]:
+    """Put the brand's own names back where OCR read one of their I or l strokes as the other.
+
+    Only those strokes are forgiven: case and every other letter must already match, so a name written
+    in the wrong case or misspelt is left for the casing and terminology checks to find.
+    """
+    count = 0
+    # Short names are skipped: "AI" would turn the name Al into it.
+    wanted = {n for n in names if len(n) >= 4 and any(ch in _LOOKALIKE for ch in n)}
+    for name in sorted(wanted, key=len, reverse=True):
+        body = "".join(f"[{re.escape(_LOOKALIKE)}]" if ch in _LOOKALIKE else re.escape(ch) for ch in name)
+        pattern = re.compile(rf"(?<![^\W_]){body}(?![^\W_])")
+
+        def put(m: re.Match, name: str = name) -> str:
+            nonlocal count
+            count += m.group(0) != name
+            return name
+
+        text = pattern.sub(put, text)
+    return text, count
+
+
+def _foreign(text: str) -> bool:
+    """Read from a script the engine has no model for: two or more such glyphs, or a quarter of the line."""
+    n = len(_FOREIGN.findall(text))
+    return n >= 2 or (n == 1 and n / max(1, len(text.replace(" ", ""))) >= 0.25)
 
 
 def _meaningful(text: str, score: float) -> bool:
