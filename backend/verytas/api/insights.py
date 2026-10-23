@@ -166,6 +166,7 @@ def _health(rule: Rule, findings: list[Finding]) -> dict:
         advice.append("add a good and a bad example: several rejections say the guideline is unclear")
     return {
         "rule_id": rule.id, "code": rule.code, "title": rule.title, "severity": rule.severity.value,
+        "kind": rule.kind.value,
         "findings": len(findings), "decisions": acted, "accepted": accepted, "rejected": rejected,
         "override_rate": round(override_rate, 3), "unclear_share": round(unclear_share, 3),
         "reviewer_disagreement": round(disagreement, 3), "agreement_posterior": posterior,

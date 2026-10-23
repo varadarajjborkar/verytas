@@ -18,6 +18,7 @@ Bounds:
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
@@ -84,12 +85,18 @@ class ClarifyTask:
         return "\n".join(lines)
 
     def heuristic(self) -> Draft:
-        reasons = [why for _, why in self.cases.cleared + self.cases.unclear if why]
-        text = self.rule.text + (f" Not a breach: {reasons[0].rstrip('.')}." if reasons else "")
-        return Draft(text=text, bad_example=_first_sentence(self.cases.upheld[0]) if self.cases.upheld else "",
-                     good_example=_first_sentence(self.cases.cleared[0][0]) if self.cases.cleared else "",
-                     changes="Adds the most recent reason reviewers gave for dismissing a finding, and one case "
-                             "from each side as examples." if reasons else "Adds one case from each side as examples.")
+        """Offline, the wording is left alone: turning one reviewer's reason into a rule is a person's call.
+        It adds one real case from each side and lists the reasons reviewers gave, for the admin to use."""
+        cleared = [why for _, why in self.cases.cleared if why]
+        unclear = [why for _, why in self.cases.unclear if why]
+        notes = ["Wording unchanged (no model was available to redraft it); one case from each side added."]
+        if cleared:
+            notes.append("Dismissed because: " + "; ".join(dict.fromkeys(cleared[:3])) + ".")
+        if unclear:
+            notes.append("Called unclear because: " + "; ".join(dict.fromkeys(unclear[:3])) + ".")
+        upheld, cleared_q = self.cases.upheld, [q for q, _ in self.cases.cleared]
+        return Draft(text=self.rule.text, bad_example=_first_sentence(upheld[0]) if upheld else "",
+                     good_example=_first_sentence(cleared_q[0]) if cleared_q else "", changes=" ".join(notes))
 
 
 def _attr(text: str | None) -> str:
@@ -101,6 +108,11 @@ def _esc(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;")
 
 
+def plain(text: str) -> str:
+    """The model's reply with the prompt's escapes undone, so "Q&A" is not applied as "Q&amp;A"."""
+    return text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+
+
 def _first_sentence(quote: str) -> str:
     return _SENTENCE.split(quote.strip(), maxsplit=1)[0][:200]
 
@@ -110,15 +122,20 @@ def _norm(text: str) -> str:
 
 
 def grounded(example: str, quotes: list[str]) -> str:
-    """The example when it is real text from one of `quotes`; otherwise the first sentence of the newest."""
-    e = example.strip().strip('"').strip()
-    if len(e) >= _MIN_EXAMPLE and any(_norm(e) in _norm(q) for q in quotes):
-        return e
+    """The words of a real case that the example names, as the case has them (case, spacing, whole words);
+    the first sentence of the newest case when the example is not in any of them."""
+    words = plain(example).strip().strip('"\u201c\u201d').split()
+    if len(" ".join(words)) >= _MIN_EXAMPLE:
+        pattern = re.compile(r"(?<!\w)" + r"\s+".join(map(re.escape, words)) + r"(?!\w)", re.IGNORECASE)
+        for q in quotes:
+            if m := pattern.search(q):
+                return m.group(0)
     return _first_sentence(quotes[0]) if quotes else ""
 
 
-async def cases(session: AsyncSession, rule: Rule) -> Cases:
-    """Decided findings on every version of the rule, newest first, from content at or below its tier."""
+async def cases(session: AsyncSession, rule: Rule, mask: Callable[[str], str]) -> Cases:
+    """Decided findings on every version of the rule, newest first, from content at or below its tier,
+    confidential terms and personal data masked in quotes and reasons alike."""
     last = select(func.max(Decision.id)).group_by(Decision.finding_id).scalar_subquery()
     rows = (await session.execute(
         select(Finding.quote, Decision.action, Decision.reason_code, Decision.reason_text)
@@ -129,11 +146,12 @@ async def cases(session: AsyncSession, rule: Rule) -> Cases:
                Content.workspace_id == rule.workspace_id,
                Content.tier.in_([t for t in Tier if t.rank <= rule.tier.rank]),
                Decision.id.in_(last), Finding.quote.is_not(None))
-        .order_by(Decision.created_at.desc()).limit(PER_SIDE * 6))).all()
+        .order_by(Decision.created_at.desc(), Decision.id.desc()).limit(PER_SIDE * 6))).all()
     out = Cases()
     seen: set[str] = set()
     for quote, action, reason, why in rows:
-        q = quote.strip()[:_CHARS]
+        q = mask(quote.strip())[:_CHARS]
+        why = mask(why) if why else why
         if not q or _norm(q) in seen:
             continue
         seen.add(_norm(q))
@@ -146,14 +164,20 @@ async def cases(session: AsyncSession, rule: Rule) -> Cases:
     return out
 
 
-def proposal(rule: Rule, found: Cases, draft: Draft) -> dict:
-    """The draft as the edit the admin would apply: new wording, the grounded examples first."""
+MAX_TEXT = 2000
+
+
+def proposal(current: dict, found: Cases, draft: Draft) -> dict:
+    """The draft as the edit the admin would apply: new wording, the grounded examples first. A wording
+    that comes back empty or overlong is not cut to fit; the current one stays."""
     bad = grounded(draft.bad_example, found.upheld)
     good = grounded(draft.good_example, [q for q, _ in found.cleared])
 
     def merged(new: str, old: list[str]) -> list[str]:
         return list(dict.fromkeys([e for e in (new, *old) if e]))[:5]
 
-    text = " ".join(draft.text.split())[:1000] or rule.text
-    return {"text": text, "bad_examples": merged(bad, rule.bad_examples or []),
-            "good_examples": merged(good, rule.good_examples or [])}
+    text = " ".join(plain(draft.text).split())
+    if not text or len(text) > MAX_TEXT:
+        text = current["text"]
+    return {"text": text, "bad_examples": merged(bad, current["bad_examples"]),
+            "good_examples": merged(good, current["good_examples"])}

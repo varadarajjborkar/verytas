@@ -39,6 +39,7 @@ export type RuleHealth = {
   code: string;
   title: string;
   severity: "must" | "should" | "may";
+  kind?: "semantic" | "deterministic";
   findings: number;
   decisions: number;
   accepted: number;

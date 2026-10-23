@@ -67,7 +67,9 @@ export function GuidelineHealthView({ health, canEdit = false }: { health: RuleH
                   {h.advice[0][0].toUpperCase() + h.advice[0].slice(1)}
                 </p>
               )}
-              {canEdit && h.advice.some((a) => a.startsWith("clarify") || a.startsWith("add a good")) && (
+              {/* Only where a draft can work: a model-judged rule (word lists are edited directly) with cases. */}
+              {canEdit && h.kind === "semantic" && h.decisions >= 2
+                && h.advice.some((a) => a.startsWith("clarify") || a.startsWith("add a good")) && (
                 <ClarifyRule ruleId={h.rule_id} code={h.code} />
               )}
             </li>

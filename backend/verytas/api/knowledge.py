@@ -132,13 +132,22 @@ async def clarify_rule(rule_id: int, session: Session, admin: Admin, prism: Pris
     # Health reports may name an older version; the draft is always of the wording in force, so it applies.
     rule = await session.scalar(select(Rule).where(Rule.workspace_id == rule.workspace_id, Rule.code == rule.code)
                                 .order_by(Rule.version.desc()).limit(1))
+    if not can_read(admin, rule.tier):  # the wording in force may sit above the version that was asked for
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "rule not found")
     if rule.kind.value != "semantic":
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
                             "only model-judged rules read their wording; edit a word list directly")
-    found = await clarify.cases(session, rule)
+    redactor = await workspace_redactor(session, admin.workspace_id)
+    # Masked for good, not just for the trip: the examples are stored on the rule and shown wherever it is.
+    found = await clarify.cases(session, rule, redactor.mask)
     if found.decided < 2:
         raise HTTPException(status.HTTP_409_CONFLICT, "too few decided findings on this rule to learn from yet")
-    _, llm, _, _ = prism.guarded_providers(await workspace_redactor(session, admin.workspace_id))
+    current = {"text": rule.text, "good_examples": list(rule.good_examples or []),
+               "bad_examples": list(rule.bad_examples or [])}
+    rule_id, code, version = rule.id, rule.code, rule.version
+    # No transaction across the model call: on SQLite every transaction holds the write lock.
+    await session.commit()
+    _, llm, _, _ = prism.guarded_providers(redactor)
     task = clarify.ClarifyTask(rule, found)
     model = llm.name
     try:
@@ -146,13 +155,12 @@ async def clarify_rule(rule_id: int, session: Session, admin: Admin, prism: Pris
     except Exception:  # noqa: BLE001, a model failure falls back to the plain draft, named as such
         draft, model = task.heuristic(), "offline-heuristic"
     await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}",
-                 action="rule.clarification_drafted", object_type="rule", object_id=rule.id,
-                 detail={"code": rule.code, "version": rule.version, "model": model, "cases": found.decided})
+                 action="rule.clarification_drafted", object_type="rule", object_id=rule_id,
+                 detail={"code": code, "version": version, "model": model, "cases": found.decided})
     await session.commit()
     return ClarifyOut(
-        rule_id=rule.id, code=rule.code, version=rule.version,
-        current={"text": rule.text, "good_examples": rule.good_examples or [], "bad_examples": rule.bad_examples or []},
-        proposed=clarify.proposal(rule, found, draft), changes=draft.changes.strip()[:500],
+        rule_id=rule_id, code=code, version=version, current=current,
+        proposed=clarify.proposal(current, found, draft), changes=clarify.plain(draft.changes).strip()[:500],
         cases={"upheld": len(found.upheld), "cleared": len(found.cleared), "unclear": len(found.unclear)},
         model=model)
 
@@ -201,7 +209,10 @@ async def extract_rules(body: ExtractIn, session: Session, admin: Admin, prism: 
         text = text[:MAX_BOOK_CHARS]
 
     # Brand books mention codenames; they are redacted on the way out like any other model call.
-    _, llm, _, _ = prism.guarded_providers(await workspace_redactor(session, admin.workspace_id))
+    redactor = await workspace_redactor(session, admin.workspace_id)
+    taken = set((await session.scalars(select(Rule.code).where(Rule.workspace_id == admin.workspace_id))).all())
+    await session.commit()  # no transaction across the model call: on SQLite it holds the write lock
+    _, llm, _, _ = prism.guarded_providers(redactor)
     model = llm.name
     try:
         found = await llm.run(rulebook.RuleExtractTask(text))
@@ -210,7 +221,6 @@ async def extract_rules(body: ExtractIn, session: Session, admin: Admin, prism: 
         notes.append("The model was unavailable, so a simpler offline reading was used.")
         # Name what actually read it, so nobody credits the model with the heuristic's work.
         model = "offline-heuristic"
-    taken = set((await session.scalars(select(Rule.code).where(Rule.workspace_id == admin.workspace_id))).all())
     rules, skipped = rulebook.to_rules(found.rules, taken, body.source_ref)
     return ExtractOut(rules=rules, notes=notes + skipped, model=model)
 
