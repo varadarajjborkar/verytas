@@ -428,3 +428,17 @@ export type CreatorTrack = {
   categories: Record<string, number>;
   points: TrackPoint[];
 };
+
+/** Prism Intake: a drop of company material, what was understood, and what it would add. */
+export type IntakeItemIn = { name?: string; blob_id?: string; url?: string; text?: string; context?: string };
+export type IntakeBatch = { id: number; note: string | null; tier: string; status: "queued" | "running" | "done" | "failed";
+  summary: { items?: Record<string, number>; drafts?: Record<string, number>; flagged?: number }; created_at: string; finished_at: string | null };
+export type IntakeItem = { id: number; name: string; media_type: string | null; source_url: string | null; context: string | null;
+  status: "queued" | "reading" | "understood" | "needs_context" | "failed"; kind: string | null; purpose: string | null;
+  confidence: number | null; questions: string[]; issues: { kind: string; detail: string }[]; model: string | null; error: string | null;
+  refreshed_at: string | null; reading: { kind?: string; tables?: { name: string; header: string[]; rows: string[][]; total_rows: number }[];
+    pictures?: { what: string; description: string }[]; notes?: string[]; images?: number; pages?: number } };
+export type IntakeDraft = { id: number; item_id: number; target: "rule" | "fact" | "term" | "asset"; payload: Record<string, unknown>;
+  provenance: { source?: string; cell?: string; where?: string; quote?: string; picture?: number }; confidence: number;
+  issues: { kind: string; detail: string }[]; status: "pending" | "approved" | "rejected"; created_object: string | null };
+export type IntakeBatchDetail = IntakeBatch & { items: IntakeItem[]; drafts: IntakeDraft[] };

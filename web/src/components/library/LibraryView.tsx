@@ -12,7 +12,7 @@ import { AssetsTab } from "./AssetsTab";
 import { ContactsTab } from "./ContactsTab";
 import { EventsTab } from "./EventsTab";
 import { FactsTab } from "./FactsTab";
-import { ImportTab } from "./ImportTab";
+import { IntakeTab } from "./IntakeTab";
 import { ListSkeleton, ReadOnlyNote, today } from "./parts";
 import { RulesTab } from "./RulesTab";
 import { TermsTab } from "./TermsTab";
@@ -72,7 +72,7 @@ export function LibraryView() {
     ...(data.terms ? [{ k: "terms" as const, label: "Confidential terms", count: data.terms.filter((t) => !t.embargo_until || t.embargo_until > on).length,
       hint: "guarded" }] : []),
     { k: "assets", label: "Artwork", count: data.assets.filter((a) => a.active).length, hint: "official" },
-    ...(admin ? [{ k: "import" as const, label: "Import", count: null, hint: "from a brand book" }] : []),
+    ...(admin ? [{ k: "import" as const, label: "Intake", count: null, hint: "hand over brand books, sheets, decks, charts, links" }] : []),
   ];
   const go = (k: Tab, state?: string) => {
     const q = new URLSearchParams();
@@ -106,7 +106,7 @@ export function LibraryView() {
         {tab === "facts" && <FactsTab facts={data.facts} editable={admin} onChanged={load} />}
         {tab === "terms" && data.terms && <TermsTab terms={data.terms} onChanged={load} />}
         {tab === "assets" && <AssetsTab assets={data.assets} editable={admin} onChanged={load} />}
-        {tab === "import" && admin && <ImportTab onAdded={(done) => { load(); if (done) go("rules", "draft"); }} />}
+        {tab === "import" && admin && <IntakeTab onAdded={load} />}
       </div>
     </div>
   );

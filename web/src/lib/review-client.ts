@@ -3,6 +3,7 @@
 
 import type {
   BrandAsset, BrandEvent, ContentDetail, CreatorRow, CreatorTrack, EscalationRequest, EventImpact, PublicContact, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
+  IntakeBatch, IntakeBatchDetail, IntakeDraft, IntakeItem, IntakeItemIn,
   Review, Rule, RuleClarification, RuleDraft, Term, Timeline, UploadedMedia,
 } from "./types";
 
@@ -44,6 +45,23 @@ export function upload(file: File): Promise<UploadedMedia> {
 }
 
 export const precheck = (body: unknown) => api<Precheck>("contents/precheck", json(body));
+
+// Prism Intake: hand over material, answer what it asks, approve what reads right.
+export async function intakeUpload(file: File): Promise<{ id: string; name: string | null; media_type: string; bytes: number }> {
+  const form = new FormData();
+  form.append("file", file);
+  return api("intake/files", { method: "POST", body: form });
+}
+export const startIntake = (body: { note?: string; tier?: string; items: IntakeItemIn[] }) =>
+  api<{ id: number; status: string }>("intake", json(body));
+export const listIntake = () => api<IntakeBatch[]>("intake");
+export const getIntake = (id: number) => api<IntakeBatchDetail>(`intake/${id}`);
+export const answerIntake = (itemId: number, context: string) => api<IntakeItem>(`intake/items/${itemId}/answer`, json({ context }));
+export const refreshIntake = (itemId: number) => api<IntakeItem>(`intake/items/${itemId}/refresh`, json({}));
+export const decideDraft = (id: number, action: "approve" | "reject", payload?: Record<string, unknown>) =>
+  api<IntakeDraft>(`intake/drafts/${id}`, json({ action, payload }));
+export const decideDrafts = (batchId: number, ids: number[], action: "approve" | "reject" = "approve") =>
+  api<{ done: number[]; skipped: number[]; pending: number }>(`intake/${batchId}/decide`, json({ ids, action }));
 
 type SubmitOut = { content: { id: number }; version: { id: number; version_no: number; body: string }; review_id: number };
 export const submit = (body: unknown) => api<SubmitOut>("contents", json(body));
