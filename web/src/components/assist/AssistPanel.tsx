@@ -2,7 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { type AssistKind, type Brief, NEXT_LABEL, plainText, readable } from "@/lib/assist";
+import { type AssistKind, type Brief, NEXT_LABEL, plainText, readable, splitFollowUps } from "@/lib/assist";
 import { readStream } from "@/lib/sse";
 import { useModalFocus } from "../Drawer";
 import { ArrowUpIcon, CloseIcon, RefreshIcon, SparkIcon } from "../Icons";
@@ -11,8 +11,6 @@ import { RuleCode } from "../ui";
 type Phase = "loading" | "ready" | "error";
 type Turn = { role: "user" | "assistant"; content: string; failed?: boolean };
 
-const STARTERS = ["Why was this flagged?", "What did the creator say?", "What changed since the last round?", "Is the legal concern real?"];
-const STARTERS_ESCALATION = ["Is the creator right?", "Why was this flagged?", "What would you check first?", "What changed since the last round?"];
 
 async function post(body: Record<string, unknown>, signal: AbortSignal): Promise<Response> {
   return fetch("/api/assist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
@@ -106,7 +104,13 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
     }
   }
 
-  const starters = kind === "escalation" ? STARTERS_ESCALATION : STARTERS;
+  // One place for "what to ask next": first the brief's questions about this item, then whatever the latest
+  // answer suggests, never one already asked. Written by the model from the item's own data, in the same call.
+  const asked = new Set(turns.filter((t) => t.role === "user").map((t) => t.content.trim().toLowerCase()));
+  const latest = [...turns].reverse().find((t) => t.role === "assistant" && !t.failed && t.content);
+  const fromAnswer = latest && !sending ? splitFollowUps(latest.content).followUps : [];
+  const suggestions = (fromAnswer.length ? fromAnswer : brief?.follow_ups ?? [])
+    .filter((q) => !asked.has(q.trim().toLowerCase())).slice(0, 3);
 
   return createPortal(
     <div data-vt-modal className="fixed inset-0 z-50">
@@ -143,24 +147,30 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
 
           <section aria-label="Ask about this item" className="mt-6 border-t border-line pt-5">
             <h3 className="text-[11px] font-medium uppercase tracking-wide text-subtle">Ask about this item</h3>
-            {turns.length === 0 ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {starters.map((s) => (
-                  <button key={s} type="button" disabled={sending || phase === "loading"} onClick={() => void send(s)}
-                    className="rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-muted transition hover:border-line-strong hover:text-ink disabled:opacity-50">
-                    {s}
-                  </button>
-                ))}
-              </div>
-            ) : (
+            {turns.length > 0 && (
               <ul className="mt-3 flex flex-col gap-3" aria-live="polite">
                 {turns.map((t, i) => (
                   <li key={i} className={t.role === "user" ? "ml-8 self-end rounded-xl bg-sunken px-3 py-2 text-[13px] leading-5"
                     : `text-[13px] leading-6 ${t.failed ? "text-[var(--vt-blocker)]" : ""}`}>
-                    {t.role === "assistant" && !t.content ? <Thinking /> : <Prose text={t.role === "assistant" ? plainText(t.content) : t.content} />}
+                    {t.role === "assistant" && !t.content ? <Thinking />
+                      : <Prose text={t.role === "assistant" ? plainText(splitFollowUps(t.content).body) : t.content} />}
                   </li>
                 ))}
               </ul>
+            )}
+            {phase === "loading" ? (
+              <div aria-hidden className="mt-3 flex animate-pulse flex-wrap gap-2">
+                {[44, 36, 52].map((w) => <span key={w} className="h-7 rounded-full bg-sunken" style={{ width: `${w}%` }} />)}
+              </div>
+            ) : suggestions.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2" aria-label="Suggested questions">
+                {suggestions.map((s) => (
+                  <button key={s} type="button" disabled={sending} onClick={() => void send(s)}
+                    className="rounded-full border border-line bg-surface px-3 py-1.5 text-left text-xs text-muted transition hover:border-line-strong hover:text-ink disabled:opacity-50">
+                    {s}
+                  </button>
+                ))}
+              </div>
             )}
           </section>
         </div>
@@ -273,10 +283,10 @@ function BriefView({ brief }: { brief: Brief }) {
         </Section>
       )}
 
-      {brief.questions_to_ask.length > 0 && (
-        <Section label="Worth asking">
+      {brief.ask_creator.length > 0 && (
+        <Section label="Ask the creator for">
           <ul className="flex list-disc flex-col gap-1 pl-4 text-[13px] leading-5">
-            {brief.questions_to_ask.map((q, i) => <li key={i}>{readable(q)}</li>)}
+            {brief.ask_creator.map((q, i) => <li key={i}>{readable(q)}</li>)}
           </ul>
         </Section>
       )}

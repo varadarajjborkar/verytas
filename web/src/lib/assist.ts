@@ -18,7 +18,10 @@ export type Brief = {
   creator_side: string;
   history: string[];
   suggested_next_step: { action: NextAction | null; reason: string };
-  questions_to_ask: string[];
+  /** What to ask the creator for: requests, not questions for Verytas. */
+  ask_creator: string[];
+  /** What the manager could ask Verytas next about this item, written from its data. */
+  follow_ups: string[];
   risk_if_published: string;
 };
 
@@ -70,7 +73,8 @@ export function normalizeBrief(raw: unknown): Brief | null {
     creator_side: str(r.creator_side, 1200),
     history: texts(r.history, 10),
     suggested_next_step: { action: actionOf(stepObj.action), reason: str(stepObj.reason ?? stepObj.why, 600) },
-    questions_to_ask: texts(r.questions_to_ask, 8),
+    ask_creator: texts(r.ask_creator ?? r.questions_to_ask, 3),
+    follow_ups: texts(r.follow_ups, 4).map((q) => q.slice(0, 90)),
     risk_if_published: str(r.risk_if_published, 800),
   };
 }
@@ -85,4 +89,16 @@ export function parseBrief(content: string): Brief | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * A chat answer and the follow-up questions the model put on its last line (">> a | b | c"). The marker
+ * line is never shown: while an answer streams, anything from a line starting with ">>" on is held back.
+ */
+export function splitFollowUps(text: string): { body: string; followUps: string[] } {
+  const at = text.search(/(^|\n)\s*>>/);
+  if (at < 0) return { body: text, followUps: [] };
+  const tail = text.slice(at).replace(/^\s*>>\s*/, "");
+  const followUps = tail.split("|").map((q) => q.replace(/\s+/g, " ").trim()).filter((q) => q.length > 3 && q.length <= 120).slice(0, 3);
+  return { body: text.slice(0, at).trimEnd(), followUps };
 }

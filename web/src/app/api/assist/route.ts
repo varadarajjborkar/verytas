@@ -62,12 +62,15 @@ Reply with ONE JSON object and nothing else (no code fence, no commentary), with
   "creator_side": "what the creator said, disputed or explained (their notes, disputes, escalation message), or an empty string",
   "history": ["one short line per round: what happened and how the score or blockers moved"],
   "suggested_next_step": {"action": "approve | send_back | escalate_to_legal | ask_creator", "reason": "why, in one or two sentences"},
-  "questions_to_ask": ["questions the manager may want answered before deciding"],
+  "ask_creator": ["at most 3 things to ask the creator to change or explain, phrased as a request; empty if none"],
+  "follow_ups": ["exactly 3 questions under 60 characters the manager could ask you next about THIS item"],
   "risk_if_published": "what could go wrong if it goes out as it is, grounded in the findings"
 }
 "blocking" lists only issues that stop approval (blockers and anything unresolved that must be fixed); put
 warnings and advisories in "minor". Skip findings the manager already accepted or dismissed unless the decision
 itself is worth knowing. Keep every string short. "suggested_next_step" is a suggestion for the manager to weigh.
+Each "follow_ups" question names something specific in the data (a rule code, a finding, a round, the creator's
+dispute, a figure), is answerable from the data, and differs from the others; never a generic question.
 `;
 
 const CHAT_PROMPT = `
@@ -77,6 +80,9 @@ said, what changed since an earlier round, or whether a concern is real. Be dire
 paragraphs or a short list at most. Plain text only: no markdown headings, tables or bold. Quote the rule code
 and the flagged passage when explaining a finding. If asked for a recommendation, give one as a suggestion with
 your reasoning and what you are unsure of.
+Then end with one last line that starts with ">> " and lists two or three short follow-up questions (under 60
+characters each) the manager could ask next, separated by " | ". Each must be specific to this item's data,
+follow from what was just discussed, and not repeat a question already asked. Nothing comes after that line.
 `;
 
 const MESSAGES = {
