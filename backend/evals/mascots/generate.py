@@ -147,11 +147,9 @@ def draw(s: Spec) -> Image.Image:
     elif s.mouth == "open":
         d.ellipse((cx - 20, 210, cx + 20, 240), fill=(140, 30, 40))
     if s.stretch != 1.0:
-        w = int(SIZE * s.stretch)
-        img = img.resize((w, SIZE), Image.LANCZOS)
-        canvas = Image.new("RGBA", (max(w, SIZE), SIZE), (0, 0, 0, 0))
-        canvas.paste(img, ((canvas.width - w) // 2, 0))
-        img = canvas.resize((SIZE, SIZE), Image.LANCZOS) if w > SIZE else canvas
+        # Wider, at the same height. (This used to be squeezed back into a square, which undid the
+        # stretch: the "stretched" scenes showed the character in proportion.)
+        img = img.resize((int(SIZE * s.stretch), SIZE), Image.LANCZOS)
     return img
 
 
@@ -225,9 +223,10 @@ def place(character: Image.Image, rnd: random.Random, *, busy: bool, scale: floa
     """The character in a scene; returns the scene and the character's true box."""
     c = character.rotate(angle, resample=Image.BICUBIC, expand=True) if angle else character
     side = int(300 * scale)
-    c = c.resize((side, side), Image.LANCZOS)
+    # The character's height sets its size and its own proportions are kept, so a stretched one stays so.
+    c = c.resize((max(1, round(side * c.width / c.height)), side), Image.LANCZOS)
     bg = _background(rnd, busy)
-    x, y = rnd.randint(30, bg.width - side - 30), rnd.randint(30, bg.height - side - 30)
+    x, y = rnd.randint(30, bg.width - c.width - 30), rnd.randint(30, bg.height - c.height - 30)
     bg.paste(c, (x, y), c)
     ys, xs = np.nonzero(np.asarray(c)[..., 3] > 127)
     box = [int(x + xs.min()), int(y + ys.min()), int(x + xs.max() + 1), int(y + ys.max() + 1)]
