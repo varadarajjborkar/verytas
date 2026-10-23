@@ -395,6 +395,9 @@ def _step(c, h, state, key: str, act: str, args: dict, got: dict, co: Company) -
                            json={"claim": args["claim"], "language": args.get("language")})
                 r.raise_for_status()
                 got["disputes"] += 1
+            else:
+                print(f"seed: {co.brand} {key}: no {args.get('rule')} finding to dispute; skipped", file=sys.stderr,
+                      flush=True)
     return run
 
 

@@ -547,7 +547,8 @@ def _history() -> list[Piece]:
               "Our money skills course covers saving, spending and simple interest.\n\nSide tip: put your "
               "pocket money into crypto now, bitcoin is going to the moon.", 2.6, [(1, "send", {})]),
         _P("n-swipe", 5, "We just teach", "linkedin",
-              "Oh great, another app promising miracles. Yeah right. We just teach, one lesson at a time.", 16,
+              "Oh great, other apps promising miracles again. Yeah right. We actually teach, one lesson at a time.",
+              16,
               _fixed_old(voice, "We just teach, one lesson at a time, with mentors who answer within a day.")),
         _P("n-design", 5, "Design track: week one", "instagram",
               "Week one of the design track: sketch three logos, pick one, and share it for feedback.", 7, _clean()),
@@ -585,8 +586,6 @@ DECISIONS = [
     ("d-money", 2, "MSG-OFF-TOPIC", "approver", "accepted", None, None),
     ("mentor", 2, "CLAIM-UNSUPPORTED", "approver", "rejected", "false_positive",
      "Ananya's group size is on her profile."),
-    ("support", 2, "CLAIM-UNSUPPORTED", "reviewer", "rejected", "not_applicable",
-     "Support hours are a listed public contact, not a promotion."),
     ("rivals", 2, "MSG-RIVALS", "approver", "rejected", "guideline_unclear",
      "\"Some other apps\" names nobody. Is a hint a dig?"),
 ]
@@ -805,6 +804,9 @@ def _stories() -> list[Piece]:
         pk("r-ok", "rohan", "How Ananya planned her revision", "linkedin", "Ananya shares how she planned revision for the 2026 board exams, with her consent. Results are individual and not a promise.", 26, CLEAN),
         pk("r-topped", "studio9", "Results ad draft", "instagram", "Our learner topped the board exams, join now. Guaranteed rank for every batch.", 25, _back("The advisory needs year, count and consent for any result, and we never promise rank."), ),
         pk("a-nine", "studio9", "Learner count banner", "linkedin", "Join 9 lakh learners on Kitepath. Annual plan from 3,999 rupees.", 22, fixed("Both figures are last year's: 1.2 million learners and 4,999 rupees.", "Join 1.2 million learners on Kitepath. The annual plan costs 4,999 rupees.", "legal")),
+        pk("x-offer", "neha", "Weekend offer poster", "instagram", "Weekend offer: flat 40% off the annual plan, this weekend only. Link in bio.", 13.5,
+           fixed("The caption says 40% and the poster 25%. Legal approved 25%: use it in both.", "Weekend offer: flat 25% off the annual plan, this weekend only. Link in bio.", "approver"),
+           images=_img("offer", "Weekend offer poster reading 25% off the annual plan", lambda: _poster("25% OFF", "Annual plan, this weekend", "ok"))),
         pk("o-ack", "rohan", "We know sign-in failed", "x", "We know sign-in failed for some of you this morning. Our team fixed it by the afternoon and your streaks are safe. Sorry, and thank you for waiting.", 15.8, [(0.3, "send", {}), (0.8, "approve", {}), (1.1, "publish", {})], event=None),
         pk("o-joke", "priya", "Servers took a nap", "x", "lol our servers took a nap, brb. bear with us fam!", 15.5, [(0.5, "send", {}), (1.5, "autodecide", {"by": "approver"}), (2, "back", {"note": "No jokes while sign-in is down. Acknowledge it plainly.", "by": "approver"}), (6, "fix", {"body": "Sign-in is failing for some of you. We are working on it and will post here as soon as it is fixed."}), (6.5, "send", {}), (7, "approve", {}), (7.5, "publish", {})]),
         pk("o-promo", "neha", "Weekend offers", "instagram", "Weekend offers are on: pick an annual plan and start learning tonight.", 14.8, [(1, "send", {}), (3, "back", {"note": "Promotions are paused until sign-in is stable. Hold this until the outage ends.", "by": "approver"})]),

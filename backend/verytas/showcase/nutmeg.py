@@ -840,8 +840,6 @@ DECISIONS = [
     ("r-joke", 2, "TONE-SHIFT", "approver", "accepted", None, None),
     ("d-old", 4, "CLAIM-OUTDATED", "regulatory", "accepted", None, None),
     ("r-count", 2, "CLAIM-UNSUPPORTED", "regulatory", "accepted", None, None),
-    ("r-ack", 3, "CLAIM-UNSUPPORTED", "approver", "rejected", "intentional",
-     "The care number is the point of a batch notice, kept on purpose."),
 ]
 
 ADMIN_LOG = [

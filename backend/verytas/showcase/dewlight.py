@@ -662,7 +662,7 @@ def _stories() -> list[Piece]:
            fix_colors=[{"fg": "#163038", "bg": "#FFFFFF", "where": "ingredient list on the carton", "large": False}],
            images=_img("panel", "Even Dew ingredient list on a white card", lambda: _ingredient_panel((168, 207, 195))),
            fix_images=_img("panel", "Even Dew ingredient list on a white card", lambda: _ingredient_panel(INK))),
-        pk("s-hinglish", "sunita", "Dhoop mein sunscreen", "instagram", "Dhoop mein jaane se pehle Dew Shield lagao. SPF 40 aur PA+++ ke saath. #SunSmartIndia", 35, CLEAN, event=sm, notes={"language": "Hinglish"}),
+        pk("s-hinglish", "sunita", "Dhoop mein sunscreen", "instagram", "Dhoop mein jaane se pehle Dew Shield sun cream lagao. SPF 40 aur PA+++ ke saath. #SunSmartIndia", 35, CLEAN, event=sm, notes={"language": "Hinglish"}),
         pk("s-hi-chem", "meenal", "Bilkul safe sunscreen", "instagram", "Dew Shield bilkul chemical-free hai, skin ke liye safe. #SunSmartIndia", 34,
            [(1, "send", {}), (2, "dispute", {"rule": "CLAIM-NATURAL", "claim": "In Hinglish 'chemical-free' is how our dermatologist explained 'no harsh sulphates'. It is not a claim that the product has no chemicals.", "language": "Hinglish"}),
             (4, "autodecide", {"by": "ra"}), (9, "back", {"note": "The dispute is not upheld: say 'no harsh sulphates' if that is the fact, not chemical-free.", "by": "approver"}),
@@ -767,10 +767,9 @@ DECISIONS = [
      "Magic here is about sleep, not a product claim. Does the rule mean this?"),
     ("sk-sleep", 5, "TONE-HYPE", "reviewer", "accepted", None, None),
     ("s-glow", 5, "MSG-RIVALS", "approver", "rejected", "false_positive", "The competitor name is caught by MSG-COMPETITOR already."),
-    ("s-hinglish", 5, "TERM-HOUSE", "reviewer", "rejected", "not_applicable", "Hinglish; the house words do not apply."),
+    ("s-hinglish", 5, "TERM-HOUSE", "reviewer", "rejected", "not_applicable", "Hinglish; 'sun cream' is how our audience says it."),
     ("s-reapply", 4, "CLAIM-UNSUPPORTED", "reviewer", "rejected", "false_positive", "General advice about reapplying, not a claim about us."),
     ("cr-ack", 1, "CLAIM-UNSUPPORTED", "reviewer", "rejected", "not_applicable", "Public care number, not a promotion."),
-    ("fs-clean", 3, "TONE-WARM", "reviewer", "rejected", "false_positive", "Warm enough for a sale post."),
 ]
 
 
