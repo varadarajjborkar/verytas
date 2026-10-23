@@ -136,6 +136,8 @@ class RawFinding:
     # Past reviewer decisions on the same rule about similar words (prism/precedent.py), shown with the
     # finding. Context for the reviewer, not part of the verdict, so not signed.
     precedents: list[dict[str, Any]] | None = None
+    # What the public web says about an unsupported claim (prism/research.py): evidence, never a verdict.
+    research: list[dict[str, Any]] | None = None
 
 
 @dataclass

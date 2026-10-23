@@ -102,6 +102,8 @@ export type Finding = {
   precedents?: Precedent[] | null;
   /** How often this workspace's reviewers agreed with findings like this one, by its certainty. */
   calibration?: { agree?: number; n?: number; family?: string; held_back_below?: number } | null;
+  /** What the public web says about an unsupported claim. Evidence for the reviewer, never approved proof. */
+  research?: { title: string; url: string; site: string; snippet: string; supports: number | null }[] | null;
 };
 
 export type Precedent = { finding_id: number; action: "accepted" | "edited" | "rejected"; reason_code: string | null;
@@ -204,6 +206,8 @@ export type Review = {
     second_looks?: SecondLooks | null;
     precedents?: { cases: number; rules: number; attached: number; examples: boolean };
     calibration?: { decisions: Record<string, number>; families: string[]; workspace: boolean; warn_floor: number | null };
+    research?: { provider: string; searched: { query: string; outcome: string; likely_support?: number }[]; skipped: number;
+      note?: string } | null;
   };
   error: string | null;
   findings: Finding[];

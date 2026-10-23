@@ -3,6 +3,7 @@ from __future__ import annotations
 from verytas.config import Settings
 from verytas.providers.base import JudgeProvider, LLMProvider, UsageMeter
 from verytas.providers.offline import OfflineJudge, OfflineLLM
+from verytas.providers.websearch import OllamaWebSearch
 
 
 def build_providers(settings: Settings, meter: UsageMeter) -> tuple[JudgeProvider, LLMProvider, list[str]]:
@@ -85,6 +86,14 @@ def build_vision(settings: Settings, meter: UsageMeter) -> tuple[LLMProvider, li
         vision.name = f"ollama/{settings.ollama_vision_model}"
         return vision, []
     return OfflineLLM(), ["no OLLAMA_API_KEY: images are read by local OCR only, without scene or asset review"]
+
+
+def build_web_search(settings: Settings) -> OllamaWebSearch | None:
+    """Ollama's web search for claim research, or None when offline, keyless or switched off."""
+    if settings.llm_mode == "offline" or settings.research_per_review == 0 or settings.ollama_api_key is None:
+        return None
+    return OllamaWebSearch(settings.ollama_api_key.get_secret_value(), base_url=settings.ollama_base_url,
+                           fallback_key=_fallback(settings))
 
 
 def _fallback(settings: Settings) -> str | None:

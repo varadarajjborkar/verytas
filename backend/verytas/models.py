@@ -313,6 +313,8 @@ class Finding(Base):
     precedents: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     # How often reviewers agreed with findings like this one (prism/calibration.py): {agree, n, family}.
     calibration: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # Web results for an unsupported claim (prism/research.py): shown as not approved, never a verdict.
+    research: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     review: Mapped[Review] = relationship(back_populates="findings")

@@ -58,9 +58,10 @@ from verytas.models import (
     RuleStatus,
     Suggestion,
     Tier,
+    Workspace,
     utcnow,
 )
-from verytas.prism import calibration, fixstyle, precedent
+from verytas.prism import calibration, fixstyle, precedent, research
 from verytas.prism.agents import MEDIA_COVERS, WORKER_COVERS, AgentTree, OfficialAsset, ReviewRun, plan
 from verytas.prism.dedupe import collapse
 from verytas.prism.disputes import is_mechanical, rule_thresholds
@@ -71,7 +72,7 @@ from verytas.prism.onion import onion_agent
 from verytas.prism.people_agent import PeopleContext
 from verytas.prism.second_look import SecondLook
 from verytas.prism.suggest import explain_and_fix
-from verytas.providers import build_providers, build_second_judge, build_vision
+from verytas.providers import build_providers, build_second_judge, build_vision, build_web_search
 from verytas.providers.base import JudgeProvider, LLMProvider, ProviderError, UsageMeter
 from verytas.security.audit import append
 from verytas.security.guard import screen
@@ -155,11 +156,23 @@ class Prism:
         self._judge_breaker = CircuitBreaker()
         self._vision_breaker = CircuitBreaker()
         self._second_breaker = CircuitBreaker()
+        # Claim research: one search client and one daily allowance shared by every review.
+        self._web = build_web_search(settings)
+        self._research_cap = research.DailyCap(settings.research_per_day)
         # One pool of provider slots shared by every review, so a long document
         # (one Jev call per paragraph) or a burst of reviews can't flood a provider.
         self._provider_slots = asyncio.Semaphore(settings.max_concurrent_tasks)
         self._admission = asyncio.Semaphore(settings.max_concurrent_reviews)
         self._background: set[asyncio.Task[None]] = set()
+
+    async def _research(self, raw: list[RawFinding], judge, redactor: Redactor, brand: str | None) -> dict:
+        """Web results for unsupported claims (prism/research.py). Bounded in time; a failure is recorded."""
+        try:
+            return await asyncio.wait_for(
+                research.research(raw, self._web, judge, redactor.mask, brand, self._research_cap,
+                                  self.settings.research_per_review), timeout=self.settings.task_timeout_s)
+        except TimeoutError:
+            return {"provider": self._web.name, "searched": [], "skipped": 0, "note": "timed out"}
 
     def schedule(self, review_id: int) -> None:
         task = asyncio.create_task(self.run(review_id))
@@ -216,6 +229,8 @@ class Prism:
 
         ctx, redactor, assets = await self._context(session, version)
         book = await precedent.load(session, content.workspace_id, content.tier, redactor.mask)
+        workspace = await session.get(Workspace, content.workspace_id)
+        brand = workspace.name if workspace else None
         # Which kind of fix reviewers take per rule, and their own edits (prism/fixstyle.py). Seeded by the
         # version, so a re-run of the same version prefers the same operations.
         style = await fixstyle.load(session, content.workspace_id, content.tier, redactor.mask, seed=version.id)
@@ -320,6 +335,9 @@ class Prism:
         lap("checks")
         raw = run.findings
         with_precedent = book.attach(raw, {s.id: s.text for s in run.sources})
+        # Searched while the fixes are written: it needs only the claims, and adds no wait of its own.
+        researching = (asyncio.create_task(self._research(raw, judge, redactor, brand))
+                       if self._web is not None and content.tier is not Tier.confidential else None)
         _apply_cleared(raw, cleared, {r.code: r.id for r in ctx.rules})
         rule_problems = run.rule_problems
         worker_of = run.worker_of
@@ -344,6 +362,8 @@ class Prism:
                     if f.category == "claims" and f.suggestion and f.suggestion.model:
                         f.suggestion = None
                 suggest_note = f"AI-written claim fixes withheld (could not re-check them): {exc or 'timed out'}"
+
+        research_log = await researching if researching is not None else None
 
         # Coverage must never be claimed when it didn't happen. A category is
         # "checked" only if a rule for it exists, every worker that covers it
@@ -391,7 +411,7 @@ class Prism:
                 explanation=f.explanation, quote=f.quote, span_start=f.span_start, span_end=f.span_end,
                 rule_id=rule.id if rule else None, fact_id=f.fact_id, confidence=round(float(f.confidence), 4),
                 checker=f.checker, model=f.model, signature=signature, source=f.source, locator=f.locator,
-                assessment=f.assessment, precedents=f.precedents,
+                assessment=f.assessment, precedents=f.precedents, research=f.research,
                 calibration=_calibrated(calib, f, id(f) in held_back),
             )
             session.add(row)
@@ -422,6 +442,7 @@ class Prism:
             "learned_thresholds": thresholds,
             "calibration": calib.summary(),
             "fix_style": style.summary(),
+            "research": research_log,
             # Must-rule questions answered by the larger judge too, with both answers.
             "second_looks": run.second_look.summary() if run.second_look else None,
             "precedents": {**book.summary(), "attached": with_precedent, "examples": self.settings.precedent_examples},

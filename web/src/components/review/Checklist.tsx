@@ -148,6 +148,22 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                         </ul>
                       </div>
                     )}
+                    {/* Web results for a claim with no approved fact: something to check, never proof by itself. */}
+                    {(f.research?.length ?? 0) > 0 && (
+                      <div className="border-l-2 border-line-strong pl-3 text-sm">
+                        <p className="text-xs font-medium text-muted">Found on the web (not approved)</p>
+                        <ul className="mt-0.5 flex flex-col gap-1.5">
+                          {f.research!.map((r) => (
+                            <li key={r.url}>
+                              <a href={r.url} target="_blank" rel="noopener noreferrer nofollow" className="font-medium hover:text-accent">{r.title}</a>
+                              <span className="text-xs text-muted"> · {r.site}{r.supports != null && r.supports >= 0.6 ? " · may back the claim" : r.supports != null ? " · doesn't say this" : ""}</span>
+                              <span className="block text-xs text-muted line-clamp-2">{r.snippet}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="mt-1 text-xs text-subtle">Only an approved fact backs a claim. A brand admin can add a source to the fact library.</p>
+                      </div>
+                    )}
                     {/* What reviewers decided before about words like these, so nobody argues the same case twice. */}
                     {(f.precedents?.length ?? 0) > 0 && (
                       <div className="border-l-2 border-line-strong pl-3 text-sm">

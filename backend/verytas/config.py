@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     # Precedent memory (prism/precedent.py): past decisions are always shown with model-judged findings;
     # giving the nearest ones to the semantic judge as examples waits on a live measurement.
     precedent_examples: bool = False
+    # Claim research (prism/research.py): web searches for claims no approved fact backs. Evidence for the
+    # reviewer only; never for confidential content. 0 turns it off.
+    research_per_review: int = Field(default=3, ge=0, le=10)
+    research_per_day: int = Field(default=300, ge=0)
 
     # Image understanding. gemma4:31b is the free-plan vision model on Ollama
     # Cloud (verified 2026-10-20: exact transcription of a test image in ~1 s).

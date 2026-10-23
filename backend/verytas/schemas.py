@@ -381,6 +381,7 @@ class FindingOut(ORM):
     assessment: dict[str, Any] | None = None
     precedents: list[dict[str, Any]] | None = None
     calibration: dict[str, Any] | None = None
+    research: list[dict[str, Any]] | None = None
     citations: list[CitationOut] = []
     suggestions: list[SuggestionOut] = []
     decisions: list[DecisionOut] = []
