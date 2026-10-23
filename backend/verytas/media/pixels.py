@@ -34,7 +34,7 @@ def redact(img: Image.Image, ocr: OcrResult, patterns: list[re.Pattern[str]]) ->
         return img, 0
     boxes: list[Box] = []
     hidden = 0
-    lines = [*ocr.lines, *ocr.noise]
+    lines = [*ocr.lines, *ocr.noise, *ocr.foreign]
     for line in lines:
         for pattern in patterns:
             for start, end, _ in find_folded(pattern, line.text):

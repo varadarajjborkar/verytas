@@ -203,7 +203,7 @@ def test_video_captions_and_speech_are_checked_with_timestamps(client, world, mo
     from verytas.media import video
     from verytas.media.video import Cue
 
-    monkeypatch.setattr(video, "transcribe", lambda pcm, model: (
+    monkeypatch.setattr(video, "transcribe", lambda pcm, model, vocabulary=None: (
         [Cue(1.0, 3.5, "honestly this app is a game-changer")], "en", 0.98))
     clip = caption_video([(0, 3, "Project Lumen drops soon"), (3, 6, "Join the waitlist")])
     blob = client.post("/media", headers=_auth(world["creator"]),
@@ -440,3 +440,47 @@ def test_drawn_pages_past_the_cap_are_reported_partly_read(monkeypatch):
     out = documents.extract_pdf(pdf([page, page]))
     assert out.pages[0].graphics_jpeg is not None and out.pages[1].graphics_jpeg is None
     assert out.partial and any("page 2: drawn shapes not read" in n for n in out.notes)
+
+
+def test_glyphs_from_a_script_ocr_cannot_read_are_set_aside_not_checked(monkeypatch):
+    # RapidOCR reads a Hindi price as look-alike Chinese glyphs ("市H市149"); that is not text to check.
+    from types import SimpleNamespace
+
+    from PIL import Image
+
+    from verytas.media import ocr
+
+    out = SimpleNamespace(txts=["Diwali sale", "市H市149"], scores=[0.95, 0.9],
+                          boxes=[[[0, 0], [100, 0], [100, 20], [0, 20]], [[0, 30], [100, 30], [100, 50], [0, 50]]],
+                          word_results=None)
+    monkeypatch.setattr(ocr, "_get_engine", lambda: (lambda *a, **k: out))
+    result = ocr.read(Image.new("RGB", (200, 80), "white"))
+    assert result.text == "Diwali sale" and [ln.text for ln in result.foreign] == ["市H市149"]
+
+
+def test_speech_vocabulary_has_the_brands_public_names_and_never_a_confidential_term():
+    from types import SimpleNamespace
+
+    from verytas.checks.base import TermView
+    from verytas.prism.orchestrator import _vocabulary
+
+    rules = [SimpleNamespace(pattern={"type": "casing", "terms": ["Kitepath", "KiteLearn", "Project Falcon app"]}),
+             SimpleNamespace(pattern={"type": "preferred_terms", "map": {"webinar": "live class"}}),
+             SimpleNamespace(pattern={"type": "banned_terms", "terms": ["guaranteed job"]})]
+    ctx = SimpleNamespace(rules=rules, terms=[TermView(1, "Project Falcon", None)])
+    assets = [SimpleNamespace(official=True, restricted=False, wordmark="Kitepath"),
+              SimpleNamespace(official=True, restricted=True, wordmark="KiteLearn 2.0"),
+              SimpleNamespace(official=False, restricted=False, wordmark="SkillSprint")]
+    said = _vocabulary(ctx, assets)
+    assert said == "Kitepath, KiteLearn, live class"
+
+
+def test_long_audio_uses_the_lighter_speech_model():
+    import numpy as np
+
+    from verytas.prism.agents import ReviewRun
+
+    run = ReviewRun.__new__(ReviewRun)
+    run.asr_model, run.asr_long_model, run.asr_long_seconds = "small", "base", 180
+    assert run.asr_for(np.zeros(16_000 * 60)) == "small"
+    assert run.asr_for(np.zeros(16_000 * 600)) == "base"

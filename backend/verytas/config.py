@@ -59,9 +59,13 @@ class Settings(BaseSettings):
     # agents one submission may spawn in total.
     agent_max_depth: int = Field(default=8, ge=2, le=12)
     agent_max_nodes: int = Field(default=200, ge=10, le=1000)
-    # Local speech-to-text for video (faster-whisper). "base" is multilingual
-    # and about 145 MB; "small" reads Hinglish noticeably better at 3x the cost.
-    asr_model: str = "base"
+    # Local speech-to-text for video (faster-whisper). On evals/speech "small" halves English word error
+    # against "base" (17% to 10%), hears every English phone number and writes Hindi in Devanagari rather
+    # than Urdu script, at about 2.6 times the compute. Audio longer than asr_long_seconds uses
+    # asr_long_model so a long video can't hold a review for many minutes on a small server.
+    asr_model: str = "small"
+    asr_long_model: str = "base"
+    asr_long_seconds: int = Field(default=180, ge=0)
     video_max_seconds: int = Field(default=15 * 60, ge=10, le=3600)
 
     keys_dir: Path = Path(".keys")

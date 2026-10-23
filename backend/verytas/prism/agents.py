@@ -188,7 +188,12 @@ class ReviewRun:
     # add a duty to label, never clear a finding.
     profile: dict[str, Any] = field(default_factory=dict)
     declared_ai: bool = False
-    asr_model: str = "base"
+    asr_model: str = "small"
+    asr_long_model: str = "base"
+    asr_long_seconds: int = 180
+    # The brand's public names for speech recognition (see video.transcribe); never confidential terms,
+    # which a prompted Whisper can echo into silence and so report a leak that never happened.
+    asr_vocabulary: str = ""
     video_max_seconds: int = 900
     media_timeout_s: float = 180.0
     rule_thresholds: dict[str, float] = field(default_factory=dict)
@@ -215,6 +220,10 @@ class ReviewRun:
     # Categories read only in part (sampled, truncated): reported as degraded, with a note.
     partial: set[str] = field(default_factory=set)
     worker_of: dict[int, str] = field(default_factory=dict)
+
+    def asr_for(self, pcm: Any) -> str:
+        """The speech model for this much audio (16 kHz samples): the better one unless it is long."""
+        return self.asr_long_model if len(pcm) / 16_000 > self.asr_long_seconds else self.asr_model
 
     def add(self, node: AgentNode, worker: str, found: list[RawFinding]) -> None:
         for f in found:
@@ -420,6 +429,14 @@ async def ocr_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_id:
     weak = sum(ch.isalnum() for ch in text) >= 8 and confidence < run.ocr_min_confidence
     thin_scan = scanned and len(text) < SCANNED_FALLBACK_CHARS
     node.detail = {"engine": result.engine, "lines": len(result.lines), "confidence": round(confidence, 3)}
+    if result.foreign:
+        # Text in a script local OCR has no model for (Hindi, most likely): the vision model reads it, or
+        # the review says it went unread.
+        node.detail["unreadable_script_lines"] = len(result.foreign)
+        weak = True
+        if not run.allow_cloud_vision:
+            _unreadable(run, node, image_id, locator,
+                        "text in a script local OCR cannot read (likely Devanagari or another Indic script)")
 
     if (weak or thin_scan) and run.allow_cloud_vision:
         encoded, hidden = await run.blocking(_redacted_png, pil, result, run.leak_patterns(), None)
@@ -961,10 +978,11 @@ async def video_agent(run: ReviewRun, node: AgentNode, vid: dict[str, Any]) -> N
         if pcm is None:
             n.note = "no audio"
             return
-        cues, language, prob = await run.blocking(video.transcribe, pcm, run.asr_model)
+        model = run.asr_for(pcm)
+        cues, language, prob = await run.blocking(video.transcribe, pcm, model, run.asr_vocabulary)
         level = video.loudness(pcm)
         n.detail = {"segments": len(cues), "language": language, "language_probability": round(prob, 2),
-                    "loudness_dbfs": level, "model": f"whisper-{run.asr_model} (local)"}
+                    "loudness_dbfs": level, "model": f"whisper-{model} (local)"}
         if not cues:
             signals["music_only"] = bool(level > -45)
             n.note = "no speech: music or ambient sound only" if level > -45 else "silent"
@@ -972,7 +990,7 @@ async def video_agent(run: ReviewRun, node: AgentNode, vid: dict[str, Any]) -> N
         signals["speech"] = True
         text, timeline = video.cue_text(cues)
         conf = sum(c.confidence for c in cues) / len(cues)
-        src = Source(f"{video_id}:speech", "speech", text, f"asr:whisper-{run.asr_model}", conf,
+        src = Source(f"{video_id}:speech", "speech", text, f"asr:whisper-{model}", conf,
                      {**locator, "language": language}, video_id, timeline)
         await run.tree.spawn(n, "text", "What is said", lambda c: text_agent(run, c, src))
 

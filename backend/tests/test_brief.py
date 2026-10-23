@@ -41,7 +41,7 @@ def test_a_voice_note_brief_is_transcribed_and_read_with_the_notes(client, world
     from verytas.media import video
     from verytas.media.video import Cue
 
-    def heard(pcm, model):
+    def heard(pcm, model, vocabulary=None):
         # The voice note is the 1 s tone; the reel's own soundtrack is silent and longer.
         said = "Kit the mascot waves at the start, then I talk about the waitlist" if len(pcm) < 20_000 else ""
         return ([Cue(0.0, 1.0, said)] if said else []), "en", 0.9
@@ -66,7 +66,7 @@ def test_the_sweep_keeps_a_voice_note_a_version_uses(client, world, monkeypatch)
     from verytas.media.storage import reclaim_orphans
     from verytas.models import MediaBlob, utcnow
 
-    monkeypatch.setattr(video, "transcribe", lambda pcm, model: ([], "en", 0.0))
+    monkeypatch.setattr(video, "transcribe", lambda pcm, model, vocabulary=None: ([], "en", 0.0))
     note = client.post("/media", headers=_auth(world["creator"]),
                        files={"file": ("brief.wav", _voice_note(), "audio/wav")}).json()["id"]
     clip = _clip(client, world["creator"])
@@ -99,7 +99,7 @@ def test_a_revision_keeps_its_brief(client, world, monkeypatch):  # noqa: F811
     # errcheck 250: a revision that sent creator_notes without the brief was refused for lacking one.
     from verytas.media import video
 
-    monkeypatch.setattr(video, "transcribe", lambda pcm, model: ([], "en", 0.0))
+    monkeypatch.setattr(video, "transcribe", lambda pcm, model, vocabulary=None: ([], "en", 0.0))
     h = _auth(world["creator"])
     res = client.post("/contents?wait=true", headers=h, json={
         "title": "Reel", "channel": "instagram", "tier": "public", "body": "New reel",

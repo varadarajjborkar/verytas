@@ -7,6 +7,7 @@ cloud vision model is ever asked to look (media/pixels.py).
 
 from __future__ import annotations
 
+import re
 import threading
 from dataclasses import dataclass, field
 
@@ -33,6 +34,11 @@ class OcrResult:
     # Lines dropped as noise. Not checked as text, but still redacted: a term
     # read at low confidence is still a term a cloud model could read better.
     noise: list[OcrLine] = field(default_factory=list)
+    # Lines in a script the engine can't read. Its models know Latin and Chinese, so Devanagari or another
+    # Indic script comes back as look-alike Chinese and Japanese glyphs ("市H市149" for a Hindi price; no
+    # Devanagari at all on evals/ocr). Not checked as text, which would be checking garbage; redacted
+    # like noise; and the review says the image's text went unread instead of passing it.
+    foreign: list[OcrLine] = field(default_factory=list)
 
     @property
     def text(self) -> str:
@@ -69,13 +75,16 @@ def read(img: Image.Image) -> OcrResult:
     if out is None or out.txts is None:
         return OcrResult()
     words_per_line = list(out.word_results or ())
-    lines, noise = [], []
+    lines, noise, foreign = [], [], []
     for i, (text, score, box) in enumerate(zip(out.txts, out.scores, out.boxes, strict=False)):
         line = OcrLine(text.strip(), float(score), _bbox(box, scale),
                        [(w, _bbox(b, scale)) for w, _, b in (words_per_line[i] if i < len(words_per_line) else ())
                         if w.strip()])
-        (lines if _meaningful(text, float(score)) else noise).append(line)
-    return OcrResult(_reading_order(lines), noise=noise)
+        if _FOREIGN.search(text):
+            foreign.append(line)
+        else:
+            (lines if _meaningful(text, float(score)) else noise).append(line)
+    return OcrResult(_reading_order(lines), noise=noise, foreign=foreign)
 
 
 def _reading_order(lines: list[OcrLine]) -> list[OcrLine]:
@@ -105,6 +114,11 @@ def _bbox(points, scale: float) -> tuple[int, int, int, int]:
     x0, y0 = pts.min(axis=0)
     x1, y1 = pts.max(axis=0)
     return int(x0), int(y0), int(x1), int(y1)
+
+
+# Chinese, Japanese and Korean characters. Brands here don't write in them; the engine produces them when
+# it meets a script it has no model for.
+_FOREIGN = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]")
 
 
 def _meaningful(text: str, score: float) -> bool:

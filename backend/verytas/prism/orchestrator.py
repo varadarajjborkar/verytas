@@ -239,7 +239,9 @@ class Prism:
             ocr_min_confidence=self.settings.ocr_min_confidence,
             blobs=blobs, profile=(version.attachments or {}).get("profile") or {},
             declared_ai=bool((version.creator_notes or {}).get("ai_used")),
-            asr_model=self.settings.asr_model, video_max_seconds=self.settings.video_max_seconds,
+            asr_model=self.settings.asr_model, asr_long_model=self.settings.asr_long_model,
+            asr_long_seconds=self.settings.asr_long_seconds, asr_vocabulary=_vocabulary(ctx, assets),
+            video_max_seconds=self.settings.video_max_seconds,
             media_timeout_s=self.settings.media_timeout_s,
             rule_thresholds=thresholds,
         )
@@ -629,6 +631,31 @@ async def _people(session: AsyncSession, content: Content, ctx: CheckContext, se
         avoid=[t.term for t in ctx.terms])
 
 
+VOCABULARY_CHARS = 400  # Whisper reads at most 224 prompt tokens; names past this would be cut anyway
+
+
+def _vocabulary(ctx, assets: list[OfficialAsset]) -> str:
+    """The brand's public names, for speech recognition: product and brand spellings from its rules, and
+    the names and lettering of its current artwork. Confidential terms and restricted artwork stay out."""
+    names: list[str] = []
+    for r in ctx.rules:
+        kind = (r.pattern or {}).get("type")
+        if kind == "casing":
+            names += list(r.pattern.get("terms") or [])
+        elif kind == "preferred_terms":
+            names += list((r.pattern.get("map") or {}).values())
+    for a in assets:
+        if a.official and not a.restricted:
+            names += [a.wordmark] if a.wordmark else []
+    seen, out = set(), []
+    for n in names:
+        n = str(n).strip()
+        if n and n.lower() not in seen and not any(t.term.lower() in n.lower() for t in ctx.terms):
+            seen.add(n.lower())
+            out.append(n)
+    return ", ".join(out)[:VOCABULARY_CHARS]
+
+
 async def _transcribe_brief(run: ReviewRun, audio: bytes) -> str:
     """What the creator said in a voice-note brief, or "" with a note when it can't be read."""
     from verytas.media import video
@@ -637,7 +664,7 @@ async def _transcribe_brief(run: ReviewRun, audio: bytes) -> str:
         pcm = await run.blocking(video.audio_pcm, audio, max_seconds=600)
         if pcm is None:
             return ""
-        cues, _, _ = await run.blocking(video.transcribe, pcm, run.asr_model)
+        cues, _, _ = await run.blocking(video.transcribe, pcm, run.asr_for(pcm), run.asr_vocabulary)
         return " ".join(c.text for c in cues).strip()
 
     try:

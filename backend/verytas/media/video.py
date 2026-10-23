@@ -215,16 +215,21 @@ def audio_pcm(raw: bytes, *, max_seconds: float) -> np.ndarray | None:
     return np.concatenate(chunks)[: int(max_seconds * SAMPLE_RATE)].astype(np.float32)
 
 
-def transcribe(pcm: np.ndarray, model_name: str) -> tuple[list[Cue], str | None, float]:
+def transcribe(pcm: np.ndarray, model_name: str, vocabulary: str | None = None) -> tuple[list[Cue], str | None, float]:
     """Speech cues, detected language and its probability. Local Whisper (faster-whisper,
-    int8 on CPU) with voice-activity detection, so music-only audio yields no cues."""
+    int8 on CPU) with voice-activity detection, so music-only audio yields no cues.
+
+    `vocabulary` is the brand's own names, given to Whisper as the text that came before: it can't know
+    "Zestora" or "LoopSIP" otherwise, and on evals/speech names were heard 32% of the time without it
+    and 90% with it."""
     from faster_whisper import WhisperModel
 
     with _ASR_LOCK:
         model = _asr_models.get(model_name)
         if model is None:
             model = _asr_models[model_name] = WhisperModel(model_name, device="cpu", compute_type="int8")
-        segments, info = model.transcribe(pcm, vad_filter=True, beam_size=1, condition_on_previous_text=False)
+        segments, info = model.transcribe(pcm, vad_filter=True, beam_size=1, condition_on_previous_text=False,
+                                          initial_prompt=vocabulary or None)
         cues = [Cue(round(s.start, 2), round(s.end, 2), s.text.strip(), float(np.exp(s.avg_logprob)))
                 for s in segments if s.text.strip()]
     return cues, info.language, float(info.language_probability)

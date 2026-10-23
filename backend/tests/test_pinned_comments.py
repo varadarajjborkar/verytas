@@ -9,7 +9,7 @@ from tests.test_media import _auth, world  # noqa: F401, the fixture is used by 
 def _piece(client, world, monkeypatch):  # noqa: F811
     from verytas.media import video
 
-    monkeypatch.setattr(video, "transcribe", lambda pcm, model: ([], "en", 0.0))
+    monkeypatch.setattr(video, "transcribe", lambda pcm, model, vocabulary=None: ([], "en", 0.0))
     clip = client.post("/media", headers=_auth(world["creator"]),
                        files={"file": ("reel.mp4", caption_video([(0, 3, "Join the waitlist")]), "video/mp4")}).json()
     res = client.post("/contents?wait=true", headers=_auth(world["creator"]), json={
