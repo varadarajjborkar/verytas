@@ -115,6 +115,9 @@ def run(out_path: Path) -> None:
 def report(path: Path, threshold: float = 0.6, band: float = 0.1) -> str:
     rows = [json.loads(x) for x in path.read_text().splitlines() if x.strip()]
     rows = [r for r in rows if r.get("small") is not None and r.get("large") is not None]
+    if not rows:
+        return ("# Second-look benchmark\n\nNo sentence got an answer from both judges; "
+                "see the errors in the results file.\n")
 
     def policy(r: dict, name: str) -> tuple[bool, float]:
         close = abs(r["small"] - threshold) <= band

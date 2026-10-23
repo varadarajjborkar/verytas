@@ -18,6 +18,7 @@ import base64
 import io
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -180,17 +181,35 @@ def _write(fh, cid: str, kind: str, planted: bool, review: dict, secs: float) ->
     print(f"{cid:24s} planted={planted!s:5s} caught={bool(found)!s:5s} {[f['title'] for f in found]}")
 
 
+# The two figures each planted case contradicts, as digits: a catch has to name both, not merely fire.
+FIGURES = {
+    "p-off-50-30": ("50", "30"), "p-off-40-25": ("40", "25"), "p-off-20-15": ("20", "15"),
+    "p-price-499-999": ("499", "999"), "p-price-1499-1999": ("1499", "1999"), "p-price-rupee": ("2999", "3499"),
+    "p-month-299-399": ("299", "399"), "p-trial-7-14": ("7", "14"), "p-cashback-10-5": ("10", "5"),
+    "p-count-learners": ("50000", "5000"), "v-price": ("999", "499"), "v-off": ("25", "40"),
+    "v-trial": ("7", "14"), "v-flat": ("30", "50"),
+}
+
+
+def _named(row: dict) -> bool:
+    want = FIGURES.get(row["id"])
+    return bool(want) and any(set(want) <= set(re.findall(r"\d+", f["title"].replace(",", "")))
+                              for f in row["findings"])
+
+
 def report(path: Path) -> str:
     rows = [json.loads(x) for x in path.read_text().splitlines() if x.strip()]
     lines = ["# Cross-source benchmark", "",
              "Planted contradictions between the parts of one post, and controls that must stay quiet. Every case "
              "runs through the production review with local OCR and local Whisper.", "",
-             "| Cases | Planted, caught | Controls, false alarms |", "|---|---|---|"]
+             "| Cases | Planted, caught | Caught naming both planted figures | Controls, false alarms |",
+             "|---|---|---|---|"]
     for kind in ("poster", "reel"):
         rs = [r for r in rows if r["kind"] == kind]
         planted = [r for r in rs if r["planted"]]
         controls = [r for r in rs if not r["planted"]]
         lines.append(f"| {kind} ({len(rs)}) | {sum(r['caught'] for r in planted)}/{len(planted)} | "
+                     f"{sum(_named(r) for r in planted)}/{len(planted)} | "
                      f"{sum(r['caught'] for r in controls)}/{len(controls)} |")
     missed = [r for r in rows if r["planted"] and not r["caught"]]
     alarms = [r for r in rows if not r["planted"] and r["caught"]]
