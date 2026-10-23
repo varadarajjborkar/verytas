@@ -114,6 +114,7 @@ DETERMINISTIC: dict[str, type[_Pattern]] = {
     # media intake); listed so admins can retune severity or retire them.
     "brand_assets": NoConfig, "context": NoConfig, "media": NoConfig, "input": NoConfig,
     "captions": NoConfig, "disclosure": NoConfig, "presentation": NoConfig, "emoji_risk": NoConfig,
+    "cross_source": NoConfig,
     "emoji_a11y": EmojiA11y, "banned_emoji": BannedEmoji,
 }
 SEMANTIC: dict[str, type[_Pattern]] = {"voice_score": VoiceScore}

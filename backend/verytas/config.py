@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     ollama_judge_model: str = "gpt-oss:20b"
     # Resamples run in parallel inside one provider slot, so keep the cap small.
     judge_resamples: int = Field(default=2, ge=0, le=4)
+    # Second look (prism/second_look.py): must-rule questions also go to the larger model, whose answer
+    # decides; at most second_look_max calls (one per paragraph) per review. 0 turns it off.
+    second_look_model: str = "gpt-oss:120b"
+    second_look_max: int = Field(default=12, ge=0, le=60)
 
     # Image understanding. gemma4:31b is the free-plan vision model on Ollama
     # Cloud (verified 2026-10-20: exact transcription of a test image in ~1 s).

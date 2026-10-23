@@ -116,6 +116,17 @@ SYSTEM_RULES: list[dict[str, Any]] = [
         "pattern": {"type": "claims"},
     },
     {
+        "code": "CLAIM-MISMATCH",
+        "category": "claims",
+        "kind": "deterministic",
+        "severity": "must",
+        "title": "Figures and names must agree across the post",
+        "text": "A price, discount, rate or count must read the same in the text, the images, what is said and "
+        "what is shown on screen, and the person the text names must be the person shown. Viewers believe "
+        "whichever version they meet first.",
+        "pattern": {"type": "cross_source"},
+    },
+    {
         "code": "CLAIM-OUTDATED",
         "category": "claims",
         "kind": "deterministic",

@@ -54,6 +54,18 @@ def build_providers(settings: Settings, meter: UsageMeter) -> tuple[JudgeProvide
     return judge, llm, notes
 
 
+def build_second_judge(settings: Settings, meter: UsageMeter) -> JudgeProvider | None:
+    """The larger judge that also answers must-rule questions, or None when there is nothing larger to ask
+    (offline, no key, or switched off)."""
+    if settings.llm_mode == "offline" or settings.second_look_max == 0 or settings.ollama_api_key is None:
+        return None
+    from verytas.providers.ollama_judge import OllamaJudge
+
+    return OllamaJudge(settings.ollama_api_key.get_secret_value(), model=settings.second_look_model,
+                       base_url=settings.ollama_base_url, meter=meter, resamples=settings.judge_resamples,
+                       fallback_key=_fallback(settings))
+
+
 def build_vision(settings: Settings, meter: UsageMeter) -> tuple[LLMProvider, list[str]]:
     """The model that looks at images. Same interface as the text LLM, so it is
     guarded, budgeted and redacted the same way."""

@@ -41,6 +41,7 @@ from PIL import Image
 
 from verytas.checks.base import CheckContext, RawFinding, RuleView, Source
 from verytas.checks.claims import check_claims
+from verytas.checks.crosscheck import figures
 from verytas.checks.deterministic import run_deterministic
 from verytas.checks.semantic import check_semantic
 from verytas.ingest.segment import image_units, segment
@@ -59,6 +60,7 @@ from verytas.media.files import (
     shrink,
     sniff,
 )
+from verytas.prism.board import Board, Evidence, crosscheck_agent
 from verytas.prism.characters import characters_agent, pick_frames
 from verytas.prism.governor import Governor, TaskOutcome
 from verytas.prism.people_agent import faces_agent
@@ -223,6 +225,10 @@ class ReviewRun:
     partial: set[str] = field(default_factory=set)
     worker_of: dict[int, str] = field(default_factory=dict)
     node_of: dict[int, AgentNode] = field(default_factory=dict)
+    # Typed evidence every agent posts as it works (prism/board.py), compared across parts at the end.
+    board: Board = field(default_factory=Board)
+    # Must-rule questions also put to the larger judge (prism/second_look.py); None when off.
+    second_look: Any = None
 
     def asr_for(self, pcm: Any) -> str:
         """The speech model for this much audio (16 kHz samples): the better one unless it is long."""
@@ -289,6 +295,10 @@ async def plan(run: ReviewRun, root: AgentNode) -> None:
     await asyncio.gather(*work)
     from verytas.prism.presentation import presentation_agent
 
+    # Only now is every part read, so only now can the parts be compared with each other.
+    await run.tree.spawn(root, "crosscheck", "Compare the parts with each other", lambda n: crosscheck_agent(run, n),
+                         essential=True)
+
     await run.tree.spawn(root, "presentation", "How it looks on the platform", lambda n: presentation_agent(run, n),
                          essential=True)
     await run.tree.spawn(root, "policy", "Intake and disclosure", lambda n: policy_agent(run, n), essential=True)
@@ -299,6 +309,8 @@ async def plan(run: ReviewRun, root: AgentNode) -> None:
 async def text_agent(run: ReviewRun, node: AgentNode, source: Source) -> None:
     """The three text workers on one source, as child agents."""
     run.sources.append(source)
+    for fig in figures(source.id, source.text, source.timeline, source.kind):
+        run.board.post(Evidence("figure", source.id, fig, fig.time))
     node.detail = {"source": source.id, "route": source.route, "chars": len(source.text),
                    "confidence": round(source.confidence, 3)}
     if not source.text.strip():
@@ -329,7 +341,9 @@ async def text_agent(run: ReviewRun, node: AgentNode, source: Source) -> None:
         worker("rule checks", lambda: run.blocking(run_deterministic, ctx, run.rule_problems)),
         worker("claim verifier", lambda: check_claims(ctx, run.llm, run.judge)),
         worker("semantic judge", lambda: check_semantic(ctx, run.judge, threshold=run.semantic_threshold,
-                                                        per_rule=run.rule_thresholds)),
+                                                        per_rule=run.rule_thresholds,
+                                                        second=run.second_look.at(source.id) if run.second_look
+                                                        else None)),
     )
 
 

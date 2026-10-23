@@ -9,6 +9,7 @@ pass, so cost scales with paragraphs, not rules x paragraphs.
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from verytas.checks.base import CheckContext, RawFinding, RuleView
 from verytas.providers.base import JudgeProvider, Question
@@ -38,8 +39,9 @@ def _score_question(rule: RuleView) -> Question:
 
 
 async def check_semantic(ctx: CheckContext, judge: JudgeProvider, *, threshold: float,
-                         per_rule: dict[str, float] | None = None) -> list[RawFinding]:
-    """`per_rule` holds thresholds learned from disputes and decisions (prism/disputes.py)."""
+                         per_rule: dict[str, float] | None = None, second: Any = None) -> list[RawFinding]:
+    """`per_rule` holds thresholds learned from disputes and decisions (prism/disputes.py). `second`, a
+    prism.second_look.SecondLook, also puts must-rule questions to a larger model, whose answers decide."""
     noul_rules = [r for r in ctx.rules if r.kind == "semantic" and r.pattern.get("type") != "voice_score"]
     score_rules = [r for r in ctx.rules if r.kind == "semantic" and r.pattern.get("type") == "voice_score"
                    and len(r.pattern.get("levels", [])) >= 2]
@@ -55,15 +57,20 @@ async def check_semantic(ctx: CheckContext, judge: JudgeProvider, *, threshold: 
     # it doesn't have), and the calls still in flight are cancelled so they stop
     # spending budget.
     tasks = [asyncio.ensure_future(judge.ask(p.text, questions)) for p in paragraphs]
+    again = second.start(paragraphs, questions, by_key) if second is not None else []
+    asked_again: set[tuple[int, str]] = set()
     try:
         results = await asyncio.gather(*tasks)
+        if second is not None:
+            thresholds = {key: (per_rule or {}).get(rule.code, threshold) for key, rule in by_key.items()}
+            results, asked_again = await second.merge(paragraphs, results, again, by_key, thresholds)
     except BaseException:
-        for t in tasks:
+        for t in [*tasks, *(a for a in again if a is not None)]:
             t.cancel()
         raise
 
     findings: list[RawFinding] = []
-    for para, answers in zip(paragraphs, results, strict=True):
+    for i, (para, answers) in enumerate(zip(paragraphs, results, strict=True)):
         for key, answer in answers.items():
             rule = by_key[key]
             if answer.type == "noul" and answer.p_yes >= (per_rule or {}).get(rule.code, threshold):
@@ -85,7 +92,8 @@ async def check_semantic(ctx: CheckContext, judge: JudgeProvider, *, threshold: 
             findings.append(RawFinding(
                 unit_id=para.id, category=rule.category, title=title, explanation=rule.text,
                 confidence=round(min(max(confidence, 0.0), 1.0), 4), checker=CHECKER, rule_code=rule.code,
-                quote=para.text, span_start=para.start, span_end=para.end, model=judge.name,
+                quote=para.text, span_start=para.start, span_end=para.end,
+                model=second.judge.name if (i, key) in asked_again else judge.name,
                 needs_explanation=True,
             ))
     return findings

@@ -26,6 +26,7 @@ from PIL import Image
 from verytas.checks.base import RawFinding
 from verytas.checks.likeness import PersonView, licence
 from verytas.media import faces as face_model
+from verytas.prism.board import Evidence
 
 # Above this a face is the person's; between SAME_PERSON and this it only resembles them, and the
 # finding says so at warning strength rather than accuse anyone on a near-miss.
@@ -139,6 +140,11 @@ async def faces_agent(run: Any, node: Any, pil: Image.Image, image_id: str, loca
             if who.person is not None:
                 allowed, why = licence(who.person, channel=ctx.channel, event_id=ctx.event_id, on=ctx.on,
                                        author_id=ctx.author_id)
+                if sure:
+                    # What the cross-check compares with the people the caption names (prism/board.py).
+                    run.board.post(Evidence("person", image_id, who.person.name,
+                                            tuple(locator["time"]) if locator.get("time") else None,
+                                            tuple(face.box), {"similarity": round(score, 3)}))
                 if allowed:
                     run.glance.append(f"{who.label} appears ({why})")
                     continue

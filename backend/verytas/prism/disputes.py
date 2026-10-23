@@ -57,7 +57,7 @@ log = logging.getLogger("verytas.prism.disputes")
 
 UPHOLD_AT = 0.6
 OVERTURN_BELOW = 0.4
-_MECHANICAL = {"deterministic", "claims", "assets", "media", "intake", "presentation"}
+_MECHANICAL = {"deterministic", "claims", "assets", "media", "intake", "presentation", "crosscheck"}
 
 
 def is_mechanical(f) -> bool:

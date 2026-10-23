@@ -68,8 +68,9 @@ from verytas.prism.intent import intent_agent
 from verytas.prism.judge import CATEGORIES, level_for, scorecard
 from verytas.prism.onion import onion_agent
 from verytas.prism.people_agent import PeopleContext
+from verytas.prism.second_look import SecondLook
 from verytas.prism.suggest import explain_and_fix
-from verytas.providers import build_providers, build_vision
+from verytas.providers import build_providers, build_second_judge, build_vision
 from verytas.providers.base import JudgeProvider, LLMProvider, ProviderError, UsageMeter
 from verytas.security.audit import append
 from verytas.security.guard import screen
@@ -83,7 +84,7 @@ log = logging.getLogger("verytas.prism")
 _SIGNER = {"rule checks": "deterministic-worker", "claim verifier": "claims-worker",
            "semantic judge": "semantic-worker", "assets": "assets-worker", "media": "media-worker",
            "context": "context-worker", "intake": "intake-worker", "intent": "intent-worker",
-           "presentation": "presentation-worker"}
+           "presentation": "presentation-worker", "cross-check": "crosscheck-worker"}
 # What each kind of agent is responsible for. Any node that was skipped, timed
 # out or crashed demotes exactly these categories, so a gap anywhere in the
 # tree shows up in the scorecard instead of reading as a pass.
@@ -96,6 +97,7 @@ _ROLE_COVERS: dict[str, set[str]] = {
     "contrast": {"accessibility"},
     "faces": {"legal"},
     "characters": {"visual"},
+    "crosscheck": {"claims"},
 }
 _ASSET_ROLES = {"assets", "scene", "keyframes"}  # visual, when the workspace has official artwork
 # Context reading is a second opinion over text that was already checked:
@@ -151,6 +153,7 @@ class Prism:
         self._llm_breaker = CircuitBreaker()
         self._judge_breaker = CircuitBreaker()
         self._vision_breaker = CircuitBreaker()
+        self._second_breaker = CircuitBreaker()
         # One pool of provider slots shared by every review, so a long document
         # (one Jev call per paragraph) or a burst of reviews can't flood a provider.
         self._provider_slots = asyncio.Semaphore(settings.max_concurrent_tasks)
@@ -247,6 +250,7 @@ class Prism:
             video_max_seconds=self.settings.video_max_seconds,
             media_timeout_s=self.settings.media_timeout_s,
             rule_thresholds=thresholds,
+            second_look=self._second_look(redactor),
         )
 
         escalations: list[dict] = []
@@ -392,10 +396,14 @@ class Prism:
                          "locator": s.locator, "parent": s.parent, "chars": len(s.text),
                          "text": s.text[:20_000]} for s in run.sources],
             "scenes": run.scenes,
+            # What the agents posted for each other to compare (prism/board.py), by kind.
+            "evidence": run.board.summary(),
             "language": {"code": language.code, "name": language.name, "mixed": list(language.mixed)},
             # Things a person has to look at: notes that steer, concerns, unsure disputes.
             "escalations": escalations,
             "learned_thresholds": thresholds,
+            # Must-rule questions answered by the larger judge too, with both answers.
+            "second_looks": run.second_look.summary() if run.second_look else None,
             "not_checked": sorted(failed & configured),
             "not_configured": sorted(set(CATEGORIES) - configured),
             "degraded": sorted(degraded),
@@ -403,7 +411,8 @@ class Prism:
             "notes": notes + ([suggest_note] if suggest_note else []) + (
                 [f"{dropped} uncited finding(s) dropped"] if dropped else []),
             # AI disclosure: every external model that saw (redacted) content.
-            "models": {"llm": llm.name, "judge": judge.name, "vision": vision.name},
+            "models": {"llm": llm.name, "judge": judge.name, "vision": vision.name,
+                       **({"second_judge": run.second_look.judge.name} if run.second_look else {})},
             "usage": meter.by_provider,
             "redactions": redactor.count,
             "phases_ms": phases,
@@ -486,6 +495,16 @@ class Prism:
         task = asyncio.create_task(coro_factory())
         self._background.add(task)
         task.add_done_callback(self._background.discard)
+
+    def _second_look(self, redactor: Redactor) -> SecondLook | None:
+        # Its own token budget, a quarter of a review's: a second look that runs long can't starve the first
+        # judge, whose answers are the ones that count when the second is unavailable.
+        meter = UsageMeter(self.settings.review_token_budget // 4)
+        judge = build_second_judge(self.settings, meter)
+        if judge is None:
+            return None
+        guarded = GuardedJudge(RedactingJudge(judge, redactor), self._second_breaker, self._provider_slots)
+        return SecondLook(guarded, self.settings.second_look_max, meter=meter)
 
     def _providers(self, meter: UsageMeter,
                    redactor: Redactor) -> tuple[JudgeProvider, LLMProvider, LLMProvider, list[str]]:
