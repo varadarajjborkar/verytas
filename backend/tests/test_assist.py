@@ -177,3 +177,17 @@ def test_an_escalation_dossier_leads_with_the_escalation_then_its_piece(client, 
     esc = _ask(client, world["reviewer"], "escalation", eid).json()["escalation"]
     assert esc["status"] == "cleared" and esc["resolution"]["note"] == "Confirmed public at the keynote."
     assert esc["resolution"]["by"]["role"] == "approver"
+
+
+def test_what_was_said_about_a_withheld_finding_is_withheld_with_it(client, world):  # noqa: F811
+    creator = world["creator"]
+    made = _post(client, creator, LEAK, title="Teaser")
+    f = _blocker(client, creator, made["review_id"])
+    assert client.post(f"/findings/{f['id']}/escalations", headers=_auth(creator),
+                       json={"message": "The codename was cleared by legal on Monday."}).status_code == 201
+    db = _db(client)
+    db.execute("UPDATE rules SET tier = 'confidential' WHERE code = 'CONF-LEAK'")
+    db.commit()
+    db.close()
+    piece = _ask(client, world["reviewer"], "content", made["content"]["id"]).json()["piece"]
+    assert piece["escalations"] == [] and "cleared by legal" not in str(piece)

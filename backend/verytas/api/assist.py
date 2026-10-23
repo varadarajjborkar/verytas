@@ -176,8 +176,12 @@ async def _piece(session: Session, user: User, content: Content, redactor: Redac
         | {d.actor_id for r in reviews for f in r.findings for d in f.decisions}))
     version_no = {v.id: v.version_no for v in versions}
 
-    # Findings the caller can't be shown are counted, never described.
+    # Findings the caller can't be shown are counted, never described; nor is what was said about them
+    # (a dispute's claim or an escalation's message quotes the finding it is about).
     withheld = 0
+    hidden = {f.id for r in reviews for f in r.findings if not all(_readable_rule_fact(user, f))}
+    disputes = [d for d in disputes if d.finding_id not in hidden]
+    escalations = [x for x in escalations if x.finding_id not in hidden]
 
     def shown(review: Review | None) -> list[Finding]:
         nonlocal withheld

@@ -861,7 +861,7 @@ SLIPS = {
              "I use Paisaloop to pay bills and track my SIPs. Paid partnership, not advice. #PaisaloopPartner", "Never name another app."),
         Slip("Hinglish hype", "instagram", "Bhai paisa double ho jayega, risk free hai, SIP lo abhi! #PaisaloopPartner",
              "SIP ek aadat hai, bhai. Paid partnership, advice nahi. " + DISCLAIMER + " #PaisaloopPartner", _VOICE),
-        Slip("Call me", "instagram", "Questions on SIPs? WhatsApp me on 98200 55555 for my tips. #PaisaloopPartner",
+        Slip("Call me", "instagram", "Questions on SIPs? WhatsApp me on 00000 12345 for my tips. #PaisaloopPartner",
              "Questions? Write to help.paisaloop.example. Paid partnership, not advice. #PaisaloopPartner", "Only the company's numbers in posts."),
         Slip("Offer link", "youtube", "Grab the offer here: [click here](https://paisaloop.example/offer)",
              "Grab the offer here: [festive offer details](https://paisaloop.example/offer)", "Link text must say where it goes."),

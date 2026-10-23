@@ -681,7 +681,7 @@ SLIPS = {
     "influencer": [
         Slip("Switched apps", "instagram", "Switched from SkillSprint to Kitepath and wow, the difference. #KitepathPartner",
              "I use Kitepath for my revision plan and love the mock tests. #KitepathPartner", "Do not name other platforms."),
-        Slip("Call me", "instagram", "Unlike other apps, Kitepath actually explains stuff. Call me on 98200 55555 for my code.",
+        Slip("Call me", "instagram", "Unlike other apps, Kitepath actually explains stuff. Call me on 00000 12345 for my code.",
              "Kitepath explains things step by step. Use my code from the link in my bio.", "Only the company's numbers in posts."),
         Slip("Slangy reel", "instagram", "gonna crack boards with Kitepath, no cap, bestie vibes only #KitepathPartner",
              "Revising for boards with Kitepath, one lesson a day. #KitepathPartner", _VOICE),

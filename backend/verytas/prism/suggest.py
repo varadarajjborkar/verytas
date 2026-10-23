@@ -120,9 +120,10 @@ async def explain_and_fix(findings: list[RawFinding], rules: dict[str, RuleView]
                           repair: bool = True) -> None:
     """Better explanations, plus suggestions that pass both checks.
 
-    Proposed fixes are held aside and only attached to findings once every
-    intent check has run. If anything fails part way, no unchecked fix is ever
-    shown (explanations already written are kept; they carry no edit).
+    A proposed fix is attached to its finding only after the gate has passed
+    it: first-round fixes as soon as their round is judged, repaired ones after
+    theirs. If anything fails part way, no unchecked fix is ever shown
+    (explanations already written are kept; they carry no edit).
     """
     pending = [f for f in findings if f.needs_explanation]
     proposals: list[tuple[RawFinding, SuggestedEdit]] = []

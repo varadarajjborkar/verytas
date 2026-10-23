@@ -2,7 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { type AssistKind, type Brief, NEXT_LABEL, readable } from "@/lib/assist";
+import { type AssistKind, type Brief, NEXT_LABEL, plainText, readable } from "@/lib/assist";
 import { readStream } from "@/lib/sse";
 import { useModalFocus } from "../Drawer";
 import { ArrowUpIcon, CloseIcon, RefreshIcon, SparkIcon } from "../Icons";
@@ -157,7 +157,7 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
                 {turns.map((t, i) => (
                   <li key={i} className={t.role === "user" ? "ml-8 self-end rounded-xl bg-sunken px-3 py-2 text-[13px] leading-5"
                     : `text-[13px] leading-6 ${t.failed ? "text-[var(--vt-blocker)]" : ""}`}>
-                    {t.role === "assistant" && !t.content ? <Thinking /> : <Prose text={t.content} />}
+                    {t.role === "assistant" && !t.content ? <Thinking /> : <Prose text={t.role === "assistant" ? plainText(t.content) : t.content} />}
                   </li>
                 ))}
               </ul>

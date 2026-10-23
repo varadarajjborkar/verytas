@@ -449,11 +449,11 @@ PEOPLE = [
 ]
 
 TEAM = [
-    Member("admin", "anika@dewlight.example", "Anika Sethi", "brand_admin", title="Head of brand",
+    Member("admin", "ritika@dewlight.example", "Ritika Menon", "brand_admin", title="Head of brand",
            blurb="Owns the brand library: rules, facts, artwork, events. Sees every screen."),
     Member("approver", "dhruv@dewlight.example", "Dhruv Menon", "approver", title="Brand marketing manager",
            blurb="Works the review queue: approves, sends back, rules on escalations."),
-    Member("reviewer", "pooja@dewlight.example", "Pooja Venkat", "reviewer"),
+    Member("reviewer", "farah@dewlight.example", "Farah Qureshi", "reviewer"),
     Member("auditor", "isha@dewlight.example", "Isha Rane", "auditor"),
     Member("ra", "kavya@dewlight.example", "Dr. Kavya Nambiar", "reviewer", title="Regulatory affairs"),
 ]
@@ -480,7 +480,7 @@ DEMO = [
     ("c6", "kiara", "creator", "Beauty creator", "A paid creator. Her posts need the partnership disclosure."),
 ]
 
-# Pooja is strict on tone and wording, Dhruv practical, Dr. Nambiar (regulatory) cares only about claims and law.
+# Farah is strict on tone and wording, Dhruv practical, Dr. Nambiar (regulatory) cares only about claims and law.
 # The unclear rules (hype words, the fairness stance post, comparisons) are where they split and say so.
 _UNCLEAR = ("guideline_unclear", "Does the rule mean this? It is not about our product.")
 STANCE = {
@@ -736,7 +736,7 @@ def _stories() -> list[Piece]:
            images=_img("arogyam", "Dewlight and Arogyam Pharmacy logos side by side", _partner_card)),
         pk("m-listing", "tanvi", "Marketplace listing refresh", "app store", "Shop Dew Shield, Even Dew, Cloud Wash and Amla Night Oil. Read ingredients, usage notes and routines in one place. Customers rate Dewlight 4.5 out of 5.", 18, CLEAN,
            images=_img("icon", "Dewlight app icon, a white drop and sun on a teal tile", lambda: art.on_color(_app_icon(), CREAM, 60))),
-        pk("m-email", "arman", "Write to me", "linkedin", "Questions about your routine? Write to me at arman.pillai@gmail.com.", 13,
+        pk("m-email", "arman", "Write to me", "linkedin", "Questions about your routine? Write to me at arman.pillai@mail.example.", 13,
            fixed("Only company addresses in posts.", "Questions about your routine? Write to us at care@dewlight.example.", "approver")),
         pk("m-ai", "tanvi", "Blog illustration", "blog", "Our new guide to reading a sunscreen label has a hand-drawn look. Read it in the care centre.", 10,
            [(1, "send", {}), (3, "autodecide", {"by": "reviewer"}), (6, "back", {"note": "The illustration is AI-generated; say so in the post.", "by": "approver"}),
