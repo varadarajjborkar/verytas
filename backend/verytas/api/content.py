@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
+from verytas.api.accounts import SelfServeBudget
 from verytas.api.deps import CurrentUser, PrismDep, Session, can_read, require
 from verytas.api.media import build_profile, load_blobs
 from verytas.media.files import sniff
@@ -169,7 +170,7 @@ async def _intake(session, user: User, channel: str, body: str, attachments: dic
     return p.as_dict()
 
 
-@router.post("/contents", response_model=SubmitOut, status_code=status.HTTP_201_CREATED)
+@router.post("/contents", response_model=SubmitOut, status_code=status.HTTP_201_CREATED, dependencies=[SelfServeBudget])
 async def create_content(body: ContentIn, session: Session, user: Writer, prism: PrismDep,
                          wait: bool = False) -> SubmitOut:
     """Create a draft and start the automated pre-check. `wait=true` returns after the review finishes."""
@@ -254,7 +255,8 @@ async def _new_version(session, user: User, content: Content, body: str, attachm
     return version
 
 
-@router.post("/contents/{content_id}/versions", response_model=SubmitOut, status_code=status.HTTP_201_CREATED)
+@router.post("/contents/{content_id}/versions", response_model=SubmitOut, status_code=status.HTTP_201_CREATED,
+             dependencies=[SelfServeBudget])
 async def add_version(content_id: int, body: VersionIn, session: Session, user: Writer, prism: PrismDep,
                       wait: bool = False) -> SubmitOut:
     content = await _content(session, user, content_id)
@@ -268,7 +270,8 @@ async def add_version(content_id: int, body: VersionIn, session: Session, user: 
                      review_id=review_id)
 
 
-@router.post("/contents/{content_id}/apply-fixes", response_model=SubmitOut, status_code=status.HTTP_201_CREATED)
+@router.post("/contents/{content_id}/apply-fixes", response_model=SubmitOut, status_code=status.HTTP_201_CREATED,
+             dependencies=[SelfServeBudget])
 async def apply_fixes(content_id: int, session: Session, user: Writer, prism: PrismDep,
                       wait: bool = False) -> SubmitOut:
     """Build the next version from accepted and edited decisions on the latest
@@ -706,7 +709,8 @@ def _can_dispute(user: User, content: Content) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "only the author or a reviewer can dispute a finding")
 
 
-@router.post("/findings/{finding_id}/disputes", response_model=DisputeOut, status_code=status.HTTP_201_CREATED)
+@router.post("/findings/{finding_id}/disputes", response_model=DisputeOut, status_code=status.HTTP_201_CREATED,
+             dependencies=[SelfServeBudget])
 async def dispute_finding(finding_id: int, body: DisputeIn, session: Session, user: CurrentUser,
                           prism: PrismDep, wait: bool = False) -> Dispute:
     """'That is not what it means.' Queued and re-evaluated by Prism; the verdict can still be no."""
@@ -730,7 +734,8 @@ async def list_disputes(content_id: int, session: Session, user: CurrentUser) ->
         select(Dispute).where(Dispute.content_id == content_id).order_by(Dispute.id))).all())
 
 
-@router.post("/contents/{content_id}/resubmit", response_model=ResubmitOut, status_code=status.HTTP_201_CREATED)
+@router.post("/contents/{content_id}/resubmit", response_model=ResubmitOut, status_code=status.HTTP_201_CREATED,
+             dependencies=[SelfServeBudget])
 async def resubmit(content_id: int, body: ResubmitIn, session: Session, user: Writer, prism: PrismDep,
                    wait: bool = False) -> ResubmitOut:
     """The checklist round trip: apply chosen fixes, note what was fixed by hand, dispute what was
@@ -815,7 +820,7 @@ async def resubmit(content_id: int, body: ResubmitIn, session: Session, user: Wr
     return ResubmitOut(submit=submit, disputes=dispute_ids, applied=len(edits), skipped=skipped)
 
 
-@router.post("/contents/{content_id}/ai-edit", response_model=AiEditOut)
+@router.post("/contents/{content_id}/ai-edit", response_model=AiEditOut, dependencies=[SelfServeBudget])
 async def ai_edit(content_id: int, body: AiEditIn, session: Session, user: Writer, prism: PrismDep) -> AiEditOut:
     """A proposed rewrite following the creator's instruction and the brand rules. Nothing is saved:
     the creator reviews it and resubmits, and the full review runs again."""

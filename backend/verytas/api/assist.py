@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from verytas.api.accounts import SelfServeBudget
 from verytas.api.assistant import _redact_all, _redactor
 from verytas.api.content import _aware, _content
 from verytas.api.deps import Session, can_read, require
@@ -273,7 +274,7 @@ async def _readable_content(session: Session, user: User, content_id: int) -> Co
     return content
 
 
-@router.post("/item-context")
+@router.post("/item-context", dependencies=[SelfServeBudget])
 async def item_context(body: ItemRequest, session: Session, user: Manager) -> dict[str, Any]:
     """The redacted dossier for one piece or escalation, plus the conversation redacted with it, so
     [[TERM_1]] in a question and in the data are the same term."""

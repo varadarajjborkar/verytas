@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from verytas.api.accounts import SelfServeBudget
 from verytas.api.content import _aware, list_contents
 from verytas.api.deps import CurrentUser, Session
 from verytas.api.insights import _visible_tiers, guideline_health_for, overview_for, recurring_for
@@ -89,7 +90,7 @@ class Conversation(BaseModel):
     messages: list[Annotated[str, Field(max_length=8_000)]] = Field(default_factory=list, max_length=40)
 
 
-@router.post("/context")
+@router.post("/context", dependencies=[SelfServeBudget])
 async def context_for_conversation(body: Conversation, session: Session, user: CurrentUser) -> dict[str, Any]:
     """The context plus the conversation itself, redacted together.
 

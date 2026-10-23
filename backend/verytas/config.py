@@ -109,6 +109,17 @@ class Settings(BaseSettings):
     upload_quota_workspace_mb: int = Field(default=10 * 1024, ge=1)
     orphan_upload_ttl_h: float = Field(default=24.0, gt=0)
 
+    # Self-service accounts (api/accounts.py): anyone may create an empty workspace as its brand admin,
+    # or join one as a creator with its join code. Off by default; the public demo turns it on. Bounded
+    # several ways, because every new workspace can spend model calls: workspaces in all, sign-ups per
+    # hour, and model-spending actions (reviews, disputes, AI edits, assistant turns) per self-serve
+    # workspace per day and across all of them.
+    self_signup: bool = False
+    self_signup_max_workspaces: int = Field(default=200, ge=0)
+    self_signup_per_hour: int = Field(default=30, ge=0)
+    self_serve_actions_per_day: int = Field(default=60, ge=0)
+    self_serve_actions_per_day_total: int = Field(default=600, ge=0)
+
     # Judge thresholds (architecture section 8.1). Tuned later by calibration.
     semantic_flag_threshold: float = 0.6
     blocker_confidence: float = 0.85

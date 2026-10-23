@@ -113,6 +113,10 @@ class Workspace(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Workspaces made by someone signing up on the public demo (api/accounts.py), as against seeded or
+    # bootstrapped ones. Their creators join with the join code their admin was given.
+    self_serve: Mapped[bool | None] = mapped_column(default=False, nullable=True)
+    join_code: Mapped[str | None] = mapped_column(String(16), index=True, nullable=True)
 
 
 class User(Base):
@@ -127,6 +131,8 @@ class User(Base):
     clearance: Mapped[Tier] = mapped_column(_enum(Tier), default=Tier.internal)
     # Only the SHA-256 of the bearer token is stored.
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    # Only for accounts made by signing up; everyone else signs in with a token. scrypt (api/accounts.py).
+    password_hash: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

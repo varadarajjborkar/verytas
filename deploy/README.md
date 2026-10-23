@@ -29,6 +29,14 @@ recent releases are kept. A commit that failed is not retried until something ne
 
 Spend is capped by an AWS budget that stops both instances automatically at its limit.
 
+**Own accounts.** Beside the seeded companies, visitors can sign up (`/signin/account`): a brand team makes
+a new, empty company and gets a join code; a creator joins with it. Turn it on with
+`VERYTAS_SELF_SIGNUP=true` in `api.env`. Every such company can spend model calls, so it is bounded by
+`VERYTAS_SELF_SIGNUP_MAX_WORKSPACES` (200), `VERYTAS_SELF_SIGNUP_PER_HOUR` (30) and a daily budget of
+model-spending actions, `VERYTAS_SELF_SERVE_ACTIONS_PER_DAY` (60 per company) and
+`VERYTAS_SELF_SERVE_ACTIONS_PER_DAY_TOTAL` (600 for all of them). The sign-in page offers it only when the
+API says it is on. Companies made this way are wiped with everything else at the 14-day reset.
+
 The public address is a Cloudflare Pages project whose only file is a pass-through worker, so it never
 needs redeploying when the app changes. It restates our own Origin as the server's, which keeps the
 app's cross-site write check meaningful, and rewrites redirects back to the public name. Publish it with

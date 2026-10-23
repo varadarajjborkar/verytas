@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from verytas.api.accounts import SelfServeBudget
 from verytas.api.deps import CurrentUser, PrismDep, Session, can_read, require
 from verytas.checks.base import FactView
 from verytas.checks.claims import relevance
@@ -125,7 +126,7 @@ class ExtractOut(BaseModel):
 MAX_BOOK_CHARS = 60_000
 
 
-@router.post("/rules/extract", response_model=ExtractOut)
+@router.post("/rules/extract", response_model=ExtractOut, dependencies=[SelfServeBudget])
 async def extract_rules(body: ExtractIn, session: Session, admin: Admin, prism: PrismDep) -> ExtractOut:
     """Proposed draft rules from brand-book prose or an uploaded PDF or Word file. Nothing is saved:
     the admin keeps what reads right and creates those as drafts."""

@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from verytas.api.accounts import SelfServeBudget
 from verytas.api.content import _content, _latest_review, _readable_finding, visible
 from verytas.api.deps import CurrentUser, PrismDep, Session, can_read, require
 from verytas.models import (
@@ -265,7 +266,7 @@ async def list_events(session: Session, user: CurrentUser) -> list[EventOut]:
     return [await _event_out(session, e) for e in rows if can_read(user, e.tier)]
 
 
-@router.post("/events", response_model=EventOut, status_code=status.HTTP_201_CREATED)
+@router.post("/events", response_model=EventOut, status_code=status.HTTP_201_CREATED, dependencies=[SelfServeBudget])
 async def create_event(body: EventIn, session: Session, admin: Admin, prism: PrismDep) -> EventOut:
     """New event: its rules are written and every piece it touches is re-checked (the update chain)."""
     e = BrandEvent(workspace_id=admin.workspace_id, created_by=admin.id, **body.model_dump())
