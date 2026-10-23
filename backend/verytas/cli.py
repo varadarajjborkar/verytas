@@ -53,13 +53,16 @@ def main(argv: list[str] | None = None) -> None:
                       help="env file to receive VERYTAS_API_TOKEN and VERYTAS_CREATOR_TOKEN (never printed)")
     demo.add_argument("--write-demo-accounts", type=Path, default=None,
                       help="JSON file of the demo sign-in page's accounts and their tokens (server-side only)")
+    demo.add_argument("--companies", nargs="+", default=None, help="seed only these companies (module names)")
+    demo.add_argument("--pieces", type=int, default=None, help="cap the pieces seeded per company")
     args = parser.parse_args(argv)
     if args.command == "issue-token":
         sys.stdout.write(asyncio.run(issue_token(args.email)) + "\n")
     elif args.command == "seed-showcase":
         from verytas.showcase import seed
 
-        counts = seed(args.db, args.keys_dir, args.write_env, args.write_demo_accounts)
+        counts = seed(args.db, args.keys_dir, args.write_env, args.write_demo_accounts,
+                      companies=args.companies, limit=args.pieces)
         sys.stdout.write(f"{args.db}: {counts['pieces']} pieces, {counts['escalations']} escalations\n")
 
 

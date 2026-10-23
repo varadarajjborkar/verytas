@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 import random
+import sys
 import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -106,8 +107,14 @@ def seed(db_path: Path, keys_dir: Path, env_out: Path | None, demo_out: Path | N
     runs: list[tuple[Company, dict[str, str]]] = []
     try:
         with TestClient(create_app(settings)) as c:
-            for i, co in enumerate(load(companies)):
+            chosen = load(companies)
+            for i, co in enumerate(chosen):
+                started = time.monotonic()
                 tok, got = _seed_company(c, co, first=i == 0, limit=limit)
+                # A full seed runs for many minutes on a small server; a line per company tells a
+                # watcher it is moving and which brand ate the time.
+                print(f"seed: {co.brand} ({i + 1}/{len(chosen)}): {got.get('pieces', 0)} pieces in "
+                      f"{time.monotonic() - started:.0f} s", file=sys.stderr, flush=True)
                 runs.append((co, tok))
                 counts["companies"][co.brand] = got
                 for k in ("pieces", "escalations", "decisions"):
