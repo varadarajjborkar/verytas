@@ -222,6 +222,7 @@ class ReviewRun:
     # Categories read only in part (sampled, truncated): reported as degraded, with a note.
     partial: set[str] = field(default_factory=set)
     worker_of: dict[int, str] = field(default_factory=dict)
+    node_of: dict[int, AgentNode] = field(default_factory=dict)
 
     def asr_for(self, pcm: Any) -> str:
         """The speech model for this much audio (16 kHz samples): the better one unless it is long."""
@@ -230,8 +231,19 @@ class ReviewRun:
     def add(self, node: AgentNode, worker: str, found: list[RawFinding]) -> None:
         for f in found:
             self.worker_of[id(f)] = worker
+            self.node_of[id(f)] = node
         self.findings.extend(found)
         node.findings += len(found)
+
+    def drop(self, gone: list[RawFinding]) -> None:
+        """Take findings back out, so the agent tree's counts match what the review reports."""
+        ids = {id(f) for f in gone}
+        self.findings[:] = [f for f in self.findings if id(f) not in ids]
+        for i in ids:
+            self.worker_of.pop(i, None)
+            node = self.node_of.pop(i, None)
+            if node is not None:
+                node.findings -= 1
 
     async def blocking[T](self, fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """Run blocking media work in a thread, with a deadline.
@@ -397,6 +409,7 @@ async def image_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_i
         run.notes.append(f"{image_id}: not sent to a vision model because local OCR failed, so confidential "
                          "text in it could not be blacked out first")
     _asset_findings(run, node, image_id, locator, matches or [], scene, lines)
+    _drop_artwork_lettering(run, f"{image_id}:ocr", lambda *_: _official_boxes(run, matches or []))
     if any(a.kind == "mascot" for a in run.assets):
         copies = {m.asset_id for m in matches or [] if m.found}
         await run.tree.spawn(node, "characters", "Look for redrawn mascots",
@@ -469,7 +482,7 @@ async def ocr_agent(run: ReviewRun, node: AgentNode, pil: Image.Image, image_id:
 
     if text.strip():
         src = Source(f"{image_id}:ocr", "ocr", text, route, confidence, {**locator, "image": image_id},
-                     parent=image_id)
+                     parent=image_id, regions=_line_regions(result.lines))
         await run.tree.spawn(node, "text", "Text found in image", lambda n: text_agent(run, n, src))
     return result
 
@@ -618,10 +631,76 @@ def _novel(seen: str, known: str) -> bool:
     return bool(a) and len(a - b) / len(a) > 0.4
 
 
+def _line_regions(lines: list[local_ocr.OcrLine]) -> list[tuple[int, int, tuple[int, int, int, int], None, None]]:
+    """Where each OCR line sits, by its character range in the lines joined with newlines (OcrResult.text)."""
+    out, pos = [], 0
+    for ln in lines:
+        out.append((pos, pos + len(ln.text), ln.box, None, None))
+        pos += len(ln.text) + 1
+    return out
+
+
+def _within(line: tuple[int, int, int, int], art: tuple[int, int, int, int], share: float = 0.6) -> bool:
+    """Whether most of an OCR line's box lies inside a piece of artwork's box."""
+    w = max(0, min(line[2], art[2]) - max(line[0], art[0]))
+    h = max(0, min(line[3], art[3]) - max(line[1], art[1]))
+    area = max(1, (line[2] - line[0]) * (line[3] - line[1]))
+    return w * h / area >= share
+
+
+def _drop_artwork_lettering(run: ReviewRun, source_id: str,
+                            art_at: Callable[[float | None, float | None], list[tuple[int, int, int, int]]]) -> None:
+    """Drop casing findings for lettering that is part of matched official artwork.
+
+    A logo's own lettering ("KITEPATH" in capitals, a wordmark set in lowercase) is read by OCR like any
+    text, and the casing rule then judges artwork as if someone had typed it. The asset checks own that
+    artwork: if it differs from the approved version they say so, and if it matches it is correct as drawn.
+    `art_at` gives the matched artwork boxes for a line's time span (None, None for a still image)."""
+    src = next((s for s in run.sources if s.id == source_id), None)
+    codes = {r.code for r in run.base.rules if r.pattern.get("type") == "casing"}
+    if src is None or not src.regions or not codes:
+        return
+
+    def on_artwork(at: int) -> bool:
+        return any(a <= at < b and any(_within(box, art) for art in art_at(t0, t1))
+                   for a, b, box, t0, t1 in src.regions)
+
+    run.drop([f for f in run.findings if f.source == source_id and f.rule_code in codes
+              and f.span_start is not None and on_artwork(f.span_start)])
+
+
+def _changed_areas(cells: list[dict]) -> str:
+    """Grid cells that differ, said the way a reviewer would: "the colour differs at the top left and
+    centre, the shape at the bottom right". The artwork is compared on a grid; its cell names (r3c4)
+    mean nothing to a person looking at a poster."""
+    def where(c: dict) -> str:
+        third = lambda i: min(2, i * 3 // asset_match.GRID)  # noqa: E731
+        row, col = ("top", "middle", "bottom")[third(c["row"])], ("left", "centre", "right")[third(c["col"])]
+        return "centre" if (row, col) == ("middle", "centre") else f"{row} {col}" if row != "middle" else f"{col}"
+    parts = []
+    for change in ("colour", "shape"):
+        spots = list(dict.fromkeys(where(c) for c in cells if c.get("change") == change))
+        if spots:
+            places = ", ".join(spots[:-1]) + (" and " if len(spots) > 1 else "") + spots[-1]
+            parts.append(f"the {change} at the {places}" if parts else f"the {change} differs at the {places}")
+    return ", and ".join(parts) or "parts of it differ"
+
+
+def _official_boxes(run: ReviewRun, matches: list[asset_match.AssetMatch]) -> list[tuple[int, int, int, int]]:
+    official = {a.id for a in run.assets if a.official}
+    return [m.box for m in matches if m.found and m.box and m.asset_id in official]
+
+
 def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dict[str, Any],
                     matches: list[asset_match.AssetMatch], scene: SceneReport | None,
                     lines: list[local_ocr.OcrLine] | None = None) -> None:
-    """Fuse pixel evidence and the vision verdict, official artwork first.
+    run.add(node, "assets", [f for _, f in _judge_assets(run, image_id, locator, matches, scene, lines)])
+
+
+def _judge_assets(run: ReviewRun, image_id: str, locator: dict[str, Any],
+                  matches: list[asset_match.AssetMatch], scene: SceneReport | None,
+                  lines: list[local_ocr.OcrLine] | None = None) -> list[tuple[int, RawFinding]]:
+    """Fuse pixel evidence and the vision verdict, official artwork first, as (asset id, finding).
 
     Pixel findings stand on their own. A vision-only finding is a model
     opinion: it is reported, but it can never block publication by itself.
@@ -631,18 +710,19 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
         shown = _shareable(run)[:MAX_VISION_REFERENCES]
         verdicts = {shown[v.reference - 1].id: v for v in scene.assets if 0 < v.reference <= len(shown)}
     vision_name = run.vision.name
-    out: list[RawFinding] = []
+    out: list[tuple[int, RawFinding]] = []
+    cur = 0  # the asset being judged
     by_id = {m.asset_id: m for m in matches}
 
     def finding(code: str, title: str, why: str, confidence: float, box=None, model=None) -> None:
         rule = run.rule_by_code.get(code)
         if rule is None:
             return
-        out.append(RawFinding(
+        out.append((cur, RawFinding(
             unit_id=image_id, category=rule.category, title=title, explanation=f"{rule.text} {why}".strip(),
             confidence=round(min(1.0, confidence), 4), checker="assets", rule_code=rule.code, source=image_id,
             locator={**locator, "image": image_id, **({"box": list(box)} if box else {})}, model=model,
-        ))
+        )))
 
     # An old version shares most of its keypoints with the current artwork, so both can match the same
     # spot. Where a retired version fits better there, the image shows the old one: report that, not the
@@ -670,6 +750,7 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
                        for m in current)
 
     for asset in run.assets:
+        cur = asset.id
         m = by_id.get(asset.id)
         v = verdicts.get(asset.id)
         found = bool(m and m.found)
@@ -701,13 +782,13 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
             if rule:
                 # Generic on purpose: anyone who can read this content can read
                 # the finding, and the asset's name may itself be a codename.
-                out.append(RawFinding(
+                out.append((asset.id, RawFinding(
                     unit_id=image_id, category=rule.category, title="Unreleased brand artwork",
                     explanation=f"This image contains official artwork restricted above this content's tier "
                                 f"(asset #{asset.id}; an approver can see which). {rule.text}", confidence=1.0,
                     checker="assets", rule_code=rule.code, source=image_id,
                     locator={**locator, "image": image_id, "box": list(m.box or [])},
-                ))
+                )))
             continue
         if asset.restricted:
             continue
@@ -717,10 +798,9 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
                     f"Compared with {label}, this copy is {'; '.join(m.distortions)}.", 0.9, m.box)
 
         if found and not exp and m.altered:
-            cells = ", ".join(f"r{c['row'] + 1}c{c['col'] + 1} ({c['change']})" for c in m.altered_cells[:6])
             extra = f" The vision model also notes: {'; '.join(v.changes[:3])}." if v and v.changes else ""
             finding("VIS-ASSET-ALTERED", f"{asset.name} differs from the official artwork",
-                    f"Pixel comparison against {label} found changed regions: {cells}.{extra}",
+                    f"Compared with {label}, {_changed_areas(m.altered_cells)} (marked on the image).{extra}",
                     0.9, m.box)
 
         elif found and not exp and v and v.present == "altered" and v.changes and v.confidence >= 0.7:
@@ -753,7 +833,7 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
                     f"The vision model sees {what} {label} that does not match the official artwork"
                     + (f" ({'; '.join(v.changes[:3])})." if v.changes else "."),
                     0.75 * v.confidence, model=vision_name)
-    run.add(node, "assets", out)
+    return out
 
 
 # --- documents ---------------------------------------------------------------------------------------
@@ -937,6 +1017,101 @@ _DIGIT_LETTERS = str.maketrans({"0": "o", "1": "l", "3": "e", "4": "a", "5": "s"
                                 "$": "s", "|": "l"})
 
 
+# The matcher costs about 0.9 s a frame with six assets (evals/results/assets.md): a base cost for the
+# frame's features plus a share per asset. A video may spend this share of the media deadline matching.
+MATCH_BUDGET_SHARE = 0.5
+MATCH_FRAME_BASE_S, MATCH_FRAME_PER_ASSET_S = 0.3, 0.1
+MAX_MATCH_FRAMES = 60
+
+
+async def _match_video_frames(run: ReviewRun, node: AgentNode, video_id: str,
+                              keys: list[tuple[float, Image.Image]],
+                              samples: list[tuple[float, Image.Image]]) -> dict[float, list[asset_match.AssetMatch]]:
+    """Official artwork matches for each sampled frame the time budget allows, by frame time.
+
+    Frames not matched (over the cap, over the time budget, or a decode that timed out) are reported as
+    partial visual coverage in a note: an overlay in one of them would be missed, so it is never a pass.
+    They are also kept, with no matches, so a defect seen either side of an unchecked frame is two
+    findings rather than one range that claims the gap was checked."""
+    from verytas.media import video as video_media
+
+    per_asset = MATCH_FRAME_BASE_S + MATCH_FRAME_PER_ASSET_S * len(run.assets)
+    budget = run.media_timeout_s * MATCH_BUDGET_SHARE
+    cap = max(len(keys), min(MAX_MATCH_FRAMES, int(budget / per_asset)))
+    frames_, left_out = video_media.match_frames(keys, samples, cap)
+    deadline = time.monotonic() + budget
+    # Shot starts first, then the rest in time order: if time runs out, what goes unmatched is mid-shot
+    # samples spread over the clip, not every frame after some point.
+    key_times = {t for t, _ in keys}
+    ordered = [f for f in frames_ if f[0] in key_times] + [f for f in frames_ if f[0] not in key_times]
+    matched: dict[float, list[asset_match.AssetMatch]] = {}
+    unmatched = list(left_out)
+    for t, img in ordered:
+        if time.monotonic() > deadline:
+            unmatched.append(t)
+            continue
+        try:
+            feats = await run.blocking(asset_match.scene_features, img)
+            matched[t] = list(await asyncio.gather(*(run.blocking(asset_match.match, a.prepared, feats)
+                                                     for a in run.assets)))
+        except TimeoutError:
+            unmatched.append(t)
+    skipped = len(unmatched)
+    node.detail.update(frames_matched=len(matched), frames_not_matched=skipped)
+    if skipped:
+        run.notes.append(f"{video_id}: official artwork was matched in {len(matched)} of "
+                         f"{len(matched) + skipped} distinct frames, so a brief mark could be missed")
+        run.partial.add("visual")
+    return {**matched, **dict.fromkeys(unmatched, [])}
+
+
+def _frame_findings(run: ReviewRun, video_id: str, locator: dict[str, Any],
+                    per_frame: dict[float, list[asset_match.AssetMatch]]) -> list[RawFinding]:
+    """Each frame's matches judged together, as one image, then merged over time."""
+    return _merge_over_time([(t, _judge_assets(run, video_id, {**locator, "time": [t, t]}, found, None))
+                             for t, found in sorted(per_frame.items())])
+
+
+def _merge_over_time(per_frame: list[tuple[float, list[tuple[int, RawFinding]]]]) -> list[RawFinding]:
+    """One finding per run of consecutive matched frames showing the same defect of the same artwork,
+    with the time range it spans. A frame without it ends the run, so the same mark shown at 6 s and
+    again at 40 s is two findings, as with redrawn mascots."""
+    done: list[RawFinding] = []
+    live: dict[tuple, tuple[RawFinding, float, float]] = {}
+    for t, found in per_frame:
+        seen: set[tuple] = set()
+        for aid, f in found:
+            key = (f.rule_code, aid, f.title)
+            if key in seen:
+                continue
+            seen.add(key)
+            if key in live:
+                best, t0, _ = live[key]
+                live[key] = (f if f.confidence > best.confidence else best, t0, t)
+            else:
+                live[key] = (f, t, t)
+        for key in [k for k in live if k not in seen]:
+            done.append(_stamp(*live.pop(key)))
+    done.extend(_stamp(*v) for v in live.values())
+    return sorted(done, key=lambda f: (f.locator or {}).get("time", [0.0])[0])
+
+
+# Pixel differences seen in one sampled frame only. On evals/video they were 44 of 89 false alarms and 2 of
+# 32 real catches: a compressed or moving frame looks "altered" for an instant, a real change stays on
+# screen. So they stay in the review, at advisory, saying why. Retired, competitor and distorted artwork
+# are kept at full weight from one frame: those were most of the real catches of brief appearances.
+_ONE_FRAME_ADVISORY = {"VIS-ASSET-ALTERED", "VIS-ASSET-EXTENDED"}
+
+
+def _stamp(f: RawFinding, t0: float, t1: float) -> RawFinding:
+    f.locator = {**(f.locator or {}), "time": [t0, t1]}
+    if t1 - t0 < 1e-6 and f.rule_code in _ONE_FRAME_ADVISORY:
+        f.level_cap = "advisory"
+        f.explanation = (f"{f.explanation} Seen in one sampled frame only, so it may be a compression or motion "
+                         "artefact; check that moment.")
+    return f
+
+
 # --- video ---------------------------------------------------------------------------------------
 
 async def video_agent(run: ReviewRun, node: AgentNode, vid: dict[str, Any]) -> None:
@@ -957,6 +1132,7 @@ async def video_agent(run: ReviewRun, node: AgentNode, vid: dict[str, Any]) -> N
         run.notes.append(f"{video_id}: long video, frames sampled every {every:.1f} s instead of every second")
         run.partial.add("visual")
     locator = {"video": video_id}
+    matched_frames: dict[float, list[asset_match.AssetMatch]] = {}
     signals: dict[str, Any] = {"speech": False, "burned_in": False, "track": False, "music_only": False}
 
     async def captions(n: AgentNode) -> None:
@@ -982,7 +1158,8 @@ async def video_agent(run: ReviewRun, node: AgentNode, vid: dict[str, Any]) -> N
             signals["burned_in"] = True
             text, timeline = video.cue_text(cues)
             conf = sum(c.confidence for c in cues) / len(cues)
-            src = Source(f"{video_id}:captions", "captions", text, "ocr:frames", conf, locator, video_id, timeline)
+            src = Source(f"{video_id}:captions", "captions", text, "ocr:frames", conf, locator, video_id, timeline,
+                         regions=video.cue_regions(cues))
             await run.tree.spawn(n, "text", "Burned-in captions and on-screen text", lambda c: text_agent(run, c, src))
 
     async def subtitles(n: AgentNode) -> None:
@@ -1024,14 +1201,17 @@ async def video_agent(run: ReviewRun, node: AgentNode, vid: dict[str, Any]) -> N
                 await run.tree.spawn(n, "faces", f"Identify faces at {t:.1f}s",
                                      lambda c, img=img, t=t: faces_agent(run, c, img, video_id,
                                                                          {**locator, "time": [t, t]}))
-        best: dict[int, tuple[asset_match.AssetMatch, float]] = {}
+        # Matches per frame: a frame is judged on its own, because artwork on screen at different times
+        # is not in one picture (a rival's mark at 6 s is not "explained" by the logo shown at 3 s).
+        per_frame: dict[float, list[asset_match.AssetMatch]] = {}
         if run.assets:
-            for t, img in keys:
-                feats = await run.blocking(asset_match.scene_features, img)
-                for m in await asyncio.gather(*(run.blocking(asset_match.match, a.prepared, feats)
-                                               for a in run.assets)):
-                    if m.found and (m.asset_id not in best or m.inliers > best[m.asset_id][0].inliers):
-                        best[m.asset_id] = (m, t)
+            per_frame = await _match_video_frames(run, n, video_id, keys, samples)
+        matched_frames.update(per_frame)
+        best: dict[int, tuple[asset_match.AssetMatch, float]] = {}
+        for t, found in per_frame.items():
+            for m in found:
+                if m.found and (m.asset_id not in best or m.inliers > best[m.asset_id][0].inliers):
+                    best[m.asset_id] = (m, t)
         scene = None
         if run.allow_cloud_vision and keys:
             # Burned-in text is blacked out on each frame from its own full-size
@@ -1053,14 +1233,17 @@ async def video_agent(run: ReviewRun, node: AgentNode, vid: dict[str, Any]) -> N
             frames = pick_frames(keys, samples)
             await run.tree.spawn(n, "characters", "Look for redrawn mascots",
                                  lambda c: characters_agent(run, c, frames, video_id, locator, set(best)))
-        matches = [m for m, _ in best.values()]
-        times = {m.asset_id: t for m, t in best.values()}
-        before = len(run.findings)
-        _asset_findings(run, n, video_id, locator, matches, scene)
-        for f in run.findings[before:]:
-            for m in matches:
-                if f.locator and f.locator.get("box") == list(m.box or []) and m.asset_id in times:
-                    f.locator["time"] = [times[m.asset_id], times[m.asset_id]]
+        out = _frame_findings(run, video_id, locator, per_frame)
+        if scene:
+            # The vision model saw one contact sheet, so its verdicts are not tied to a frame: they are
+            # judged against each artwork's best match, and only what the model itself said is taken
+            # from this pass (the pixel findings are the per-frame ones above).
+            for aid, f in _judge_assets(run, video_id, locator, [m for m, _ in best.values()], scene):
+                if f.model is not None:
+                    if aid in best:
+                        f.locator = {**(f.locator or {}), "time": [best[aid][1]] * 2}
+                    out.append(f)
+        run.add(n, "assets", out)
 
     await asyncio.gather(
         run.tree.spawn(node, "captions", "Read burned-in captions", captions),
@@ -1071,6 +1254,11 @@ async def video_agent(run: ReviewRun, node: AgentNode, vid: dict[str, Any]) -> N
         run.tree.spawn(node, "keyframes", "Check keyframes", visuals),
     )
     node.detail["signals"] = signals
+    # Burned-in text is read before the artwork is matched, and the two run side by side, so lettering that
+    # belongs to a matched logo is set aside now that both are known.
+    _drop_artwork_lettering(run, f"{video_id}:captions", lambda t0, t1: [
+        box for t, found in matched_frames.items() if t0 is None or t0 - 1e-6 <= t <= (t1 or t0)
+        for box in _official_boxes(run, found)])
     _caption_findings(run, node, video_id, locator, signals)
 
 

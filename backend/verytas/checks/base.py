@@ -154,3 +154,7 @@ class Source:
     # For timed sources (captions, speech): (char_start, char_end, t_start, t_end)
     # per cue, so a finding's span maps back to the moment in the video.
     timeline: list[tuple[int, int, float, float]] = field(default_factory=list)
+    # For text read off pixels: (char_start, char_end, box, t_start, t_end) per line, where the line sits in
+    # the image or frame (times None for a still). Lets a finding be tied back to what it was drawn on.
+    regions: list[tuple[int, int, tuple[int, int, int, int], float | None, float | None]] = field(
+        default_factory=list)

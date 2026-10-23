@@ -216,13 +216,17 @@ class SceneFeatures:
     keypoints: tuple
     descriptors: np.ndarray | None
     channels: np.ndarray | None = None
+    # Original pixels per working pixel: matching runs on a copy at most WORK_SIDE wide, and boxes are
+    # reported back in the original's pixels, where OCR boxes and the layout already are.
+    scale: float = 1.0
 
 
 def scene_features(scene_img: Image.Image) -> SceneFeatures:
     """Compute once per image and share across every asset. Blocking."""
-    rgb = np.asarray(shrink(scene_img).convert("RGB"))
+    work = shrink(scene_img)
+    rgb = np.asarray(work.convert("RGB"))
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-    return SceneFeatures(rgb, gray, *_features(rgb, None))
+    return SceneFeatures(rgb, gray, *_features(rgb, None), scale=scene_img.width / work.width)
 
 
 def flat(asset: PreparedAsset) -> bool:
@@ -236,8 +240,23 @@ def flat(asset: PreparedAsset) -> bool:
 
 
 def match(asset: PreparedAsset, scene_img: Image.Image | SceneFeatures) -> AssetMatch:
-    """Blocking; call through asyncio.to_thread."""
+    """Blocking; call through asyncio.to_thread. Boxes are in the scene image's own pixels."""
     feats = scene_img if isinstance(scene_img, SceneFeatures) else scene_features(scene_img)
+    return _to_scene(_best(asset, feats), feats.scale)
+
+
+def _to_scene(m: AssetMatch, scale: float) -> AssetMatch:
+    if scale != 1.0:
+        m.box = _scaled(m.box, scale)
+        m.core = _scaled(m.core, scale)
+    return m
+
+
+def _scaled(box: tuple[int, int, int, int] | None, scale: float) -> tuple[int, int, int, int] | None:
+    return None if box is None else tuple(round(v * scale) for v in box)  # type: ignore[return-value]
+
+
+def _best(asset: PreparedAsset, feats: SceneFeatures) -> AssetMatch:
     found = _match(asset, feats)
     # Flat artwork is matched by template, a second full search per image for a rare mistake on simple
     # shapes; keypoint artwork is where a flip is cheap to try and where it matters (wordmarks, mascots).

@@ -544,3 +544,44 @@ def test_ocr_puts_back_brand_names_whose_i_and_l_strokes_were_swapped():
     # Case and spelling are the casing check's to judge, and a name inside a longer word is not the name.
     for kept in ("#madeinindia", "Madelnlndias", "Inkl00m", "Al Jazeera"):
         assert restore_names(kept, ["MadeInIndia", "Inkloom", "AI"]) == (kept, 0)
+
+
+def _with_subtitle_track(clip: bytes, srt: str) -> bytes:
+    """Mux `srt` into `clip` as a real mov_text track. PyAV cannot encode subtitles, so FFmpeg does it."""
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg is needed to mux a subtitle track")
+    with tempfile.TemporaryDirectory() as d:
+        src, cues, out = Path(d, "in.mp4"), Path(d, "cues.srt"), Path(d, "out.mp4")
+        src.write_bytes(clip)
+        cues.write_text(srt)
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-i", str(cues), "-map", "0", "-map", "1",
+                        "-c", "copy", "-c:s", "mov_text", str(out)], check=True)
+        return out.read_bytes()
+
+
+def test_a_mov_text_subtitle_track_is_read_with_its_times():
+    from verytas.media import video
+
+    srt = "1\n00:00:01,000 --> 00:00:03,500\nSave 40% today\n\n2\n00:00:04,000 --> 00:00:05,000\nJoin, then win\n\n"
+    cues = video.subtitle_cues(_with_subtitle_track(caption_video([]), srt))
+    assert [(c.start, c.end, c.text) for c in cues] == [(1.0, 3.5, "Save 40% today"), (4.0, 5.0, "Join, then win")]
+
+
+def test_both_pyav_subtitle_shapes_yield_text():
+    from types import SimpleNamespace as NS
+
+    from verytas.media.video import _subtitle_texts
+
+    # PyAV before 15: rects, text only in the ASS event line.
+    old = NS(rects=[NS(text="", ass=b"0,0,Default,,0,0,0,,Hello, world")])
+    assert _subtitle_texts(old) == ["Hello, world"]
+    # Current PyAV: an AssSubtitle with no rects.
+    new = NS(dialogue=b"Hello, world", ass=b"0,0,Default,,0,0,0,,Hello, world", text=b"")
+    assert _subtitle_texts(new) == ["Hello, world"]
+    assert _subtitle_texts(NS(ass=b"0,0,Default,,0,0,0,,Only ass")) == ["Only ass"]
+    assert _subtitle_texts(NS(rects=[])) == []

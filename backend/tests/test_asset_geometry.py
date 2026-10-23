@@ -191,3 +191,26 @@ def test_a_partial_match_inside_better_artwork_raises_nothing():
     run, node = _run([_asset(1, "Logo"), _asset(2, "Pack", kind="packaging")])
     agents._asset_findings(run, node, "img:x", {"image": "x"}, [logo, pack], None)
     assert run.findings == []
+
+
+def test_boxes_are_in_the_images_own_pixels_on_large_images(wordmark):
+    # Matching runs on a copy at most 2000 px wide; the box must still be where the artwork is in the
+    # original, where OCR line boxes and the layout checks measure.
+    art = _wordmark("Kitepath").resize((1680, 480), Image.LANCZOS)
+    scene = Image.new("RGB", (4000, 3000), (235, 232, 225))
+    scene.paste(art, (1000, 800), art)
+    m = asset_match.match(wordmark, scene)
+    assert m.found
+    x0, y0, x1, y1 = m.box
+    assert abs(x0 - 1000) < 120 and abs(y0 - 800) < 120 and abs(x1 - 2680) < 160 and abs(y1 - 1280) < 160, m.box
+
+
+def test_an_altered_logo_says_where_in_plain_words():
+    hit = asset_match.AssetMatch(1, True, 40, (10, 10, 210, 90), similarity=0.8,
+                                 altered_cells=[{"row": 0, "col": 0, "change": "colour"},
+                                                {"row": 5, "col": 5, "change": "shape"}])
+    run, node = _run([_asset(1, "Kitepath logo")])
+    agents._asset_findings(run, node, "img:x", {"image": "x"}, [hit], None)
+    [f] = run.findings
+    assert "colour differs at the top left" in f.explanation and "shape at the bottom right" in f.explanation
+    assert "r1c1" not in f.explanation

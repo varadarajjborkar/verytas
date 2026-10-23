@@ -43,6 +43,9 @@ OCR_REFRESH_S = 2.5  # re-read at least this often, even on a static frame
 EDGE_CHANGE = 0.004
 MAX_KEYFRAMES = 9
 SCENE_CHANGE = 0.55  # histogram correlation below this starts a new scene
+# A frame is the last one again when fewer than this share of its pixels moved by more than 20 grey
+# levels. A share, not a mean: a small mark arriving on a still shot moves few pixels but strongly.
+MATCH_STILL = 0.004
 SAMPLE_RATE = 16_000
 _ASR_LOCK = threading.Lock()
 _asr_models: dict[str, Any] = {}
@@ -167,6 +170,33 @@ def caption_cues(samples: list[tuple[float, Image.Image]],
 _ASS_TAGS = re.compile(r"\{[^}]*\}")
 
 
+def _ass_dialogue(ass: bytes | str) -> str:
+    """The text field of an ASS event line ("ReadOrder,Layer,Style,Name,MarginL,MarginR,MarginV,Effect,Text")."""
+    ass = ass.decode("utf-8", "replace") if isinstance(ass, bytes) else ass
+    return ass.split(",", 8)[-1] if ass.count(",") >= 8 else ass
+
+
+def _subtitle_texts(sub) -> list[str]:
+    """Raw text of one decoded subtitle, whichever shape this PyAV hands back. PyAV before 15 gave a
+    `Subtitle` with `.rects`; newer versions give an `AssSubtitle` (or `BitmapSubtitle`) per
+    packet with `.dialogue` bytes, `.ass` and `.text`. Bitmap subtitles carry no text and are skipped."""
+    out: list[str] = []
+    for rect in getattr(sub, "rects", None) or []:
+        text = getattr(rect, "text", None) or ""
+        ass = getattr(rect, "ass", None)
+        if not text and ass:
+            text = _ass_dialogue(ass)
+        out.append(text.decode("utf-8", "replace") if isinstance(text, bytes) else text)
+    if out:
+        return out
+    for attr in ("dialogue", "text"):
+        text = getattr(sub, attr, None)
+        if text:
+            return [text.decode("utf-8", "replace") if isinstance(text, bytes) else text]
+    ass = getattr(sub, "ass", None)
+    return [_ass_dialogue(ass)] if ass else []
+
+
 def subtitle_cues(raw: bytes) -> list[Cue]:
     cues: list[Cue] = []
     with _open(raw) as c:
@@ -179,12 +209,7 @@ def subtitle_cues(raw: bytes) -> list[Cue]:
             start = float(packet.pts * packet.time_base)
             end = start + float((packet.duration or 0) * packet.time_base)
             for sub in packet.decode():
-                for rect in getattr(sub, "rects", []) or []:
-                    text = getattr(rect, "text", None) or ""
-                    ass = getattr(rect, "ass", None)
-                    if not text and ass:
-                        ass = ass.decode() if isinstance(ass, bytes) else ass
-                        text = ass.split(",", 8)[-1] if ass.count(",") >= 8 else ass
+                for text in _subtitle_texts(sub):
                     text = _ASS_TAGS.sub("", text).replace("\\N", "\n").strip()
                     if text:
                         cues.append(Cue(round(start, 2), round(end, 2), text))
@@ -260,6 +285,42 @@ def keyframes(samples: list[tuple[float, Image.Image]], limit: int = MAX_KEYFRAM
     return [picked[int(i * step)] for i in range(limit)]
 
 
+def _thumb(img: Image.Image) -> np.ndarray:
+    return cv2.cvtColor(np.asarray(shrink(img, 96)), cv2.COLOR_RGB2GRAY).astype(np.float32)
+
+
+def match_frames(keys: list[tuple[float, Image.Image]], samples: list[tuple[float, Image.Image]],
+                 limit: int) -> tuple[list[tuple[float, Image.Image]], list[float]]:
+    """Frames to run the artwork matcher on, in time order, and the times of distinct frames left out.
+
+    Artwork can enter and leave between shot changes (a rival's mark for two seconds mid-shot), so every
+    sampled frame is a candidate, not only the shot starts. A frame that looks like the last one kept
+    (a held end card, a still) adds nothing and costs a match, so it is dropped first and is not "left
+    out". Past `limit`, shot starts and the sample right after each (where an overlay usually arrives)
+    go first, then the rest spread evenly over the video, so a long clip is sampled, not truncated."""
+    kept: list[tuple[float, Image.Image]] = []
+    key_times = {t for t, _ in keys}
+    last = None
+    for t, img in samples:
+        thumb = _thumb(img)
+        if t in key_times or last is None or float((np.abs(thumb - last) > 20).mean()) >= MATCH_STILL:
+            kept.append((t, img))
+            last = thumb
+    if len(kept) <= limit:
+        return kept, []
+    first = [i for i, (t, _) in enumerate(kept) if t in key_times]
+    chosen = dict.fromkeys(first + [i + 1 for i in first if i + 1 < len(kept)])
+    chosen = dict.fromkeys(list(chosen)[:limit])
+    rest = [i for i in range(len(kept)) if i not in chosen]
+    room = limit - len(chosen)
+    if room > 0 and rest:
+        n = min(room, len(rest))
+        chosen.update(dict.fromkeys(rest[round(k * (len(rest) - 1) / (n - 1))] if n > 1 else rest[0]
+                                    for k in range(n)))
+    picked = [kept[i] for i in sorted(chosen)]
+    return picked, [kept[i][0] for i in range(len(kept)) if i not in chosen]
+
+
 def contact_sheet(frames_: list[tuple[float, Image.Image]], cell: int = 420) -> Image.Image:
     """Keyframes on a grid, each stamped with its time, for one vision call."""
     cols = 3 if len(frames_) > 4 else 2 if len(frames_) > 1 else 1
@@ -274,6 +335,16 @@ def contact_sheet(frames_: list[tuple[float, Image.Image]], cell: int = 420) -> 
         draw.rectangle((x, y - 22, x + 90, y - 2), fill="black")
         draw.text((x + 6, y - 19), f"t={t:.1f}s", fill="white")
     return sheet
+
+
+def cue_regions(cues: list[Cue]) -> list[tuple[int, int, tuple[int, int, int, int], float, float]]:
+    """Where each OCR cue sits in the frame, keyed by the same character offsets `cue_text` gives."""
+    out, pos = [], 0
+    for cue in sorted(cues, key=lambda c: (c.start, c.end)):
+        if cue.box:
+            out.append((pos, pos + len(cue.text), cue.box, cue.start, cue.end))
+        pos += len(cue.text) + 1
+    return out
 
 
 def cue_text(cues: list[Cue]) -> tuple[str, list[tuple[int, int, float, float]]]:
