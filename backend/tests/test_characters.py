@@ -84,6 +84,24 @@ def test_a_named_mascot_nobody_resembles_is_a_weak_warning():
     assert "beyond recognition" in f.title and f.confidence < 0.6
 
 
+def test_a_heavy_redraw_the_brief_names_gets_its_differences_as_probable():
+    # 0.76 alike: below the bar for "this is Kit", but Kit leads Pip by far and the brief says Kit.
+    ch = _ch({"1": 0.76, "2": 0.61}, EXTRA_EYE)
+    run = _run(FakeClient([[ch]]), [_asset(1, "Kit"), _asset(2, "Pip")], brief="Kit dances")
+    _check(run, IMAGE)
+    [f] = run.findings
+    assert f.title == "Kit looks redrawn" and "3 black #151722 shapes" in f.explanation
+    assert "if it is Kit" in f.explanation and f.confidence == 0.6 and f.locator["box"] == [10, 10, 50, 60]
+
+
+def test_a_redraw_two_mascots_could_be_stays_a_plain_warning():
+    ch = _ch({"1": 0.76, "2": 0.75}, EXTRA_EYE, compared=("1", "2"))
+    run = _run(FakeClient([[ch]]), [_asset(1, "Kit"), _asset(2, "Pip")], brief="Kit dances")
+    _check(run, IMAGE)
+    [f] = run.findings
+    assert "beyond recognition" in f.title
+
+
 def test_a_restricted_mascot_is_a_leak_whatever_its_quality():
     run = _run(FakeClient([[_ch({"1": SURE + 0.03})]]), [_asset(1, "Nova", restricted=True)])
     _check(run, IMAGE)

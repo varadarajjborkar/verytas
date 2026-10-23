@@ -8,8 +8,9 @@ decides what that means.
 Who a character is, from the mascot benchmark (evals/mascots, 425 scenes): likeness alone separates a
 brand's mascot from other cartoon characters only at a high bar (0.90 accepts 0.4% of other mascots but
 only a third of genuine ones). The creator's brief lowers the bar: a mascot the brief names is taken at
-0.83, where most genuine renderings pass. Below that, a named mascot that matches no character is
-reported as possibly redrawn beyond recognition, at warning strength.
+0.83, where most genuine renderings pass. Below that, down to 0.70, the character the named mascot
+clearly leads for is taken as probably it, and its differences are reported as "if this is Kit". Only
+when no character qualifies is the mascot reported as possibly redrawn beyond recognition.
 """
 
 from __future__ import annotations
@@ -26,6 +27,13 @@ from verytas.vision.client import Character, VisionUnavailable
 # Likeness (DINOv2 cosine) at which a character is the mascot on looks alone, and when the brief names it.
 SURE = 0.90
 NAMED = 0.83
+# Below NAMED, a character the brief's mascot is the clear favourite for (this far ahead of any other
+# registered mascot) is taken as probably that mascot: a heavy AI redraw lands here. Its differences are
+# reported framed as "if this is Kit", at lower confidence, instead of a bare "redrawn beyond recognition"
+# that tells the creator nothing to fix. The worker compares from vision.chain.COMPARE_FROM, which is
+# at or below PROBABLE, so the differences exist.
+PROBABLE = 0.70
+PROBABLE_LEAD = 0.03
 # A video's frames sent for characters: enough to see a morph within a shot, few enough for a CPU.
 MAX_VIDEO_FRAMES = 12
 # First words of a mascot's name that don't name it on their own ("Blue the whale" is not named by "blue").
@@ -190,6 +198,22 @@ async def characters_agent(run: Any, node: Any, frames: list[tuple[float | None,
         asset = mascots[ref]
         if asset.restricted or altered is None or not any(found):
             continue
+        likely = _probable(ref, mascots, frames, found)
+        if likely is not None:
+            t, ch = likely
+            texts = [d["text"] for d in ch.differences.get(ref, [])][:4]
+            if texts:
+                part = [Sighting(t, ch)]
+                out.append(RawFinding(
+                    unit_id=f"{media_id}:character{ref}:probable", category=altered.category,
+                    title=f"{asset.name} looks redrawn",
+                    explanation=f"The brief says {asset.name} appears. The closest character here is only "
+                                f"{ch.likeness[ref]:.0%} alike, so it may be a heavy redraw; if it is "
+                                f"{asset.name}, it differs from the official artwork{_when(part)}: "
+                                f"{'; '.join(texts)}. {altered.text}",
+                    confidence=0.6, checker="characters", rule_code=altered.code, source=media_id,
+                    locator=_where(locator, media_id, part)))
+                continue
         out.append(RawFinding(
             unit_id=f"{media_id}:character{ref}:unrecognised", category=altered.category,
             title=f"{asset.name} may be redrawn beyond recognition",
@@ -198,6 +222,20 @@ async def characters_agent(run: Any, node: Any, frames: list[tuple[float | None,
             confidence=0.55, checker="characters", rule_code=altered.code, source=media_id,
             locator={**locator, "image": media_id}))
     run.add(node, "media", out)
+
+
+def _probable(ref: str, mascots: dict[str, Any], frames: list[tuple[float | None, Image.Image]],
+              found: list[list[Character]]) -> tuple[float | None, Character] | None:
+    """The character most like `ref` where `ref` clearly leads every other registered mascot, or None."""
+    best: tuple[float | None, Character] | None = None
+    for (t, _), characters in zip(frames, found, strict=True):
+        for ch in characters:
+            score = ch.likeness.get(ref, 0.0)
+            rival = max((v for k, v in ch.likeness.items() if k != ref and k in mascots), default=0.0)
+            if score >= PROBABLE and score - rival >= PROBABLE_LEAD and (
+                    best is None or score > best[1].likeness[ref]):
+                best = (t, ch)
+    return best
 
 
 def _when(part: list[Sighting]) -> str:

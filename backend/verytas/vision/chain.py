@@ -23,7 +23,7 @@ TEXT_THRESHOLD = 0.2
 MAX_CHARACTERS = 4
 # A character is compared, colour by colour and part by part, with every reference at least this alike
 # (up to COMPARED): the review decides who it is, and must find that reference's comparison there.
-COMPARE_FROM = 0.80
+COMPARE_FROM = 0.70  # prism.characters.PROBABLE: a heavy redraw the brief names is compared too
 COMPARED = 3
 # Grounding DINO returns overlapping boxes for one character; above this overlap they are the same one.
 SAME_BOX_IOU = 0.7
