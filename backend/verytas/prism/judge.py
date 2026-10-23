@@ -17,10 +17,11 @@ from verytas.models import Level
 
 CATEGORIES = ("claims", "tone", "terminology", "messaging", "visual", "accessibility", "legal", "confidentiality")
 _PENALTY = {Level.blocker: 0.5, Level.warning: 0.2, Level.advisory: 0.05}
+WARN_CONFIDENCE = 0.6  # a should rule warns at this certainty; calibration may raise it (prism/calibration.py)
 
 
 def level_for(finding: RawFinding, rule: RuleView | None, *, blocker_confidence: float,
-              warn_confidence: float = 0.6) -> Level:
+              warn_confidence: float = WARN_CONFIDENCE) -> Level:
     severity = rule.severity if rule else "should"
     model_free = finding.model is None
     if severity == "must" and model_free and finding.confidence >= blocker_confidence:

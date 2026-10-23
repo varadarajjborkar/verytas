@@ -379,6 +379,8 @@ class FindingOut(ORM):
     source: str = "body"
     locator: dict[str, Any] | None = None
     assessment: dict[str, Any] | None = None
+    precedents: list[dict[str, Any]] | None = None
+    calibration: dict[str, Any] | None = None
     citations: list[CitationOut] = []
     suggestions: list[SuggestionOut] = []
     decisions: list[DecisionOut] = []

@@ -508,6 +508,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
                   {coverage.models?.second_judge && <> (must rules also by <code>{coverage.models.second_judge}</code>)</>}, written by <code>{coverage.models?.llm}</code>
                   {coverage.models?.vision && <>, images seen by <code>{coverage.models.vision}</code></>}.
                   {" "}{coverage.redactions ?? 0} confidential item{coverage.redactions === 1 ? "" : "s"} redacted before leaving Verytas.
+                  {(coverage.precedents?.attached ?? 0) > 0 && ` ${coverage.precedents!.attached} finding${coverage.precedents!.attached === 1 ? "" : "s"} shown what reviewers decided before on similar words.`}
                   {coverage.not_checked && coverage.not_checked.length > 0 && ` Not checked: ${coverage.not_checked.join(", ")}.`}
                 </p>
               </div>

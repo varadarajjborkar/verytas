@@ -60,12 +60,13 @@ from verytas.models import (
     Tier,
     utcnow,
 )
+from verytas.prism import calibration, fixstyle, precedent
 from verytas.prism.agents import MEDIA_COVERS, WORKER_COVERS, AgentTree, OfficialAsset, ReviewRun, plan
 from verytas.prism.dedupe import collapse
 from verytas.prism.disputes import is_mechanical, rule_thresholds
 from verytas.prism.governor import CircuitBreaker, Governor, GuardedJudge, GuardedLLM
 from verytas.prism.intent import intent_agent
-from verytas.prism.judge import CATEGORIES, level_for, scorecard
+from verytas.prism.judge import CATEGORIES, WARN_CONFIDENCE, level_for, scorecard
 from verytas.prism.onion import onion_agent
 from verytas.prism.people_agent import PeopleContext
 from verytas.prism.second_look import SecondLook
@@ -214,6 +215,10 @@ class Prism:
             clock[0] = now
 
         ctx, redactor, assets = await self._context(session, version)
+        book = await precedent.load(session, content.workspace_id, content.tier, redactor.mask)
+        # Which kind of fix reviewers take per rule, and their own edits (prism/fixstyle.py). Seeded by the
+        # version, so a re-run of the same version prefers the same operations.
+        style = await fixstyle.load(session, content.workspace_id, content.tier, redactor.mask, seed=version.id)
         language = detect(version.body)
         blobs = await _load_blobs(session, content.workspace_id, version.attachments or {}, version.creator_notes or {})
         visuals_any = _has_visuals(version.attachments or {})
@@ -223,6 +228,8 @@ class Prism:
         # Learned from disputes and reviewer decisions: how sure the judge must
         # be before each model-judged rule flags (prism/disputes.py).
         thresholds = await rule_thresholds(session, content.workspace_id, self.settings.semantic_flag_threshold)
+        # What a certainty has meant to this workspace's reviewers (prism/calibration.py).
+        calib = await calibration.load(session, content.workspace_id, content.tier)
         # Close the read transaction before any model call. A live review spends
         # tens of seconds waiting on providers; holding a transaction that long
         # starves every other writer on SQLite and pins an old snapshot on
@@ -251,6 +258,7 @@ class Prism:
             media_timeout_s=self.settings.media_timeout_s,
             rule_thresholds=thresholds,
             second_look=self._second_look(redactor),
+            precedents=book, precedent_examples=self.settings.precedent_examples,
         )
 
         escalations: list[dict] = []
@@ -292,7 +300,8 @@ class Prism:
             first = [f for f in run.findings if f.needs_explanation]
             if first:
                 early.append(asyncio.create_task(asyncio.wait_for(
-                    explain_and_fix(first, rules, llm, judge, terms), timeout=self.settings.task_timeout_s)))
+                    explain_and_fix(first, rules, llm, judge, terms, style=style),
+                    timeout=self.settings.task_timeout_s)))
             await tree.spawn(root, "context", "Onion: context layers", lambda n: onion_agent(run, n), essential=True)
             # One finding per issue before anything spends a model call on each.
             run.findings[:] = collapse(run.findings)
@@ -310,6 +319,7 @@ class Prism:
             raise
         lap("checks")
         raw = run.findings
+        with_precedent = book.attach(raw, {s.id: s.text for s in run.sources})
         _apply_cleared(raw, cleared, {r.code: r.id for r in ctx.rules})
         rule_problems = run.rule_problems
         worker_of = run.worker_of
@@ -319,7 +329,8 @@ class Prism:
             for t in early:
                 await t
             # Whatever is still unexplained: the context layers' findings, mostly.
-            await asyncio.wait_for(explain_and_fix(raw, rules, llm, judge, terms), timeout=self.settings.task_timeout_s)
+            await asyncio.wait_for(explain_and_fix(raw, rules, llm, judge, terms, style=style),
+                                   timeout=self.settings.task_timeout_s)
         except (ProviderError, TimeoutError) as exc:
             suggest_note = f"explanations and fixes skipped: {exc or 'timed out'}"
         else:
@@ -355,13 +366,18 @@ class Prism:
         notes = notes + run.notes + _gap_notes(tree.gaps()) + _language_notes(language)
 
         levelled = []
+        held_back: set[int] = set()
         dropped = 0
         for f in raw:
             rule = rules.get(f.rule_code or "")
             if rule is None and f.fact_id is None:
                 dropped += 1  # uncitable; the schema would reject it anyway
                 continue
-            lvl = level_for(f, rule, blocker_confidence=self.settings.blocker_confidence)
+            lvl = level_for(f, rule, blocker_confidence=self.settings.blocker_confidence,
+                            warn_confidence=calib.warn_confidence(f, WARN_CONFIDENCE))
+            if lvl is Level.advisory and level_for(f, rule, blocker_confidence=self.settings.blocker_confidence) \
+                    is Level.warning:
+                held_back.add(id(f))  # the learned floor, not the rule, made this an advisory
             if f.level_cap == "advisory":
                 lvl = Level.advisory
             levelled.append((f, lvl))
@@ -375,14 +391,16 @@ class Prism:
                 explanation=f.explanation, quote=f.quote, span_start=f.span_start, span_end=f.span_end,
                 rule_id=rule.id if rule else None, fact_id=f.fact_id, confidence=round(float(f.confidence), 4),
                 checker=f.checker, model=f.model, signature=signature, source=f.source, locator=f.locator,
-                assessment=f.assessment,
+                assessment=f.assessment, precedents=f.precedents,
+                calibration=_calibrated(calib, f, id(f) in held_back),
             )
             session.add(row)
             if f.suggestion:
                 await session.flush()
                 s = f.suggestion
                 session.add(Suggestion(finding_id=row.id, original=s.original, proposed=s.proposed,
-                                       rationale=s.rationale, intent_preserved=s.intent_preserved, model=s.model))
+                                       rationale=s.rationale, intent_preserved=s.intent_preserved, model=s.model,
+                                       action=s.action))
 
         lap("recheck_and_store")
         card = scorecard(levelled, checked, statuses)
@@ -402,8 +420,11 @@ class Prism:
             # Things a person has to look at: notes that steer, concerns, unsure disputes.
             "escalations": escalations,
             "learned_thresholds": thresholds,
+            "calibration": calib.summary(),
+            "fix_style": style.summary(),
             # Must-rule questions answered by the larger judge too, with both answers.
             "second_looks": run.second_look.summary() if run.second_look else None,
+            "precedents": {**book.summary(), "attached": with_precedent, "examples": self.settings.precedent_examples},
             "not_checked": sorted(failed & configured),
             "not_configured": sorted(set(CATEGORIES) - configured),
             "degraded": sorted(degraded),
@@ -744,6 +765,14 @@ async def _cleared_disputes(session: AsyncSession, content_id: int) -> list[tupl
         .join(Finding, Finding.id == Dispute.finding_id)
         .where(Dispute.content_id == content_id, Dispute.status == "overturned"))).all()
     return [(rid, q, src or "body", did) for rid, q, src, did in rows]
+
+
+def _calibrated(calib: calibration.Calibration, f: RawFinding, held_back: bool) -> dict | None:
+    """How often reviewers agreed with findings like this, and whether the learned floor held it back."""
+    out = calib.of(f) or {}
+    if held_back:
+        out["held_back_below"] = calib.floor
+    return out or None
 
 
 def _apply_cleared(findings: list[RawFinding], cleared: list[tuple[int | None, str | None, str, int]],

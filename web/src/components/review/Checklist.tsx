@@ -148,6 +148,20 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                         </ul>
                       </div>
                     )}
+                    {/* What reviewers decided before about words like these, so nobody argues the same case twice. */}
+                    {(f.precedents?.length ?? 0) > 0 && (
+                      <div className="border-l-2 border-line-strong pl-3 text-sm">
+                        <p className="text-xs font-medium text-muted">Decided before</p>
+                        <ul className="mt-0.5 flex flex-col gap-1">
+                          {f.precedents!.map((p) => (
+                            <li key={p.finding_id}>
+                              <span>{p.summary}</span>
+                              <span className="block text-xs text-muted">“{p.quote}”</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     {s && (
                       <div className="border-l-2 border-[var(--vt-ok)] pl-3 text-sm">
                         <p className="text-xs font-medium text-muted">{fixable ? "Suggested fix" : "Suggested change (in the attachment)"}</p>
@@ -176,7 +190,17 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                         </li>
                       ))}
                       <li className="text-subtle">
-                        <span className="capitalize">{f.category}</span> · {Math.round(f.confidence * 100)}% sure · {f.model ? f.model : "rule-based"}
+                        <span className="capitalize">{f.category}</span> · {Math.round(f.confidence * 100)}% sure
+                        {/* What that certainty has meant here: how often reviewers agreed with findings like it. */}
+                        {f.calibration?.agree != null && (
+                          <span title={f.calibration.n != null ? `From ${f.calibration.n} decision${f.calibration.n === 1 ? "" : "s"} on ${f.calibration.family === "all" ? "all" : f.calibration.family} findings in this workspace` : undefined}>
+                            {" "}(reviewers agreed with {Math.round(f.calibration.agree * 10)} in 10 like it)
+                          </span>
+                        )}
+                        {f.calibration?.held_back_below != null && (
+                          <span>{" "}· an advisory: reviewers here dismiss many warnings under {Math.round(f.calibration.held_back_below * 100)}% sure</span>
+                        )}
+                        {" "}· {f.model ? f.model : "rule-based"}
                         {f.signature_valid && " · signed"}
                       </li>
                     </ul>

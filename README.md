@@ -208,9 +208,9 @@ flowchart LR
 
 ## Quality
 
-- **Over 530 backend tests** run fully offline in about a minute, plus type checks, lint and a production build for the web apps, all on every push.
+- **Over 550 backend tests** run fully offline in about a minute, plus type checks, lint and a production build for the web apps, all on every push.
 - **Measured, not guessed.** The [explain-and-fix eval](backend/evals/explain_and_fix.py) runs the production path on 73 findings with two independent graders: the rule-aware fix pipeline took useful fixes **from 45% to 82%** on the same model. The [mascot benchmark](backend/evals/mascots) runs 425 generated scenes through the vision chain: every character found, defects named in 73 to 100% of cases.
-- **Parts compared with each other.** A caption that says 50% off over a poster that says 30%, or a voice-over saying 499 rupees while the screen shows Rs 999, is one finding citing both. On the [cross-source benchmark](backend/evals/crossmodal) it caught 14 of 14 planted contradictions with 0 false alarms on 14 controls. Must rules also get a [second look](backend/evals/second_look) from the larger model, which was right on 30 of 32 hard cases against 27 for the small judge alone.
+- **Parts compared with each other.** A caption that says 50% off over a poster that says 30%, or a voice-over saying 499 rupees while the screen shows Rs 999, is one finding citing both. On the [cross-source benchmark](backend/evals/crossmodal) it caught 14 of 14 planted contradictions with 0 false alarms on 14 controls. Must rules also get a [second look](backend/evals/second_look) from the larger model, which was right on 30 of 32 hard cases against 27 for the small judge alone. A model-judged finding also shows what reviewers decided before on similar words (precedent memory), and every finding how often reviewers agreed with ones like it (calibration).
 - **Tested from the outside.** [`blackbox/`](blackbox/README.md) is a simulator that knows Verytas only through its API. It invents brands, writes posts, images, PDFs and video with planted violations, and steers each round toward what Verytas misses. Across a 216-case campaign, recall on core checks rose **from 78% to 96%**, false alarms on clean posts fell **from 7% to 0%**, and server errors fell **from 17 to 0**, even at 32 parallel submissions.
 
 ## What comes next

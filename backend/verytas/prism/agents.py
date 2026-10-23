@@ -27,6 +27,7 @@ the review, so the UI can show exactly how a piece of content was checked.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import difflib
 import io
 import itertools
@@ -229,6 +230,9 @@ class ReviewRun:
     board: Board = field(default_factory=Board)
     # Must-rule questions also put to the larger judge (prism/second_look.py); None when off.
     second_look: Any = None
+    # This workspace's past reviewer decisions (prism/precedent.py), and whether the judge gets them as examples.
+    precedents: Any = None
+    precedent_examples: bool = False
 
     def asr_for(self, pcm: Any) -> str:
         """The speech model for this much audio (16 kHz samples): the better one unless it is long."""
@@ -325,6 +329,11 @@ async def text_agent(run: ReviewRun, node: AgentNode, source: Source) -> None:
     if is_body:
         ctx.units = segment(source.text) + image_units(run.base.attachments)
 
+    judged = ctx
+    if run.precedents is not None and run.precedent_examples:
+        # The judge reads the rule with this workspace's nearest decided cases as extra examples.
+        judged = dataclasses.replace(ctx, rules=[run.precedents.with_examples(r, source.text) for r in ctx.rules])
+
     async def worker(name: str, fn: Callable[[], Awaitable[list[RawFinding]]]) -> None:
         async def go(child: AgentNode) -> None:
             outcome = await run.governor.run(name, fn)
@@ -340,7 +349,7 @@ async def text_agent(run: ReviewRun, node: AgentNode, source: Source) -> None:
     await asyncio.gather(
         worker("rule checks", lambda: run.blocking(run_deterministic, ctx, run.rule_problems)),
         worker("claim verifier", lambda: check_claims(ctx, run.llm, run.judge)),
-        worker("semantic judge", lambda: check_semantic(ctx, run.judge, threshold=run.semantic_threshold,
+        worker("semantic judge", lambda: check_semantic(judged, run.judge, threshold=run.semantic_threshold,
                                                         per_rule=run.rule_thresholds,
                                                         second=run.second_look.at(source.id) if run.second_look
                                                         else None)),

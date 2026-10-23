@@ -85,7 +85,14 @@ export type Finding = {
     box?: number[]; intake?: string; evidence?: Evidence[] } | null;
   assessment?: { by: string; outcome?: string; view?: string; reader_reading?: string; suggestion?: string;
     reader_probability?: number; dispute_id?: number } | null;
+  /** Past reviewer decisions on the same rule about similar words: context for the reviewer, not the verdict. */
+  precedents?: Precedent[] | null;
+  /** How often this workspace's reviewers agreed with findings like this one, by its certainty. */
+  calibration?: { agree?: number; n?: number; family?: string; held_back_below?: number } | null;
 };
+
+export type Precedent = { finding_id: number; action: "accepted" | "edited" | "rejected"; reason_code: string | null;
+  summary: string; quote: string };
 
 /** Must-rule questions answered by the larger judge too, with both answers. */
 export type SecondLooks = {
@@ -182,6 +189,8 @@ export type Review = {
     /** What the agents posted for each other to compare, by kind (figure, person). */
     evidence?: Record<string, number>;
     second_looks?: SecondLooks | null;
+    precedents?: { cases: number; rules: number; attached: number; examples: boolean };
+    calibration?: { decisions: Record<string, number>; families: string[]; workspace: boolean; warn_floor: number | null };
   };
   error: string | null;
   findings: Finding[];

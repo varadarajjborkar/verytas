@@ -25,6 +25,13 @@ _PII = [
 ]
 
 
+
+def _is_pii(kind: str, match: str) -> bool:
+    # Dates and figures look like phone numbers to a regex; real phone
+    # numbers carry at least ten digits.
+    return kind != "PHONE" or sum(c.isdigit() for c in match) >= 10
+
+
 class Redactor:
     def __init__(self, confidential_terms: list[str]) -> None:
         # Longest first so "Project Lumen Pro" is replaced before "Project Lumen".
@@ -55,12 +62,17 @@ class Redactor:
             text = pattern.sub(lambda m, k=kind: self._pii(k, m.group(0)), text)
         return text
 
+    def mask(self, text: str) -> str:
+        """For showing, not sending: the same matches blanked for good, with no placeholder to restore and
+        nothing counted against this redactor's egress total."""
+        for pattern in self._terms:
+            text = sub_folded(pattern, text, lambda _original: "[confidential]")
+        for kind, pattern in _PII:
+            text = pattern.sub(lambda m, k=kind: f"[{k.lower()}]" if _is_pii(k, m.group(0)) else m.group(0), text)
+        return text
+
     def _pii(self, kind: str, match: str) -> str:
-        # Dates and figures look like phone numbers to a regex; real phone
-        # numbers carry at least ten digits.
-        if kind == "PHONE" and sum(c.isdigit() for c in match) < 10:
-            return match
-        return self._placeholder(kind, match)
+        return self._placeholder(kind, match) if _is_pii(kind, match) else match
 
     def restore(self, text: str) -> str:
         for ph, original in self._reverse.items():

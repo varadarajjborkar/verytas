@@ -309,6 +309,10 @@ class Finding(Base):
     checker: Mapped[str] = mapped_column(String(60))
     model: Mapped[str | None] = mapped_column(String(80))  # AI disclosure: which model, if any
     signature: Mapped[str] = mapped_column(String(200))
+    # Past decisions on the same rule about similar words (prism/precedent.py): context, not verdict.
+    precedents: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # How often reviewers agreed with findings like this one (prism/calibration.py): {agree, n, family}.
+    calibration: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     review: Mapped[Review] = relationship(back_populates="findings")
@@ -328,6 +332,7 @@ class Suggestion(Base):
     rationale: Mapped[str] = mapped_column(Text)
     intent_preserved: Mapped[float | None] = mapped_column(Float)  # P(meaning unchanged)
     model: Mapped[str | None] = mapped_column(String(80))
+    action: Mapped[str | None] = mapped_column(String(10))  # replace | rewrite | delete (model-written fixes)
 
     finding: Mapped[Finding] = relationship(back_populates="suggestions")
 

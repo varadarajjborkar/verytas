@@ -105,6 +105,7 @@ class SuggestedEdit:
     # on fixes that reached the gate; repaired is True when the first proposal was rejected and redone.
     gate: dict[str, float] | None = None
     repaired: bool = False
+    action: str | None = None  # replace | rewrite | delete, for a model-written fix (prism/fixstyle.py)
 
 
 @dataclass
@@ -132,6 +133,9 @@ class RawFinding:
     # take (e.g. "advisory" once a reading is shown to be far-fetched), and why.
     level_cap: str | None = None
     assessment: dict[str, Any] | None = None
+    # Past reviewer decisions on the same rule about similar words (prism/precedent.py), shown with the
+    # finding. Context for the reviewer, not part of the verdict, so not signed.
+    precedents: list[dict[str, Any]] | None = None
 
 
 @dataclass

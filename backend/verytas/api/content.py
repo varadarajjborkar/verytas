@@ -446,9 +446,18 @@ async def get_review(review_id: int, request: Request, session: Session, user: C
 
     keyring = request.app.state.prism.keyring
     out = ReviewOut.model_validate(review, from_attributes=True)
+    if user.role is Role.creator and out.coverage:
+        # Decision counts and per-rule fix tallies describe other people's pieces.
+        out.coverage = {k: v for k, v in out.coverage.items() if k not in ("calibration", "fix_style", "precedents")}
     out.findings = []
     for f in review.findings:
         fo = FindingOut.model_validate(f)
+        if user.role is Role.creator:
+            # Precedents quote other pieces and name their reviewers; a creator sees only their own work.
+            # The agreement rate stays, but not how many decisions on others' pieces it rests on.
+            fo.precedents = None
+            if fo.calibration:
+                fo.calibration = {k: v for k, v in fo.calibration.items() if k != "n"}
         cites = []
         if f.rule:
             label = f"{f.rule.code} v{f.rule.version}: {f.rule.title}"
