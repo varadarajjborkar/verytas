@@ -21,6 +21,7 @@ from verytas.api import (
     knowledge,
     media,
     people,
+    search,
 )
 from verytas.config import Settings, get_settings
 from verytas.db import Database
@@ -92,7 +93,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "llm_backend": settings.llm_backend}
 
     # media before content: /contents/precheck must not be read as a content id.
-    for module in (admin, accounts, knowledge, people, media, content, governance, insights, chats, assistant, assist):
+    routers = (admin, accounts, knowledge, people, media, content, governance, insights, chats, assistant, assist,
+               search)
+    for module in routers:
         app.include_router(module.router)
     return app
 
