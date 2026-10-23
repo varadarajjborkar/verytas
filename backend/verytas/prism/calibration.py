@@ -31,7 +31,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from verytas.checks.base import RawFinding
+from verytas.checks.base import RawFinding, RuleView
 from verytas.models import Content, ContentVersion, Decision, DecisionAction, Finding, Review, Rule, Tier
 
 FAMILY_MIN = 20
@@ -142,8 +142,10 @@ class Calibration:
             return None
         return {"agree": round(curve(float(f.confidence)), 3), "n": curve.n, "family": scope}
 
-    def warn_confidence(self, f: RawFinding, default: float) -> float:
-        return self.floor if self.floor is not None and f.model is not None else default
+    def warn_confidence(self, f: RawFinding, default: float, rule: RuleView | None = None) -> float:
+        """The floor applies where it was fitted: model-judged findings on should rules."""
+        should = rule is not None and rule.severity == "should"
+        return self.floor if self.floor is not None and f.model is not None and should else default
 
     def summary(self) -> dict[str, Any]:
         return {"decisions": self.sizes, "families": sorted(self.families), "workspace": self.workspace is not None,

@@ -70,7 +70,8 @@ def words(text: str) -> frozenset[str]:
 
 def _stem(w: str) -> str:
     # Plural to singular, the only folding worth its errors here: "classes" and "class" stay apart from "cla".
-    if len(w) > 4 and w.endswith(("sses", "shes", "ches", "xes")):
+    # "-ches" is left to the plain rule: "caches" and "headaches" are e-final, more often than "launches" isn't.
+    if len(w) > 4 and w.endswith(("sses", "shes", "xes")):
         return w[:-2]
     return w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith(("ss", "us", "is")) else w
 

@@ -52,6 +52,12 @@ def restated(source: str, start: int, end: int, kind: str, findings: list[RawFin
     return None
 
 
+def _comparable(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    """Spans of about the same size: one finding across a paragraph does not stand in for two phrases in it."""
+    la, lb = a[1] - a[0], b[1] - b[0]
+    return max(la, lb) <= _MAX_STRETCH * max(min(la, lb), 1)
+
+
 def collapse(findings: list[RawFinding]) -> list[RawFinding]:
     """Findings for one rule on overlapping words in one source, reduced to the most confident.
     A deterministic finding wins a tie, since it quotes exactly what the rule names. Order is kept."""
@@ -60,7 +66,8 @@ def collapse(findings: list[RawFinding]) -> list[RawFinding]:
         span = _span(f)
         twin = next((k for k in keep if span is not None and k.rule_code and k.rule_code == f.rule_code
                      and k.fact_id == f.fact_id and k.source == f.source
-                     and (ks := _span(k)) is not None and _share(ks, span) >= _MIN_SHARE), None)
+                     and (ks := _span(k)) is not None and _share(ks, span) >= _MIN_SHARE
+                     and _comparable(ks, span)), None)
         if twin is None:
             keep.append(f)
         elif (f.confidence, f.checker == "deterministic") > (twin.confidence, twin.checker == "deterministic"):

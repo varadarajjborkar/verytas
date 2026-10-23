@@ -57,7 +57,7 @@ def ensure(name: str, folder: Path, *, timeout: float = 300) -> Path:
                 with partial.open("wb") as fh:
                     for chunk in res.iter_bytes(1 << 20):
                         fh.write(chunk)
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, OSError) as exc:  # a full disk or read-only folder is "not run" too
             partial.unlink(missing_ok=True)
             raise ModelUnavailable(f"couldn't download {name}: {exc}") from exc
         if _sha256(partial) != expected:

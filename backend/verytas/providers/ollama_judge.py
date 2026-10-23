@@ -190,7 +190,7 @@ def _distribution(q: Question, raw: str, p: float) -> dict[str, float] | None:
         n = len(_levels(q))
         # Whole level numbers only: "1.7" or "inf" is a malformed answer to
         # re-ask, not something to round into a level.
-        if not answer.isdigit() or not 0 <= (idx := int(answer)) < n:
+        if not answer.isascii() or not answer.isdigit() or not 0 <= (idx := int(answer)) < n:
             return None
         dist = {str(i): 0.0 for i in range(n)}
         dist[str(idx)] = p

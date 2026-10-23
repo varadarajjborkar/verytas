@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from tests.helpers import rule
 from verytas.checks.base import RawFinding
 from verytas.models import DecisionAction
 from verytas.prism import calibration
@@ -52,8 +53,11 @@ def test_the_warning_floor_rises_only_as_far_as_the_evidence_needs():
     # Nothing ever controls the risk: the top of the grid, so findings still show, as advisories.
     assert warn_floor([(x / 100, i % 2 == 0) for i, x in enumerate(range(60, 100)) for _ in range(2)]) == 0.85
     cal = Calibration(floor=0.8)
-    assert cal.warn_confidence(_f(), 0.6) == 0.8
-    assert cal.warn_confidence(_f(model=None), 0.6) == 0.6  # rule-based findings are never moved
+    should, must = rule("VOICE-01", {}, kind="semantic"), rule("LEGAL-01", {}, kind="semantic", severity="must")
+    assert cal.warn_confidence(_f(), 0.6, should) == 0.8
+    assert cal.warn_confidence(_f(model=None), 0.6, should) == 0.6  # rule-based findings are never moved
+    # Fitted on should rules only, so applied only there.
+    assert cal.warn_confidence(_f(), 0.6, must) == 0.6 and cal.warn_confidence(_f(), 0.6) == 0.6
 
 
 def test_a_review_shows_how_often_reviewers_agreed(client, monkeypatch):

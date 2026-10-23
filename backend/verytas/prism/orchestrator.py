@@ -374,10 +374,10 @@ class Prism:
                 dropped += 1  # uncitable; the schema would reject it anyway
                 continue
             lvl = level_for(f, rule, blocker_confidence=self.settings.blocker_confidence,
-                            warn_confidence=calib.warn_confidence(f, WARN_CONFIDENCE))
-            if lvl is Level.advisory and level_for(f, rule, blocker_confidence=self.settings.blocker_confidence) \
-                    is Level.warning:
-                held_back.add(id(f))  # the learned floor, not the rule, made this an advisory
+                            warn_confidence=calib.warn_confidence(f, WARN_CONFIDENCE, rule))
+            if (lvl is Level.advisory and f.level_cap != "advisory"
+                    and level_for(f, rule, blocker_confidence=self.settings.blocker_confidence) is Level.warning):
+                held_back.add(id(f))  # the learned floor, not the rule or a cap, made this an advisory
             if f.level_cap == "advisory":
                 lvl = Level.advisory
             levelled.append((f, lvl))
