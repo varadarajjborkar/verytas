@@ -235,8 +235,10 @@ def _seed_company(c: TestClient, co: Company, *, first: bool, limit: int | None)
 
     state: dict[str, dict] = {}
     pieces = co.pieces()
-    if limit is not None:
-        pieces = pieces[:limit]
+    if limit is not None and limit < len(pieces):
+        # Spread over the whole list: stories are written in calendar order, so the first N would keep
+        # the quiet early weeks and drop the launch and festival stories at the end.
+        pieces = [pieces[i * len(pieces) // limit] for i in range(limit)]
     for p in pieces:
         born = at(p.days_ago)
         who = p.who
@@ -362,6 +364,11 @@ def _step(c, h, state, key: str, act: str, args: dict, got: dict, co: Company) -
                     "action": args["action"], "reason_code": args["reason_code"],
                     "reason_text": args["reason_text"]}).raise_for_status()
                 got["decisions"] += 1
+            else:
+                # The script expected a finding this review didn't raise: say so, so data and checks
+                # drifting apart shows up in the seed log instead of as a quietly thinner demo.
+                print(f"seed: {co.brand} {key}: no {args['rule']} finding to decide on; skipped",
+                      file=sys.stderr, flush=True)
         elif act == "autodecide":
             _autodecide(c, h, s, key, args["by"], got, co)
         elif act == "comment":

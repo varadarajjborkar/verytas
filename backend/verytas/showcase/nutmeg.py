@@ -296,7 +296,8 @@ RULES = [
     _r("MSG-COMPARE", "messaging", "semantic", "must", "No digs at other snacks",
        "Never mock or compare against other brands or snack types, by name or by hint. Disparagement is an ASCI "
        "breach. Talk about what we make.",
-       bad=["Rival millet puffs mostly hollow air", "Taste test: who wins showdown"],
+       bad=["Rival millet puffs mostly hollow air", "Taste test: who wins showdown",
+            "Skip the fizzy cola and try our drink instead"],
        good=["Our Ragi Crunch is made with ragi flour, roasted and lightly spiced"], ref="ASCI code, Chapter I; Brand book p.11"),
     _r("MSG-CRISIS", "messaging", "semantic", "must", "Crisis weeks are plain",
        "While a recall, rumour or safety question is open: plain facts only, no jokes, no offers, no emoji.",
@@ -335,7 +336,7 @@ RULES = [
        ref="Regulatory note R-7"),
     _r("CLAIM-RANK", "claims", "deterministic", "must", "No self-declared rankings",
        "We are not the number one, the best or the tastiest without a dated, published survey.",
-       {"type": "banned_terms", "terms": ["number one", "#1", "no.1", "tastiest in india", "best in india",
+       {"type": "banned_terms", "terms": ["number one", "#1", "no.1", "tastiest in india", "india's tastiest", "best in india",
                                          "india's favourite"]}, ref="Legal note L-19; ASCI superlatives"),
     _r("LEGAL-ALLERGEN", "legal", "semantic", "must", "Allergens on every pack and listing",
        "Packaging copy, product pages and recipe cards carry the allergen line that starts with Contains, and a "
@@ -465,17 +466,17 @@ TEAM = [
            blurb="Owns the brand library: rules, facts, artwork, events. Sees every screen."),
     Member("approver", "sameer@nutmeglane.example", "Sameer Kulkarni", "approver", title="Marketing manager",
            blurb="Works the review queue: approves, sends back, rules on escalations."),
-    Member("reviewer", "tanvi@nutmeglane.example", "Tanvi Desai", "reviewer"),
+    Member("reviewer", "meghna@nutmeglane.example", "Meghna Desai", "reviewer"),
     Member("auditor", "gaurav@nutmeglane.example", "Gaurav Nair", "auditor"),
-    Member("regulatory", "farida@nutmeglane.example", "Dr. Farida Qureshi", "reviewer"),
+    Member("regulatory", "shabnam@nutmeglane.example", "Dr. Shabnam Rizvi", "reviewer"),
 ]
 CREATORS = [
     Member("anita", "anita@nutmeglane.example", "Anita Gowda", "creator", "careful"),
     Member("ishaan", "ishaan@nutmeglane.example", "Ishaan Verma", "creator", "intern"),
     Member("jay", "jay@nutmeglane.example", "Jay Patel", "creator", "marketer"),
-    Member("kavya", "kavya@nutmeglane.example", "Kavya Raman", "creator", "regional"),
+    Member("kavya", "lavanya@nutmeglane.example", "Lavanya Raman", "creator", "regional"),
     Member("mehul", "mehul@nutmeglane.example", "Mehul Joshi", "creator", "regional"),
-    Member("rhea", "rhea@foodcreators.example", "Rhea Dsouza (food creator)", "creator", "influencer"),
+    Member("rhea", "pallavi@foodcreators.example", "Pallavi Kulkarni (food creator)", "creator", "influencer"),
     Member("brightside", "hello@brightsidestudio.example", "Brightside Studio (agency)", "creator", "agency"),
 ]
 DEMO = [
@@ -489,7 +490,7 @@ DEMO = [
     ("c6", "brightside", "creator", "Agency", "An outside agency writing festive and sponsorship campaigns."),
 ]
 
-# Tanvi is strict on children's rules, Sameer practical, Dr. Qureshi cares only about claims and labelling.
+# Meghna is strict on children's rules, Sameer practical, Dr. Rizvi cares only about claims and labelling.
 _UNCLEAR = ("guideline_unclear", "Does the rule mean this? It reads like a description, not a promise.")
 STANCE = {
     "reviewer": {"KIDS-OVERUSE": (1.0, []), "KIDS-PESTER": (0.9, [_UNCLEAR]), "TERM-HOUSE": (0.95, []),
@@ -620,7 +621,7 @@ def _stories() -> list[Piece]:
            [(1, "send", {}), (3, "back", {"note": "Offers are paused during the batch hold. Hold this until the event ends.", "by": "approver"})], event=rc),
         pk("r-count", "jay", "How many batches", "x", "Only 1 batch out of 400 was affected, so the rest of your cold coffee is fine.", 24.4,
            [(1, "send", {}), (3, "autodecide", {"by": "regulatory"}), (4, "comment", {"by": "regulatory", "body": "We cannot quote a ratio or tell people the rest is fine while testing is open. Please say only what is paused."}), (6, "back", {"note": "See Dr. Qureshi's comment: say what is paused and where the codes are.", "by": "approver"}), (20, "fix", {"body": "The paused batch is on hold while testing finishes. Codes are on care.nutmeglane.example."}), (21, "send", {}), (26, "approve", {}), (40, "publish", {})], event=rc),
-        pk("r-hindi", "mehul", "कोल्ड कॉफी बैच की जानकारी", "whatsapp", "नमस्ते, एक बैच जांच के लिए रोका गया है। कोड देखने के लिए मुझे 98765 43210 पर कॉल करें।", 24,
+        pk("r-hindi", "mehul", "कोल्ड कॉफी बैच की जानकारी", "whatsapp", "नमस्ते, एक बैच जांच के लिए रोका गया है। कोड देखने के लिए मुझे 00000 12345 पर कॉल करें।", 24,
            fixed("Only the company's numbers in broadcasts.", "नमस्ते, एक बैच जांच के लिए रोका गया है। कोड देखने के लिए +91 80 4561 7711 पर कॉल करें।", "approver"), event=rc, notes={"language": "Hindi"}),
         pk("r-press", "anita", "Statement on the cold coffee batch", "press release", "Nutmeg Lane has paused one batch of Lane Cold Coffee while an independent lab completes tests. Batch codes and a replacement process are on care.nutmeglane.example.", 23.5, CLEAN, event=rc),
         pk("r-ask", "jay", "Reply time to families", "linkedin", "Our care team replies to every message about the batch within 24 hours.", 22.5,
@@ -833,15 +834,12 @@ DECISIONS = [
      "A cola is not a competitor of ours. Is a dig at another drink category a comparison?"),
     ("p-rival", 5, "MSG-COMPETITOR", "approver", "accepted", None, None),
     ("p-best", 5, "CLAIM-RANK", "approver", "accepted", None, None),
-    ("s-lunch", 2, "CLAIM-NUTRIENT", "reviewer", "rejected", "false_positive", "A lunchbox idea, not a nutrient claim."),
     ("d-cheap", 2, "TONE-URGENCY", "approver", "accepted", None, None),
     ("l-leak", 2, "CONF-LEAK", "reviewer", "accepted", None, None),
     ("k-win", 3, "KIDS-PESTER", "reviewer", "accepted", None, None),
-    ("k-win", 3, "MSG-COMPARE", "approver", "rejected", "not_applicable", "Cheering at a match, not a product comparison."),
     ("r-joke", 2, "TONE-SHIFT", "approver", "accepted", None, None),
     ("d-old", 4, "CLAIM-OUTDATED", "regulatory", "accepted", None, None),
     ("r-count", 2, "CLAIM-UNSUPPORTED", "regulatory", "accepted", None, None),
-    ("p-listing", 2, "CLAIM-UNSUPPORTED", "reviewer", "rejected", "not_applicable", "Store count is in the fact library."),
     ("r-ack", 3, "CLAIM-UNSUPPORTED", "approver", "rejected", "intentional",
      "The care number is the point of a batch notice, kept on purpose."),
 ]

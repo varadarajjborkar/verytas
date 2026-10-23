@@ -451,7 +451,7 @@ PEOPLE = [
 TEAM = [
     Member("admin", "ritika@dewlight.example", "Ritika Menon", "brand_admin", title="Head of brand",
            blurb="Owns the brand library: rules, facts, artwork, events. Sees every screen."),
-    Member("approver", "dhruv@dewlight.example", "Dhruv Menon", "approver", title="Brand marketing manager",
+    Member("approver", "kunal@dewlight.example", "Kunal Menon", "approver", title="Brand marketing manager",
            blurb="Works the review queue: approves, sends back, rules on escalations."),
     Member("reviewer", "farah@dewlight.example", "Farah Qureshi", "reviewer"),
     Member("auditor", "isha@dewlight.example", "Isha Rane", "auditor"),
@@ -462,12 +462,12 @@ CREATORS = [
     Member("rhea", "rhea@dewlight.example", "Rhea D'Souza", "creator", "intern"),
     Member("nikhil", "nikhil@dewlight.example", "Nikhil Bansal", "creator", "marketer"),
     Member("sunita", "sunita@dewlight.example", "Sunita Iyengar", "creator", "regional"),
-    Member("tanvi", "tanvi@dewlight.example", "Tanvi Shah", "creator", "careful"),
+    Member("tanvi", "nisha@dewlight.example", "Nisha Shah", "creator", "careful"),
     Member("lumen", "studio@lumenworks.example", "Lumen Works (agency)", "creator", "agency"),
     Member("kiara", "kiara@creators.example", "Kiara Malhotra (beauty creator)", "creator", "influencer"),
     Member("zainab", "zainab@creators.example", "Zainab Qureshi (skincare creator)", "creator", "influencer"),
     Member("arman", "arman@dewlight.example", "Arman Pillai", "creator", "intern"),
-    Member("meenal", "meenal@dewlight.example", "Meenal Rao", "creator", "regional"),
+    Member("meenal", "gauri@dewlight.example", "Gauri Rao", "creator", "regional"),
 ]
 DEMO = [
     ("approver", "approver", "manager", "Brand marketing manager",
@@ -480,7 +480,7 @@ DEMO = [
     ("c6", "kiara", "creator", "Beauty creator", "A paid creator. Her posts need the partnership disclosure."),
 ]
 
-# Farah is strict on tone and wording, Dhruv practical, Dr. Nambiar (regulatory) cares only about claims and law.
+# Farah is strict on tone and wording, Kunal practical, Dr. Nambiar (regulatory) cares only about claims and law.
 # The unclear rules (hype words, the fairness stance post, comparisons) are where they split and say so.
 _UNCLEAR = ("guideline_unclear", "Does the rule mean this? It is not about our product.")
 STANCE = {

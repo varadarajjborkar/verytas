@@ -4,7 +4,7 @@ Each kit's library (current logo, wordmark, app icon, pack front, retired logo, 
 prepared once; every scene is matched against all of it, and the matches go through the same
 `_asset_findings` a review runs, without the vision model, so the numbers are the pixel path's alone.
 
-    .venv/bin/python -m evals.assets.run --data /tmp/assets --out evals/results/assets.jsonl
+    .venv/bin/python -m evals.assets.run --data /tmp/assets --out evals/results/assets.jsonl --overwrite
     .venv/bin/python -m evals.assets.run --report evals/results/assets.jsonl
 
 The report gives, per artwork kind and per variant: how often correct use raised nothing (false alarms),
@@ -152,6 +152,7 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=Path("evals/results/assets.jsonl"))
     ap.add_argument("--report", type=Path)
     ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--overwrite", action="store_true", help="replace an existing --out (the committed results)")
     ap.add_argument("--limit", type=int)
     args = ap.parse_args()
     if args.report:
@@ -161,6 +162,8 @@ def main() -> None:
         return
     if not args.data:
         ap.error("--data is required unless --report is given")
+    if args.out.is_file() and not (args.resume or args.overwrite):
+        ap.error(f"{args.out} exists; pass --resume to continue it or --overwrite to replace it")
     run(args.data, args.out, args.resume, args.limit)
 
 

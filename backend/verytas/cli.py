@@ -24,6 +24,13 @@ from verytas.models import User
 from verytas.security.audit import append
 
 
+def _positive(value: str) -> int:
+    n = int(value)
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be 1 or more")
+    return n
+
+
 async def issue_token(email: str) -> str:
     db = Database(Settings().database_url)
     try:
@@ -54,7 +61,7 @@ def main(argv: list[str] | None = None) -> None:
     demo.add_argument("--write-demo-accounts", type=Path, default=None,
                       help="JSON file of the demo sign-in page's accounts and their tokens (server-side only)")
     demo.add_argument("--companies", nargs="+", default=None, help="seed only these companies (module names)")
-    demo.add_argument("--pieces", type=int, default=None, help="cap the pieces seeded per company")
+    demo.add_argument("--pieces", type=_positive, default=None, help="cap the pieces seeded per company")
     args = parser.parse_args(argv)
     if args.command == "issue-token":
         sys.stdout.write(asyncio.run(issue_token(args.email)) + "\n")

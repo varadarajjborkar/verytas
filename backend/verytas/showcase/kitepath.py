@@ -436,7 +436,7 @@ def _old() -> list[Piece]:
                                                  "in to enrol today."}),
                                     (31, *send)]),
         _P("call", 4, "Weekend doubt-clearing session", "facebook",
-              "Stuck on calculus? Call me on 98200 12345 and I'll sort your doubts this weekend.", 0.8,
+              "Stuck on calculus? Call me on 00000 12345 and I'll sort your doubts this weekend.", 0.8,
               [(1, "escalate", {"message": "This is my official teaching line for the weekend session, students "
                                            "already use it. Please allow it for this post."})]),
         _P("rivals", 5, "Why learners switch to us", "linkedin",
@@ -836,7 +836,7 @@ def _stories() -> list[Piece]:
         pk("lp-4", "ishita", "App store rating line", "app store", "Rated 4.9 by 1.2 million learners.", 8, fixed("The listed rating is 4.7.", "Rated 4.7 by 1.2 million learners.", "legal")),
         pk("ask-fact", "ishita", "Mentor reply times", "linkedin", "Mentors reply to every doubt within 24 hours.", 4, [(0.5, "send", {}), (1, "escalate", {"message": "This is in the mentor charter but not in the fact library. Can the brand team add it, or tell me to soften the line?", "rule": "CLAIM-UNSUPPORTED"})]),
         pk("whats", "rohan", "Parent broadcast", "whatsapp", "Hello parents, progress reports go out every Sunday. Questions? Call +91 80 4567 8922 and we will help.", 6, CLEAN),
-        pk("contact", "neha", "Write to me", "linkedin", "Questions about the design track? Write to me at neha.joshi@gmail.com.", 13, fixed("Only company addresses in posts.", "Questions about the design track? Write to us at design@kitepath.example.", "approver")),
+        pk("contact", "neha", "Write to me", "linkedin", "Questions about the design track? Write to me at neha.joshi@mail.example.", 13, fixed("Only company addresses in posts.", "Questions about the design track? Write to us at design@kitepath.example.", "approver")),
         pk("contrast", "studio9", "Exam poster for print", "print", "Board Exam Prep Month poster for school notice boards.", 34,
            fixed("The headline colour fails contrast. Use the dark navy.", "Board Exam Prep Month poster for school notice boards. Headline recoloured.", "reviewer"), event=ex,
            colors=[{"fg": "#FAC828", "bg": "#FFFFFF", "where": "headline on the poster", "large": True}], fix_colors=[{"fg": "#19233C", "bg": "#FFFFFF", "where": "headline on the poster", "large": True}],

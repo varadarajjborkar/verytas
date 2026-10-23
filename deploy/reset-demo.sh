@@ -5,6 +5,11 @@ set -euo pipefail
 D=/srv/verytas/data
 age_days() { python3 -c "import json,sys,datetime as dt; s=json.load(open('$D/demo-accounts.json'))['seeded_at']; print((dt.datetime.now(dt.UTC)-dt.datetime.fromisoformat(s)).days)"; }
 if [ "${1:-}" != "--force" ] && [ -f "$D/demo-accounts.json" ] && [ "$(age_days)" -lt 14 ]; then exit 0; fi
+# After a failed seed the daily timer would start another long one on the shared box every day; wait three
+# days between tries unless forced.
+if [ "${1:-}" != "--force" ] && [ -n "$(find "$D" -maxdepth 1 -name reset-failed -mtime -3 2>/dev/null)" ]; then
+  exit 0
+fi
 rm -rf "$D/next" && mkdir -p "$D/next"
 cd /srv/verytas/app/backend
 # Every company with every piece takes tens of minutes on the 2 vCPU box. The seed prints a line per
@@ -19,11 +24,13 @@ if ! HOME=/srv/verytas timeout "${SEED_TIMEOUT:-90m}" /srv/verytas/venv/bin/pyth
     ${extra[@]+"${extra[@]}"} >>"$LOG" 2>&1; then
   echo "seed failed or timed out; the current demo is unchanged (see $LOG)" >&2
   rm -rf "$D/next"
+  touch "$D/reset-failed"
   exit 1
 fi
 sudo /usr/bin/systemctl stop verytas-api
 rm -rf "$D/keys" "$D/showcase.db" "$D/showcase.db-wal" "$D/showcase.db-shm"
 mv "$D/next/showcase.db" "$D/showcase.db" && mv "$D/next/keys" "$D/keys" && mv "$D/next/demo-accounts.json" "$D/demo-accounts.json"
 rmdir "$D/next"
+rm -f "$D/reset-failed"
 sudo /usr/bin/systemctl start verytas-api
 echo "demo reseeded $(date -u +%FT%TZ)"
