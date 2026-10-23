@@ -100,6 +100,10 @@ class AssetMatch:
     colour_delta: float | None = None  # mean Lab distance over artwork
     altered_cells: list[dict] = field(default_factory=list)
     attached_ratio: float | None = None  # foreground around the match / match box
+    # Where in the scene the evidence lies: the box around the keypoints that agree with the fit (the
+    # whole match for a template placement). A match whose evidence lies inside another artwork's match
+    # is that artwork being seen, not this one (see prism.agents._explained).
+    core: tuple[int, int, int, int] | None = None
     # How the artwork was placed, read from the fit at its centre. stretch is its width scale over its
     # height scale (1.0 in proportion, 1.3 stretched wide, 0.75 squashed); shear and rotation in degrees.
     stretch: float | None = None
@@ -254,20 +258,29 @@ def match(asset: PreparedAsset, scene_img: Image.Image | SceneFeatures) -> Asset
 
 def _match(asset: PreparedAsset, feats: SceneFeatures) -> AssetMatch:
     miss = AssetMatch(asset.asset_id, False)
+    by_keypoints = None
     if asset.descriptors is not None and len(asset.keypoints) >= MIN_INLIERS and feats.descriptors is not None \
             and len(feats.keypoints) >= MIN_INLIERS:
         found = _sift_match(asset, feats)
         if not isinstance(found, AssetMatch):
-            return _from_homography(asset, feats.rgb, *found)
-        miss = found
+            by_keypoints = _from_homography(asset, feats.rgb, *found)
+            if not flat(asset):
+                return by_keypoints
+        else:
+            miss = found
     if flat(asset):
+        # Flat artwork can still give a keypoint fit, on a dozen points, and a fit that is a pixel or a
+        # degree out turns every edge cell into a "colour change". Both are tried and the better fit is
+        # kept: the template wins on copies in proportion, keypoints on rotated ones.
         placed = _template_match(asset, feats.gray)
         if placed is not None:
-            return _from_homography(asset, feats.rgb, _refine(asset, feats.gray, placed[0]), 0)
-    return miss
+            by_template = _from_homography(asset, feats.rgb, _refine(asset, feats.gray, placed[0]), 0)
+            if by_keypoints is None or (by_template.similarity or 0) >= (by_keypoints.similarity or 0):
+                return by_template
+    return by_keypoints or miss
 
 
-def _sift_match(asset: PreparedAsset, feats: SceneFeatures) -> tuple[np.ndarray, int] | AssetMatch:
+def _sift_match(asset: PreparedAsset, feats: SceneFeatures) -> tuple[np.ndarray, int, tuple] | AssetMatch:
     # Lowe's ratio test within each channel, then one geometric fit over all of them: the artwork is one
     # object wherever its features were seen.
     src_pts, dst_pts = [], []
@@ -293,7 +306,9 @@ def _sift_match(asset: PreparedAsset, feats: SceneFeatures) -> tuple[np.ndarray,
     inliers = int(inlier_mask.sum())
     if inliers < MIN_INLIERS or inliers / len(good) < MIN_INLIER_RATIO or not _plausible(H):
         return AssetMatch(asset.asset_id, False, inliers=inliers)
-    return H, inliers
+    agreed = dst.reshape(-1, 2)[inlier_mask.ravel().astype(bool)]
+    core = (int(agreed[:, 0].min()), int(agreed[:, 1].min()), int(agreed[:, 0].max()) + 1, int(agreed[:, 1].max()) + 1)
+    return H, inliers, core
 
 
 def _template_match(asset: PreparedAsset, scene_gray: np.ndarray) -> tuple[np.ndarray, int] | None:
@@ -388,7 +403,8 @@ def _valid(res: np.ndarray) -> np.ndarray:
     return res
 
 
-def _from_homography(asset: PreparedAsset, scene: np.ndarray, H: np.ndarray, inliers: int) -> AssetMatch:
+def _from_homography(asset: PreparedAsset, scene: np.ndarray, H: np.ndarray, inliers: int,
+                     core: tuple[int, int, int, int] | None = None) -> AssetMatch:
     h, w = asset.gray.shape
     corners = cv2.perspectiveTransform(np.float32([[0, 0], [w, 0], [w, h], [0, h]]).reshape(-1, 1, 2), H)
     xs, ys = corners[:, 0, 0], corners[:, 0, 1]
@@ -412,7 +428,7 @@ def _from_homography(asset: PreparedAsset, scene: np.ndarray, H: np.ndarray, inl
         colour_delta=round(float(np.mean(deltas)), 2) if deltas else None,
         altered_cells=cells, attached_ratio=attached,
         stretch=None if stretch is None else round(stretch, 3), shear_deg=None if shear is None else round(shear, 1),
-        rotation_deg=round(rotation, 1),
+        rotation_deg=round(rotation, 1), core=core or box,
     )
 
 

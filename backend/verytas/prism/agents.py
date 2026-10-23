@@ -628,6 +628,11 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
     stale = [(by_id[a.id], a) for a in run.assets if a.retired and by_id.get(a.id) and by_id[a.id].found]
     current = [by_id[a.id] for a in run.assets if a.official and by_id.get(a.id) and by_id[a.id].found]
 
+    found_matches = [(by_id[a.id], a) for a in run.assets if by_id.get(a.id) and by_id[a.id].found]
+
+    def explained(m: asset_match.AssetMatch) -> bool:
+        return _explained(m, [o for o, _ in found_matches if o is not m])
+
     def superseded(m: asset_match.AssetMatch) -> bool:
         return any(_iou(m.box, old.box) >= 0.5 and (old.similarity or 0) > (m.similarity or 0) for old, _ in stale)
 
@@ -643,6 +648,8 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
         found = bool(m and m.found)
         label = f"official {asset.kind} '{asset.name}'"
 
+        if found and explained(m):
+            continue  # another registered artwork is what's there; this one only shares parts with it
         if not asset.official:
             # Old versions and other brands' marks are not unreleased artwork, whatever their tier; above
             # the content's tier they are reported by number, like anything else the reader can't see.
@@ -788,6 +795,30 @@ async def _drawn_text(run: ReviewRun, node: AgentNode, page, base: str, locator:
                  parent=doc_id)
     run.glance.append(f"page {page.number} of {doc_id} has text drawn as shapes, not in its text layer")
     await run.tree.spawn(node, "text", "Text found only in the drawing", lambda n: text_agent(run, n, src))
+
+
+# A match is explained by another when this share of its evidence lies inside the other's match and the
+# other fits clearly better there. Brand libraries nest their artwork: the logo lockup holds the icon's
+# emblem and the wordmark's lettering, the pack front holds the logo. A post showing the logo then partly
+# matches the pack and the icon, and without this each was reported as an altered copy (83% false alarms
+# on correct use in evals/assets).
+EXPLAINED_SHARE = 0.7
+EXPLAINED_LEAD = 0.03
+
+
+def _explained(m: asset_match.AssetMatch, others: list[asset_match.AssetMatch]) -> bool:
+    core = m.core or m.box
+    if core is None:
+        return False
+    area = max(1, (core[2] - core[0]) * (core[3] - core[1]))
+    for o in others:
+        if o.box is None:
+            continue
+        w = max(0, min(core[2], o.box[2]) - max(core[0], o.box[0]))
+        h = max(0, min(core[3], o.box[3]) - max(core[1], o.box[1]))
+        if w * h / area >= EXPLAINED_SHARE and (o.similarity or 0) > (m.similarity or 0) + EXPLAINED_LEAD:
+            return True
+    return False
 
 
 def _iou(a: tuple[int, int, int, int] | None, b: tuple[int, int, int, int] | None) -> float:
