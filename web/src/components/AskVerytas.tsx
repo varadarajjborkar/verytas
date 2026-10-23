@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ChatStore, imageToDataUrl, openChatStore, type StoredMessage, type ThreadSummary } from "@/lib/chat-store";
 import { usePersistedFlag } from "@/lib/persisted-flag";
+import { readStream } from "@/lib/sse";
 import { Drawer } from "./Drawer";
 import { Logo } from "./Logo";
 import { ArrowRightIcon, ArrowUpIcon, ChatIcon, CloseIcon, HistoryIcon, PanelIcon, PaperclipIcon, PlusIcon, SparkIcon, TrashIcon } from "./Icons";
@@ -42,35 +43,6 @@ const STARTERS = {
     { label: "Who is drifting from the brand?", prompt: "Which creators' recent pieces drift furthest from the brand, and in what way?" },
   ],
 };
-
-/** Reads an OpenAI-style SSE stream, calling `onText` with each content delta.
- * Lines are only parsed once complete; an error payload from upstream throws. */
-async function readStream(res: Response, onText: (t: string) => void) {
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const handle = (line: string) => {
-    const data = line.startsWith("data:") ? line.slice(5).trim() : "";
-    if (!data || data === "[DONE]") return;
-    let event: { error?: { message?: string } | string; choices?: { delta?: { content?: unknown } }[] };
-    try {
-      event = JSON.parse(data);
-    } catch {
-      return; // not JSON (a comment or keep-alive); complete lines are never split
-    }
-    if (event.error) throw new Error(typeof event.error === "string" ? event.error : event.error.message ?? "The model failed.");
-    const delta = event.choices?.[0]?.delta?.content;
-    if (typeof delta === "string") onText(delta);
-  };
-  for (;;) {
-    const { value, done } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const lines = buffer.split("\n");
-    buffer = done ? "" : lines.pop() ?? "";
-    lines.forEach(handle);
-    if (done) break;
-  }
-}
 
 /** Only web links from a model answer are opened; anything else (javascript:, data:) is ignored. */
 function safeUrl(raw: unknown): string | null {

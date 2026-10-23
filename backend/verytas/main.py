@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from verytas import __version__
-from verytas.api import admin, assistant, chats, content, governance, insights, knowledge, media, people
+from verytas.api import admin, assist, assistant, chats, content, governance, insights, knowledge, media, people
 from verytas.config import Settings, get_settings
 from verytas.db import Database
 from verytas.media import storage
@@ -80,7 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "llm_backend": settings.llm_backend}
 
     # media before content: /contents/precheck must not be read as a content id.
-    for module in (admin, knowledge, people, media, content, governance, insights, chats, assistant):
+    for module in (admin, knowledge, people, media, content, governance, insights, chats, assistant, assist):
         app.include_router(module.router)
     return app
 

@@ -80,7 +80,31 @@ export async function getAssistantContext(messages: string[]): Promise<{ context
   }
 }
 
-type SubmitOut = { content: { id: number }; version: { id: number; body: string }; review_id: number };
+export type ItemContextResult =
+  | { ok: true; context: Record<string, unknown>; messages: string[] }
+  | { ok: false; status: number };
+
+/** The redacted dossier of one piece or escalation for the Summarize panel, plus the conversation redacted
+ * with it. Server-side only: it is deliberately not on the browser proxy's allowlist, so the only way to
+ * reach it is through /api/assist, which never returns the dossier itself. The status is kept so the route
+ * can say "not for your role" apart from "not found" and "can't reach the API". */
+export async function getItemContext(kind: "content" | "escalation", id: number, messages: string[]): Promise<ItemContextResult> {
+  if (!backendConfigured) return { ok: false, status: 503 };
+  try {
+    const out = await call<Record<string, unknown> & { messages: string[] }>("/assist/item-context", {
+      method: "POST",
+      body: JSON.stringify({ kind, id, messages }),
+    });
+    const { messages: redacted, ...context } = out;
+    if (!Array.isArray(redacted) || redacted.length !== messages.length) throw new Error("conversation not returned");
+    return { ok: true, context, messages: redacted };
+  } catch (err) {
+    console.error("[verytas] item context unavailable:", (err as Error).message);
+    return { ok: false, status: err instanceof BackendError ? err.status : 503 };
+  }
+}
+
+type SubmitOut ={ content: { id: number }; version: { id: number; body: string }; review_id: number };
 
 export async function submitForReview(input: { title: string; channel: string; body: string }): Promise<ReviewResult> {
   if (!backendConfigured) {

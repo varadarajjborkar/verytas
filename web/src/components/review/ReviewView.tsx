@@ -12,6 +12,7 @@ import { canDecide, sideOf } from "@/lib/roles";
 import type { ContentDetail, ContentStatus, Dispute, EscalationRequest, Person, Review, Timeline } from "@/lib/types";
 import { JourneyMap } from "../Journey";
 import { useToast } from "../Toaster";
+import { SummarizeButton } from "../assist/SummarizeButton";
 import { Details, Meter, tabKeys } from "../ui";
 import { Activity } from "./Activity";
 import { AgentTree, Sources } from "./AgentTree";
@@ -306,6 +307,8 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
               <span className="text-lg font-semibold tabular-nums">{Math.round(summary.overall * 100)}%</span>
             </span>
           )}
+          {/* The brand team's brief and item chat; the button renders nothing for creators and auditors. */}
+          {manager && <SummarizeButton kind="content" id={contentId} title={content.title} />}
           {!readOnly && !editing && creatorTools && (
             <button type="button" disabled={busy || checking} className="vt-btn vt-btn-quiet"
               onClick={() => { setEditText(body); setEditing(true); }}>

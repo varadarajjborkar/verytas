@@ -7,6 +7,7 @@ import { ApiError, listEscalations, PRIORITY, relativeTime, resolveEscalation } 
 import { canDecide } from "@/lib/roles";
 import type { EscalationRequest, FactCitation, RuleCitation } from "@/lib/types";
 import { CheckIcon, ChevronIcon } from "../Icons";
+import { SummarizeButton } from "../assist/SummarizeButton";
 import { MeetingPreview } from "../MeetingPreview";
 import { PriorityPill } from "../review/Checklist";
 import { REASONS } from "../review/DecisionControls";
@@ -132,7 +133,10 @@ function Row({ r, focused, approver, decider, onDone }: {
     <li id={`esc-${r.id}`} className={`grid gap-4 rounded-[14px] border border-line px-4 py-5 shadow-[var(--vt-shadow)] transition-colors md:grid-cols-2 md:gap-5 md:px-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1fr)_15rem] xl:rounded-none xl:border-0 xl:border-b xl:shadow-none xl:last:border-b-0 ${
       focused ? "bg-[color-mix(in_oklab,var(--vt-accent)_5%,var(--vt-surface))]" : "bg-surface"}`}>
       <Cell label="The content">
-        <Link href={`/review?id=${r.content.id}`} className="block truncate text-sm font-semibold hover:text-accent">{r.content.title}</Link>
+        <div className="flex items-start justify-between gap-2">
+          <Link href={`/review?id=${r.content.id}`} className="block min-w-0 truncate text-sm font-semibold hover:text-accent">{r.content.title}</Link>
+          <SummarizeButton kind="escalation" id={r.id} title={r.content.title} className="vt-btn vt-btn-quiet h-7 shrink-0 px-2.5 text-xs" />
+        </div>
         <p className="mt-0.5 truncate text-[11px] text-subtle">
           {r.content.author?.name ?? "Creator"} · {channelName(r.content.channel)}
           {r.version ? ` · v${r.version.version_no}` : ""}
