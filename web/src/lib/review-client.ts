@@ -3,7 +3,7 @@
 
 import type {
   BrandAsset, BrandEvent, ContentDetail, CreatorRow, CreatorTrack, EscalationRequest, EventImpact, PublicContact, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
-  Review, Rule, RuleDraft, Term, Timeline, UploadedMedia,
+  Review, Rule, RuleClarification, RuleDraft, Term, Timeline, UploadedMedia,
 } from "./types";
 
 export class ApiError extends Error {
@@ -88,6 +88,7 @@ const send = (method: string, body?: unknown): RequestInit => ({
 export const listRules = () => api<Rule[]>("rules");
 export const createRule = (rule: RuleDraft) => api<Rule>("rules", json(rule));
 export const updateRule = (id: number, patch: Partial<Rule>) => api<Rule>(`rules/${id}`, send("PATCH", patch));
+export const clarifyRule = (id: number) => api<RuleClarification>(`rules/${id}/clarify`, json({}));
 export const extractRules = (input: { text?: string; blob_id?: string; source_ref?: string }) =>
   api<{ rules: RuleDraft[]; notes: string[]; model: string }>("rules/extract", json(input));
 export const listFacts = () => api<Fact[]>("facts");

@@ -22,6 +22,18 @@ export type Overview = {
   trend: { day: string; blocker: number; warning: number; advisory: number }[];
 };
 
+/** A sharper wording drafted from a rule's own decided cases. Nothing is saved until an admin applies it. */
+export type RuleClarification = {
+  rule_id: number;
+  code: string;
+  version: number;
+  current: { text: string; good_examples: string[]; bad_examples: string[] };
+  proposed: { text: string; good_examples: string[]; bad_examples: string[] };
+  changes: string;
+  cases: { upheld: number; cleared: number; unclear: number };
+  model: string;
+};
+
 export type RuleHealth = {
   rule_id: number;
   code: string;

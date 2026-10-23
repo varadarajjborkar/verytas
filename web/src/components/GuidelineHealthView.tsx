@@ -1,6 +1,7 @@
 "use client";
 
 import type { RuleHealth } from "@/lib/types";
+import { ClarifyRule } from "./ClarifyRule";
 import { UNCLEAR } from "./dashboard/widgets";
 import { InfoPopover } from "./InfoPopover";
 import { Meter, Panel, RuleCode } from "./ui";
@@ -9,7 +10,7 @@ import { Meter, Panel, RuleCode } from "./ui";
 const MIN = 3;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
-export function GuidelineHealthView({ health }: { health: RuleHealth[] }) {
+export function GuidelineHealthView({ health, canEdit = false }: { health: RuleHealth[]; canEdit?: boolean }) {
   const scored = health.filter((h) => h.enough_data && h.ambiguity != null);
   const pending = health.filter((h) => !h.enough_data);
   return (
@@ -40,7 +41,7 @@ export function GuidelineHealthView({ health }: { health: RuleHealth[] }) {
             <dd className="mt-0.5 text-muted">Beta(1 + accepted, 1 + rejected), so 3 decisions aren&apos;t judged like 300.</dd>
           </div>
         </dl>
-        <p className="mt-4 text-xs text-subtle">Nothing changes automatically. An admin reads the advice and edits the rule.</p>
+        <p className="mt-4 text-xs text-subtle">Nothing changes automatically. An admin reads the advice, can have a clearer wording drafted from the rule&apos;s own cases, and decides whether to apply it.</p>
       </InfoPopover>}>
         <ul className="vt-stagger flex flex-col gap-3">
           {scored.map((h) => (
@@ -65,6 +66,9 @@ export function GuidelineHealthView({ health }: { health: RuleHealth[] }) {
                 <p className="mt-3 border-l-2 border-accent/50 pl-3 text-xs leading-5 text-muted">
                   {h.advice[0][0].toUpperCase() + h.advice[0].slice(1)}
                 </p>
+              )}
+              {canEdit && h.advice.some((a) => a.startsWith("clarify") || a.startsWith("add a good")) && (
+                <ClarifyRule ruleId={h.rule_id} code={h.code} />
               )}
             </li>
           ))}

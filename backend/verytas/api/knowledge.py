@@ -21,7 +21,7 @@ from verytas.media import assets as asset_match
 from verytas.media import documents
 from verytas.media.files import MAX_IMAGE_BYTES, MediaError, decode_b64, open_image, sniff
 from verytas.models import BrandAsset, ConfidentialTerm, Fact, MediaBlob, Role, Rule, RuleStatus, User
-from verytas.prism import rulebook
+from verytas.prism import clarify, rulebook
 from verytas.prism.disputes import workspace_redactor
 from verytas.schemas import (
     BrandAssetIn,
@@ -109,6 +109,52 @@ async def update_rule(rule_id: int, body: RulePatch, session: Session, admin: Ad
                          "fields": sorted(changes)})
     await session.commit()
     return target
+
+
+class ClarifyOut(BaseModel):
+    rule_id: int
+    code: str
+    version: int
+    current: dict
+    proposed: dict  # the RulePatch body that applies it: text, good_examples, bad_examples
+    changes: str
+    cases: dict  # how many decided cases it was drafted from, per side
+    model: str
+
+
+@router.post("/rules/{rule_id}/clarify", response_model=ClarifyOut, dependencies=[SelfServeBudget])
+async def clarify_rule(rule_id: int, session: Session, admin: Admin, prism: PrismDep) -> ClarifyOut:
+    """A sharper wording for a rule reviewers disagree about, with examples from its own decided cases
+    (prism/clarify.py). Nothing is saved: the admin applies it with PATCH /rules/{id}, edits it, or drops it."""
+    rule = await session.get(Rule, rule_id)
+    if rule is None or rule.workspace_id != admin.workspace_id or not can_read(admin, rule.tier):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "rule not found")
+    # Health reports may name an older version; the draft is always of the wording in force, so it applies.
+    rule = await session.scalar(select(Rule).where(Rule.workspace_id == rule.workspace_id, Rule.code == rule.code)
+                                .order_by(Rule.version.desc()).limit(1))
+    if rule.kind.value != "semantic":
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            "only model-judged rules read their wording; edit a word list directly")
+    found = await clarify.cases(session, rule)
+    if found.decided < 2:
+        raise HTTPException(status.HTTP_409_CONFLICT, "too few decided findings on this rule to learn from yet")
+    _, llm, _, _ = prism.guarded_providers(await workspace_redactor(session, admin.workspace_id))
+    task = clarify.ClarifyTask(rule, found)
+    model = llm.name
+    try:
+        draft = await llm.run(task)
+    except Exception:  # noqa: BLE001, a model failure falls back to the plain draft, named as such
+        draft, model = task.heuristic(), "offline-heuristic"
+    await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}",
+                 action="rule.clarification_drafted", object_type="rule", object_id=rule.id,
+                 detail={"code": rule.code, "version": rule.version, "model": model, "cases": found.decided})
+    await session.commit()
+    return ClarifyOut(
+        rule_id=rule.id, code=rule.code, version=rule.version,
+        current={"text": rule.text, "good_examples": rule.good_examples or [], "bad_examples": rule.bad_examples or []},
+        proposed=clarify.proposal(rule, found, draft), changes=draft.changes.strip()[:500],
+        cases={"upheld": len(found.upheld), "cleared": len(found.cleared), "unclear": len(found.unclear)},
+        model=model)
 
 
 class ExtractIn(BaseModel):

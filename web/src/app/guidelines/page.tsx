@@ -5,7 +5,7 @@ import { GuidelineHealthView } from "@/components/GuidelineHealthView";
 import { ForBrandTeam } from "@/components/library/LibraryView";
 import { PageHeader, PageSkeleton, SourceBadge } from "@/components/ui";
 import { getGuidelineHealth, getViewer } from "@/lib/backend";
-import { sideOf } from "@/lib/roles";
+import { canEditLibrary, sideOf } from "@/lib/roles";
 
 export const metadata: Metadata = { title: "Guideline health" };
 
@@ -21,7 +21,7 @@ async function Health() {
     <>
       <PageHeader title="Guideline health" lead="Rules reviewers keep overriding are the ones to rewrite." refresh
         aside={<SourceBadge source={health.source} />} />
-      <GuidelineHealthView health={health.data} />
+      <GuidelineHealthView health={health.data} canEdit={health.source === "live" && canEditLibrary(viewer?.role)} />
     </>
   );
 }

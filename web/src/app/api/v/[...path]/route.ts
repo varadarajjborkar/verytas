@@ -41,6 +41,7 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^rules$/],
   ["PATCH", /^rules\/\d+$/],
   ["POST", /^rules\/extract$/],
+  ["POST", /^rules\/\d+\/clarify$/],
   ["GET", /^facts$/],
   ["POST", /^facts$/],
   ["POST", /^facts\/\d+\/retire$/],
