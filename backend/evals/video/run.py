@@ -506,6 +506,7 @@ def report(manifest: dict, rows: dict[str, dict]) -> str:
     sc = score(manifest, rows)
     items, falses = sc["items"], sc["false"]
     vis = [i for i in items if i["channel"] == "visual"]
+    probed = any(i["key_probe_run"] for i in vis)  # keyframe probes are an optional second pass
     vids = [v for v in manifest["videos"] if v["id"] in rows]
     secs = [rows[v["id"]]["seconds"] for v in vids]
     bad = [v for v in vids if rows[v["id"]]["review_status"] != "done"]
@@ -630,12 +631,12 @@ def report(manifest: dict, rows: dict[str, dict]) -> str:
             [
                 "Matcher on each keyframe inside it, reviewed alone (no merge across keyframes)",
                 n,
-                _rate(vis, "key_alone"),
+                _rate(vis, "key_alone") if probed else "not measured (run with --add-keyframe-probes)",
             ],
             [
                 "A keyframe inside it gives the right finding when reviewed alone, yet the review missed it",
                 n,
-                str(sum(i["key_alone"] and not i["caught_timed"] for i in vis)),
+                str(sum(i["key_alone"] and not i["caught_timed"] for i in vis)) if probed else "not measured",
             ],
             ["Appearances 1 s or longer: production catch", len(long), _rate(long)],
         ],
