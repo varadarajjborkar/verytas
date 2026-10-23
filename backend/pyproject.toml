@@ -51,3 +51,8 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+# Demo data is prose and long strings; wrapping them would hide what a post says.
+"verytas/showcase/*.py" = ["E501"]
+"tests/test_showcase.py" = ["E501"]
