@@ -630,7 +630,12 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
 
     found_matches = [(by_id[a.id], a) for a in run.assets if by_id.get(a.id) and by_id[a.id].found]
 
-    def explained(m: asset_match.AssetMatch) -> bool:
+    def explained(m: asset_match.AssetMatch, restricted: bool) -> bool:
+        # A leak is a must; artwork above the content's tier is explained away only by public artwork
+        # fitting far better there, never by other restricted artwork.
+        if restricted:
+            return _explained(m, [o for o, a in found_matches if o is not m and not a.restricted],
+                              lead=RESTRICTED_EXPLAINED_LEAD)
         return _explained(m, [o for o, _ in found_matches if o is not m])
 
     def superseded(m: asset_match.AssetMatch) -> bool:
@@ -648,12 +653,15 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
         found = bool(m and m.found)
         label = f"official {asset.kind} '{asset.name}'"
 
-        if found and explained(m):
-            continue  # another registered artwork is what's there; this one only shares parts with it
+        # Another registered artwork is what's there and this one only shares parts with it: nothing
+        # judged from this match's pixels is reported. Lettering read by OCR is judged on its own.
+        exp = found and explained(m, asset.restricted)
         if not asset.official:
             # Old versions and other brands' marks are not unreleased artwork, whatever their tier; above
             # the content's tier they are reported by number, like anything else the reader can't see.
             name = f"asset #{asset.id}" if asset.restricted else asset.name
+            if exp:
+                continue
             if found and asset.kind == "competitor":
                 finding("VIS-COMPETITOR-MARK", f"{name} appears in this image" if not asset.restricted
                         else "Another brand's registered mark appears in this image",
@@ -665,7 +673,7 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
         if found and not asset.restricted and superseded(m):
             continue
 
-        if asset.restricted and found:
+        if asset.restricted and found and not exp:
             # Unreleased artwork in lower-tier content is a leak, whatever its quality.
             rule = run.rule_by_code.get("CONF-LEAK")
             if rule:
@@ -679,24 +687,27 @@ def _asset_findings(run: ReviewRun, node: AgentNode, image_id: str, locator: dic
                     locator={**locator, "image": image_id, "box": list(m.box or [])},
                 ))
             continue
+        if asset.restricted:
+            continue
 
-        if found and m.distortions:
+        if found and not exp and m.distortions:
             finding("VIS-ASSET-DISTORTED", f"{asset.name} is {m.distortions[0].split(':')[0]}",
                     f"Compared with {label}, this copy is {'; '.join(m.distortions)}.", 0.9, m.box)
 
-        if found and m.altered:
+        if found and not exp and m.altered:
             cells = ", ".join(f"r{c['row'] + 1}c{c['col'] + 1} ({c['change']})" for c in m.altered_cells[:6])
             extra = f" The vision model also notes: {'; '.join(v.changes[:3])}." if v and v.changes else ""
             finding("VIS-ASSET-ALTERED", f"{asset.name} differs from the official artwork",
                     f"Pixel comparison against {label} found changed regions: {cells}.{extra}",
                     0.9, m.box)
 
-        elif found and v and v.present == "altered" and v.changes and v.confidence >= 0.7:
+        elif found and not exp and v and v.present == "altered" and v.changes and v.confidence >= 0.7:
             finding("VIS-ASSET-ALTERED", f"{asset.name} may differ from the official artwork",
                     f"The pixels match {label}, and the vision model notes: {'; '.join(v.changes[:3])}.",
                     0.6 * v.confidence, m.box, model=vision_name)
 
-        attached = found and asset.part in _EXTENDABLE_PARTS and (m.attached_ratio or 0) >= asset_match.ATTACHED_RATIO
+        attached = (found and not exp and asset.part in _EXTENDABLE_PARTS
+                    and (m.attached_ratio or 0) >= asset_match.ATTACHED_RATIO)
         vision_extra = bool(v and v.extra_parts and v.present in ("exact", "altered") and v.confidence >= 0.5)
         if attached or (vision_extra and (found or asset.part in _EXTENDABLE_PARTS)):
             parts = ", ".join(v.extra_parts) if v and v.extra_parts else "parts joined to it"
@@ -804,9 +815,11 @@ async def _drawn_text(run: ReviewRun, node: AgentNode, page, base: str, locator:
 # on correct use in evals/assets).
 EXPLAINED_SHARE = 0.7
 EXPLAINED_LEAD = 0.03
+RESTRICTED_EXPLAINED_LEAD = 0.1
 
 
-def _explained(m: asset_match.AssetMatch, others: list[asset_match.AssetMatch]) -> bool:
+def _explained(m: asset_match.AssetMatch, others: list[asset_match.AssetMatch],
+               lead: float = EXPLAINED_LEAD) -> bool:
     core = m.core or m.box
     if core is None:
         return False
@@ -816,7 +829,7 @@ def _explained(m: asset_match.AssetMatch, others: list[asset_match.AssetMatch]) 
             continue
         w = max(0, min(core[2], o.box[2]) - max(core[0], o.box[0]))
         h = max(0, min(core[3], o.box[3]) - max(core[1], o.box[1]))
-        if w * h / area >= EXPLAINED_SHARE and (o.similarity or 0) > (m.similarity or 0) + EXPLAINED_LEAD:
+        if w * h / area >= EXPLAINED_SHARE and (o.similarity or 0) > (m.similarity or 0) + lead:
             return True
     return False
 

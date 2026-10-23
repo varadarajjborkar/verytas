@@ -142,3 +142,44 @@ def test_a_deletion_takes_one_space_with_it_unless_an_edit_starts_there():
     nxt = end + 1
     out, done = _splice(text, [(start, end, "", 1), (end, nxt, " ", 2)])
     assert out == "Learn with us.  Enrol today." and done[0][:2] == (start, end)
+
+
+class FlakyJudge(Judge):
+    """Passes the first fix it sees, rejects the second, and is down by the time a repair asks."""
+
+    async def ask(self, state, questions):
+        self.states.append(state)
+        if len(self.states) == 1:
+            return {"follows_rule": Answer("noul", 0.9), "keeps_offer": Answer("noul", 0.9),
+                    "keeps_action": Answer("noul", 0.95)}
+        if len(self.states) == 2:
+            return {"follows_rule": Answer("noul", 0.9), "keeps_offer": Answer("noul", 0.1),
+                    "keeps_action": Answer("noul", 0.95)}
+        raise ConnectionError("judge unreachable")
+
+
+def test_a_repair_that_fails_keeps_the_fixes_that_already_passed():
+    import asyncio
+
+    def finding(quote: str) -> RawFinding:
+        return RawFinding(unit_id="u", category="messaging", title="Dig at a rival", explanation="",
+                          confidence=0.8, checker="semantic", rule_code="MSG-RIVALS", quote=quote,
+                          needs_explanation=True)
+
+    from verytas.prism.suggest import RepairTask
+
+    class RepairingLLM(OneFixLLM):
+        async def run(self, task):
+            if isinstance(task, RepairTask):  # a different edit, so the repair reaches the judge
+                return FixList(fixes=[Fix(key=k, explanation="x", action="replace", original="Unlike other apps",
+                                          proposed="With us") for k, _, _ in task.items])
+            return await super().run(task)
+
+    good, bad = finding("Unlike other apps, we teach."), finding("Unlike other apps, save 20% today.")
+    llm = RepairingLLM(Fix(key="0", explanation="Digs at rivals.", action="delete", original="Unlike other apps, ",
+                           proposed=""))
+    judge = FlakyJudge()
+    asyncio.run(explain_and_fix([good, bad], {"MSG-RIVALS": RIVALS}, llm, judge))
+    assert len(judge.states) == 3  # the repair did ask, and the judge was down
+    assert good.suggestion is not None and good.suggestion.gate["keeps_offer"] == 0.9
+    assert bad.suggestion is None

@@ -8,9 +8,10 @@ decides what that means.
 Who a character is, from the mascot benchmark (evals/mascots, 425 scenes): likeness alone separates a
 brand's mascot from other cartoon characters only at a high bar (0.90 accepts 0.4% of other mascots but
 only a third of genuine ones). The creator's brief lowers the bar: a mascot the brief names is taken at
-0.83, where most genuine renderings pass. Below that, down to 0.70, the character the named mascot
-clearly leads for is taken as probably it, and its differences are reported as "if this is Kit". Only
-when no character qualifies is the mascot reported as possibly redrawn beyond recognition.
+0.83, where most genuine renderings pass. Below that, down to 0.78, a character the named mascot clearly
+leads for and that keeps all its main colours is taken as probably it, and its differences are reported
+as "if this is Kit". Only when no character qualifies is the mascot reported as possibly redrawn beyond
+recognition.
 """
 
 from __future__ import annotations
@@ -27,12 +28,14 @@ from verytas.vision.client import Character, VisionUnavailable
 # Likeness (DINOv2 cosine) at which a character is the mascot on looks alone, and when the brief names it.
 SURE = 0.90
 NAMED = 0.83
-# Below NAMED, a character the brief's mascot is the clear favourite for (this far ahead of any other
-# registered mascot) is taken as probably that mascot: a heavy AI redraw lands here. Its differences are
-# reported framed as "if this is Kit", at lower confidence, instead of a bare "redrawn beyond recognition"
-# that tells the creator nothing to fix. The worker compares from vision.chain.COMPARE_FROM, which is
-# at or below PROBABLE, so the differences exist.
-PROBABLE = 0.70
+# Below NAMED, likeness alone can't tell a heavy redraw from another character: on evals/mascots other
+# characters score 0.73 at the median and 0.84 at the 90th percentile. So a character is taken as
+# probably the named mascot only with a second, independent sign: every colour the artwork leans on is
+# present (an AI redraw keeps the palette; another character brings its own), on top of a likeness of at
+# least PROBABLE and a clear lead over any other registered mascot. Its differences are then reported as
+# "if this is Kit", at lower confidence, instead of a bare "redrawn beyond recognition". The worker
+# compares from vision.chain.COMPARE_FROM, equal to PROBABLE, so the differences exist.
+PROBABLE = 0.78
 PROBABLE_LEAD = 0.03
 # A video's frames sent for characters: enough to see a morph within a shot, few enough for a CPU.
 MAX_VIDEO_FRAMES = 12
@@ -232,7 +235,9 @@ def _probable(ref: str, mascots: dict[str, Any], frames: list[tuple[float | None
         for ch in characters:
             score = ch.likeness.get(ref, 0.0)
             rival = max((v for k, v in ch.likeness.items() if k != ref and k in mascots), default=0.0)
-            if score >= PROBABLE and score - rival >= PROBABLE_LEAD and (
+            differences = ch.differences.get(ref)
+            palette_kept = differences is not None and not any(d["kind"] == "colour_missing" for d in differences)
+            if score >= PROBABLE and score - rival >= PROBABLE_LEAD and palette_kept and (
                     best is None or score > best[1].likeness[ref]):
                 best = (t, ch)
     return best

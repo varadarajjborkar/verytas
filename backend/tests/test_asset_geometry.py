@@ -166,3 +166,28 @@ def test_a_competitors_mark_is_a_finding_and_never_judged_as_ours():
 def test_retired_and_competitor_artwork_is_not_shown_to_the_vision_model():
     run, _ = _run([_asset(1, "Logo"), _asset(2, "Old logo", retired=True), _asset(3, "Rival", kind="competitor")])
     assert [a.name for a in agents._shareable(run)] == ["Logo"]
+
+
+def test_restricted_artwork_is_a_leak_unless_public_artwork_fits_far_better():
+    from verytas.media.assets import AssetMatch
+
+    public = AssetMatch(1, True, 60, (0, 0, 300, 120), similarity=0.95)
+    secret = AssetMatch(2, True, 20, (0, 0, 300, 120), similarity=0.9, core=(10, 10, 120, 110))
+    run, node = _run([_asset(1, "Logo"), OfficialAsset(2, "Logo 2027", "logo", "full", True, None, None, "")])
+    agents._asset_findings(run, node, "img:x", {"image": "x"}, [public, secret], None)
+    assert [f.rule_code for f in run.findings] == ["CONF-LEAK"]  # 0.05 better is not far better
+    secret.similarity = 0.6
+    run, node = _run([_asset(1, "Logo"), OfficialAsset(2, "Logo 2027", "logo", "full", True, None, None, "")])
+    agents._asset_findings(run, node, "img:x", {"image": "x"}, [public, secret], None)
+    assert run.findings == []
+
+
+def test_a_partial_match_inside_better_artwork_raises_nothing():
+    from verytas.media.assets import AssetMatch
+
+    logo = AssetMatch(1, True, 60, (100, 100, 400, 200), similarity=0.96)
+    pack = AssetMatch(2, True, 18, (40, 20, 470, 600), similarity=0.55, core=(110, 105, 390, 195),
+                      altered_cells=[{"row": 4, "col": 2, "change": "shape"}])
+    run, node = _run([_asset(1, "Logo"), _asset(2, "Pack", kind="packaging")])
+    agents._asset_findings(run, node, "img:x", {"image": "x"}, [logo, pack], None)
+    assert run.findings == []

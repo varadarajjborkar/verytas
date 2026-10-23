@@ -85,8 +85,9 @@ def test_a_named_mascot_nobody_resembles_is_a_weak_warning():
 
 
 def test_a_heavy_redraw_the_brief_names_gets_its_differences_as_probable():
-    # 0.76 alike: below the bar for "this is Kit", but Kit leads Pip by far and the brief says Kit.
-    ch = _ch({"1": 0.76, "2": 0.61}, EXTRA_EYE)
+    # 0.80 alike: below the bar for "this is Kit", but Kit leads Pip by far, keeps Kit's colours, and the
+    # brief says Kit.
+    ch = _ch({"1": 0.80, "2": 0.61}, EXTRA_EYE)
     run = _run(FakeClient([[ch]]), [_asset(1, "Kit"), _asset(2, "Pip")], brief="Kit dances")
     _check(run, IMAGE)
     [f] = run.findings
@@ -94,8 +95,18 @@ def test_a_heavy_redraw_the_brief_names_gets_its_differences_as_probable():
     assert "if it is Kit" in f.explanation and f.confidence == 0.6 and f.locator["box"] == [10, 10, 50, 60]
 
 
+def test_a_different_character_in_other_colours_is_not_taken_for_the_named_mascot():
+    # Alike enough by looks, but Kit's blue is gone: another character, not a redraw of Kit.
+    lost = [{"kind": "colour_missing", "text": "blue covers 2% here; the artwork uses it for 61%"}]
+    ch = _ch({"1": 0.82}, lost + EXTRA_EYE)
+    run = _run(FakeClient([[ch]]), [_asset(1, "Kit")], brief="Kit dances")
+    _check(run, IMAGE)
+    [f] = run.findings
+    assert "beyond recognition" in f.title
+
+
 def test_a_redraw_two_mascots_could_be_stays_a_plain_warning():
-    ch = _ch({"1": 0.76, "2": 0.75}, EXTRA_EYE, compared=("1", "2"))
+    ch = _ch({"1": 0.80, "2": 0.79}, EXTRA_EYE, compared=("1", "2"))
     run = _run(FakeClient([[ch]]), [_asset(1, "Kit"), _asset(2, "Pip")], brief="Kit dances")
     _check(run, IMAGE)
     [f] = run.findings
