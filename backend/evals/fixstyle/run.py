@@ -6,7 +6,8 @@ takes it or writes their own. Three policies:
 
 - the model alone: the operation the fix model picks without a hint, here uniformly at random (on the
   live eval it varies by rule, so this is the uninformed baseline);
-- greedy: always the best observed rate so far (ties broken at random), which can lock onto an early luck;
+- greedy: always the best smoothed rate so far ((taken + 1) / (decided + 2), ties broken at random), so an
+  untried operation starts at a half chance rather than at zero, which can still lock onto early luck;
 - Thompson (prism/fixstyle.py): one draw from each operation's Beta posterior, highest wins.
 
 Before MIN_DECIDED decided fixes on a rule, every policy falls back to the model alone, as production does.
@@ -45,8 +46,9 @@ def _simulate(rates: dict[str, float], policy: str, seed: int) -> list[bool]:
             op = choice.choice(OPERATIONS)
         elif policy == "greedy":
             row = style.tally["R"]
-            best = max((a / (a + b) if a + b else 0.0) for a, b in row.values())
-            op = choice.choice([o for o, (a, b) in row.items() if (a / (a + b) if a + b else 0.0) == best])
+            rate = {o: (a + 1) / (a + b + 2) for o, (a, b) in row.items()}
+            best = max(rate.values())
+            op = choice.choice([o for o, r in rate.items() if r == best])
         else:
             style.chosen.clear()  # a new review, a new draw
             op = style.prefer("R")

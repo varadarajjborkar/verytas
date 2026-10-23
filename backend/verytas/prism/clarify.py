@@ -75,12 +75,12 @@ class ClarifyTask:
 
     def user_content(self) -> str:
         r = self.rule
-        lines = [f"<rule code=\"{r.code}\" severity=\"{r.severity.value}\">{r.title}. {r.text}</rule>"]
-        lines += [f"<current_bad>{e}</current_bad>" for e in r.bad_examples or []]
-        lines += [f"<current_good>{e}</current_good>" for e in r.good_examples or []]
-        lines += [f"<upheld>{q}</upheld>" for q in self.cases.upheld]
-        lines += [f"<cleared why=\"{_attr(why)}\">{q}</cleared>" for q, why in self.cases.cleared]
-        lines += [f"<unclear why=\"{_attr(why)}\">{q}</unclear>" for q, why in self.cases.unclear]
+        lines = [f"<rule code=\"{r.code}\" severity=\"{r.severity.value}\">{_esc(r.title)}. {_esc(r.text)}</rule>"]
+        lines += [f"<current_bad>{_esc(e)}</current_bad>" for e in r.bad_examples or []]
+        lines += [f"<current_good>{_esc(e)}</current_good>" for e in r.good_examples or []]
+        lines += [f"<upheld>{_esc(q)}</upheld>" for q in self.cases.upheld]
+        lines += [f"<cleared why=\"{_attr(why)}\">{_esc(q)}</cleared>" for q, why in self.cases.cleared]
+        lines += [f"<unclear why=\"{_attr(why)}\">{_esc(q)}</unclear>" for q, why in self.cases.unclear]
         return "\n".join(lines)
 
     def heuristic(self) -> Draft:
@@ -94,6 +94,11 @@ class ClarifyTask:
 
 def _attr(text: str | None) -> str:
     return (text or "").replace('"', "'").replace("<", " ").replace(">", " ")[:200]
+
+
+def _esc(text: str) -> str:
+    # Cases are other people's text: none may close its tag and pose as a rule or another case.
+    return text.replace("&", "&amp;").replace("<", "&lt;")
 
 
 def _first_sentence(quote: str) -> str:

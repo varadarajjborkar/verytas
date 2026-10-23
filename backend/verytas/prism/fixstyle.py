@@ -13,7 +13,9 @@ keeps, per operation, how often its fixes were taken, and two things reach the f
 
 Bounded like every learned change here: both are hints in the prompt, the fix gate judges every
 proposal exactly as before, a hint appears only once a rule has MIN_DECIDED decided fixes, and nothing
-is learned from findings that were dismissed.
+is learned from findings that were dismissed. Counts and edits alike come only from content at or below
+the reviewed content's tier, and every learned line is escaped: a reviewer's edit began as a creator's
+text, so it must not be able to close its own tag and forge a <prefer> of its own.
 """
 
 from __future__ import annotations
@@ -52,6 +54,7 @@ class FixStyle:
     # rule code -> operation -> [taken, not taken]
     tally: dict[str, dict[str, list[int]]] = field(default_factory=dict)
     lessons: dict[str, list[Lesson]] = field(default_factory=dict)  # newest first
+    seed: int | None = None  # with a seed, each rule's draw depends only on (seed, rule): reproducible per version
     rng: random.Random = field(default_factory=random.Random)
     chosen: dict[str, str] = field(default_factory=dict)  # what this review preferred, for the record
 
@@ -66,17 +69,21 @@ class FixStyle:
         row = self.tally.get(rule_code)
         if not row or sum(a + b for a, b in row.values()) < MIN_DECIDED:
             return None
-        draws = {op: self.rng.betavariate(1 + a, 1 + b) for op, (a, b) in row.items()}
+        # Seeded per rule, not shared: fix batches run concurrently, so a shared stream would hand out draws
+        # in whatever order the tasks happened to ask.
+        rng = random.Random(f"{self.seed}:{rule_code}") if self.seed is not None else self.rng
+        draws = {op: rng.betavariate(1 + a, 1 + b) for op, (a, b) in row.items()}
         best = max(draws, key=draws.get)
         self.chosen[rule_code] = best
         return best
 
-    def hint(self, rule_code: str | None, text: str) -> str:
-        """The prompt lines for one flagged item: the preferred operation and the nearest reviewer edits."""
+    def hint(self, rule_code: str | None, text: str, *, prefer: bool = True) -> str:
+        """The prompt lines for one flagged item: the operation to try first and the nearest reviewer edits.
+        A repair passes prefer=False: it was told what went wrong, and that outranks any habit."""
         if not rule_code:
             return ""
         out = []
-        op = self.prefer(rule_code)
+        op = self.prefer(rule_code) if prefer else None
         if op is not None:
             row = self.tally[rule_code]
             seen = ", ".join(f"{name} {a} of {a + b}" for name, (a, b) in row.items() if a + b)
@@ -87,13 +94,18 @@ class FixStyle:
                       key=lambda t: (-t[0], -t[1].at.timestamp()))
         for score, lesson in near[:LESSONS]:
             if score >= FLOOR:
-                out.append(f"<reviewer_fix>{lesson.original} => {lesson.edited}</reviewer_fix>\n")
+                out.append(f"<reviewer_fix>{_esc(lesson.original)} => {_esc(lesson.edited)}</reviewer_fix>\n")
         return "".join(out)
 
     def summary(self) -> dict:
         return {"rules": {code: {op: {"taken": a, "not_taken": b} for op, (a, b) in row.items() if a + b}
                           for code, row in self.tally.items()},
                 "preferred": dict(self.chosen), "lessons": sum(len(v) for v in self.lessons.values())}
+
+
+def _esc(text: str) -> str:
+    # As the judge renders content (providers/ollama_judge.py): no tag can be opened or closed from inside.
+    return text.replace("&", "&amp;").replace("<", "&lt;")
 
 
 def outcome(action: DecisionAction) -> bool | None:
@@ -103,28 +115,29 @@ def outcome(action: DecisionAction) -> bool | None:
 
 async def load(session: AsyncSession, workspace_id: int, tier: Tier, mask: Callable[[str], str],
                seed: int | None = None) -> FixStyle:
-    """This workspace's decided model-written fixes. Counts come from every tier (they are only numbers);
-    the reviewers' own words only from content at or below `tier`."""
+    """This workspace's decided model-written fixes on content at or below `tier`: the reviewers' own words
+    and, like calibration's counts, the tallies too, which say how much work there is above it."""
     last = select(func.max(Decision.id)).group_by(Decision.finding_id).scalar_subquery()
     rows = (await session.execute(
         select(Rule.code, Suggestion.action, Decision.action, Decision.edited_text, Finding.quote,
-               Content.tier, Decision.created_at)
+               Decision.created_at)
         .join(Finding, Finding.rule_id == Rule.id).join(Suggestion, Suggestion.finding_id == Finding.id)
         .join(Decision, Decision.finding_id == Finding.id).join(Review, Review.id == Finding.review_id)
         .join(ContentVersion, ContentVersion.id == Review.version_id)
         .join(Content, Content.id == ContentVersion.content_id)
         .where(Rule.workspace_id == workspace_id, Content.workspace_id == workspace_id, Decision.id.in_(last),
                Suggestion.model.is_not(None), Suggestion.action.in_(OPERATIONS),
+               Content.tier.in_([t for t in Tier if t.rank <= tier.rank]),
                Decision.action.in_([DecisionAction.accepted, DecisionAction.edited]))
         .order_by(Decision.created_at.desc()).limit(MAX_ROWS))).all()
 
     def build() -> FixStyle:
-        style = FixStyle(rng=random.Random(seed))
-        for code, op, action, edited, original, content_tier, at in rows:
+        style = FixStyle(seed=seed)
+        for code, op, action, edited, original, at in rows:
             taken = outcome(action)
             style.record(code, op, bool(taken))
             # A reviewer's edit replaces the whole flagged span, so the lesson pairs it with the quote.
-            if not taken and edited and original and content_tier.rank <= tier.rank:
+            if not taken and edited and original:
                 before, after = mask(original)[:_CHARS], mask(edited)[:_CHARS]
                 style.lessons.setdefault(code, []).append(Lesson(code, before, after, at, words(before)))
         return style
