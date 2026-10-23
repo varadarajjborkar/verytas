@@ -101,6 +101,10 @@ class SuggestedEdit:
     rationale: str
     intent_preserved: float | None = None
     model: str | None = None
+    # The fix gate's p(yes) per question, kept so evals and reviewers can see why a fix passed. Set only
+    # on fixes that reached the gate; repaired is True when the first proposal was rejected and redone.
+    gate: dict[str, float] | None = None
+    repaired: bool = False
 
 
 @dataclass

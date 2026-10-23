@@ -10,8 +10,14 @@ rule, and that what the rule doesn't touch survives: the offer, what the reader
 is asked to do. A number the creator never wrote is dropped by code. A single "same message?" question
 can't tell the two apart: for a rule against digs or hype, removing the dig is
 the fix, and that question blocked it (evals/explain_and_fix.py measured half
-of all tone and dig fixes lost that way). Fixes that fail either test are
-dropped rather than shown.
+of all tone and dig fixes lost that way).
+
+A fix the gate rejects gets one repair: the model is told what went wrong
+(the offer or the call to action was lost, or the rule is still broken) and
+proposes again, and the new fix goes through every check from the start.
+Most rejections were deletions of a sentence that carried the offer along
+with the dig ("Tired of X's boring lectures? Switch to us"), where a rewrite
+keeps both. Fixes that still fail are dropped rather than shown.
 """
 
 from __future__ import annotations
@@ -75,8 +81,10 @@ class ExplainAndFixTask:
         "- rewrite: when the rule is about how the sentence is built (what comes first, pressure or "
         "countdowns, what may be revealed yet), set original to the whole sentence and rewrite it. Keep its "
         "offer and call to action unless the rule forbids them.\n"
-        "- delete: when a sentence only mocks, compares, taunts or pressures, set original to that sentence "
-        "and proposed to empty. If part of it says what we do, rewrite instead and keep that part.\n"
+        "- delete: only when a sentence does nothing but mock, compare, taunt or pressure. Never delete a "
+        "sentence that also carries an offer, a price, a code, a product, or something the reader is asked to "
+        "do (enrol, switch, book, practise, swipe, use a code): rewrite it around the problem and keep those. "
+        "Set original to that sentence and proposed to empty.\n"
         "- none: no safe edit exists; leave original and proposed empty.\n"
         "Removing what the rule forbids is the fix: never keep a dig, sarcasm, hype or countdown to preserve "
         "the tone of the original. Write in the brand's voice; <examples>, when given, show it. "
@@ -92,14 +100,13 @@ class ExplainAndFixTask:
         self.items = items
 
     def user_content(self) -> str:
-        blocks = []
-        for key, f, rule in self.items:
-            rule_line = (f"{rule.code}: {rule.title}. {rule.text}" if rule
-                         else "Unsupported claim with no approved fact.")
-            context = f"<context>{f.context}</context>\n" if f.context else ""
-            blocks.append(f'<item key="{key}">\n<rule>{rule_line}</rule>\n{_examples(rule)}<issue>{f.title}</issue>\n'
-                          f"{context}<text>{f.quote or ''}</text>\n</item>")
-        return "\n".join(blocks)
+        return "\n".join(self._block(key, f, rule) for key, f, rule in self.items)
+
+    def _block(self, key: str, f: RawFinding, rule: RuleView | None, extra: str = "") -> str:
+        rule_line = f"{rule.code}: {rule.title}. {rule.text}" if rule else "Unsupported claim with no approved fact."
+        context = f"<context>{f.context}</context>\n" if f.context else ""
+        return (f'<item key="{key}">\n<rule>{rule_line}</rule>\n{_examples(rule)}<issue>{f.title}</issue>\n'
+                f"{context}<text>{f.quote or ''}</text>\n{extra}</item>")
 
     def heuristic(self) -> FixList:
         return FixList(fixes=[
@@ -109,7 +116,8 @@ class ExplainAndFixTask:
 
 
 async def explain_and_fix(findings: list[RawFinding], rules: dict[str, RuleView], llm: LLMProvider,
-                          judge: JudgeProvider, confidential: list[str] | None = None) -> None:
+                          judge: JudgeProvider, confidential: list[str] | None = None,
+                          repair: bool = True) -> None:
     """Better explanations, plus suggestions that pass both checks.
 
     Proposed fixes are held aside and only attached to findings once every
@@ -131,33 +139,105 @@ async def explain_and_fix(findings: list[RawFinding], rules: dict[str, RuleView]
             if fix.explanation.strip():
                 f.explanation = fix.explanation.strip()
             f.needs_explanation = False
-            original, proposed = fix.original.strip(), fix.proposed.strip()
-            action = fix.action.strip().lower()
-            deleting = action == "delete"
-            if action == "none":
-                continue  # the model said no safe edit exists; text it filled in anyway is not a fix
-            if f.rule_code == "CLAIM-UNSUPPORTED":
-                continue  # rewording can't back a claim; a rewrite would be dropped later, after a judge call
-            if deleting:
-                proposed = ""
-            if not original or (not proposed and not deleting) or original == proposed \
-                    or original not in (f.quote or ""):
-                continue  # no fix, or the model edited text that isn't there
-            before, after = _in_sentence(f, original, proposed)
-            if _doubled_words(after) > _doubled_words(before):
-                continue  # the edit repeats a neighbouring word ("Read [Read the article]")
-            if any(url not in proposed for url in _MD_URL.findall(original)):
-                continue  # the edit would delete a link ("[click here](url)" -> "the article")
-            if _new_numbers(f.context or f.quote or "", proposed):
-                continue  # a figure the creator never wrote is an invented claim, however well it reads
-            if _leaks(proposed, confidential):
-                # The model saw a placeholder; restoring it put the codename back
-                # into the "fix". A fix must never re-publish what is confidential.
-                continue
-            proposals.append((f, SuggestedEdit(original, proposed, fix.explanation.strip(), model=llm.name)))
+            edit = _screen(f, fix, llm.name, confidential)
+            if edit is not None:
+                proposals.append((f, edit))
 
-    for f, suggestion in await _check_intent(proposals, judge, rules):
+    passed, rejected = await _check_intent(proposals, judge, rules)
+    if repair and rejected:
+        passed += await _repair(rejected, rules, llm, judge, confidential)
+    for f, suggestion in passed:
         f.suggestion = suggestion
+
+
+def _screen(f: RawFinding, fix: Fix, model: str | None, confidential: list[str] | None) -> SuggestedEdit | None:
+    """The proposal as an edit, or None when it isn't one that may reach the judge."""
+    original, proposed = fix.original.strip(), fix.proposed.strip()
+    action = fix.action.strip().lower()
+    deleting = action == "delete"
+    if action == "none":
+        return None  # the model said no safe edit exists; text it filled in anyway is not a fix
+    if f.rule_code == "CLAIM-UNSUPPORTED":
+        return None  # rewording can't back a claim; a rewrite would be dropped later, after a judge call
+    if deleting:
+        proposed = ""
+    if not original or (not proposed and not deleting) or original == proposed or original not in (f.quote or ""):
+        return None  # no fix, or the model edited text that isn't there
+    before, after = _in_sentence(f, original, proposed)
+    if _doubled_words(after) > _doubled_words(before):
+        return None  # the edit repeats a neighbouring word ("Read [Read the article]")
+    if any(url not in proposed for url in _MD_URL.findall(original)):
+        return None  # the edit would delete a link ("[click here](url)" -> "the article")
+    if _new_numbers(f.context or f.quote or "", proposed):
+        return None  # a figure the creator never wrote is an invented claim, however well it reads
+    if _leaks(proposed, confidential):
+        # The model saw a placeholder; restoring it put the codename back
+        # into the "fix". A fix must never re-publish what is confidential.
+        return None
+    return SuggestedEdit(original, proposed, fix.explanation.strip(), model=model)
+
+
+def _why_rejected(gate: dict[str, float]) -> str:
+    """What the judge objected to, in the words the model is asked to fix it by."""
+    why = []
+    if gate.get("follows_rule", 1.0) < RULE_FLOOR:
+        why.append("the revised text still breaks the rule (reworded, softened or hinted at)")
+    if gate.get("keeps_offer", 1.0) < INTENT_FLOOR:
+        why.append("it dropped the offer (the discount, price, code or course)")
+    if gate.get("keeps_action", 1.0) < INTENT_FLOOR:
+        why.append("it dropped what the reader is asked to do")
+    return "; ".join(why) or "the judge was not sure the content survived"
+
+
+class RepairTask(ExplainAndFixTask):
+    """One more try at fixes the gate rejected, told why each was rejected."""
+
+    name = "explain_and_fix_repair"
+    system = ExplainAndFixTask.system + (
+        "\nEach item also has <rejected>, an edit already proposed for it, and <why>, what was wrong with it. "
+        "Propose a different edit that fixes exactly that. When the offer or the call to action was lost, "
+        "rewrite the sentence so they stay and only the problem goes. When the rule was still broken, remove "
+        "what the rule forbids instead of rewording it. Keep the explanation short; it is not shown again."
+    )
+
+    def __init__(self, items: list[tuple[str, RawFinding, RuleView | None]],
+                 rejected: dict[str, tuple[SuggestedEdit, str]]) -> None:
+        super().__init__(items)
+        self.rejected = rejected
+
+    def user_content(self) -> str:
+        blocks = []
+        for key, f, rule in self.items:
+            edit, why = self.rejected[key]
+            shown = edit.proposed or "(sentence deleted)"
+            blocks.append(self._block(key, f, rule, f"<rejected>{edit.original} => {shown}</rejected>\n"
+                                                    f"<why>{why}</why>\n"))
+        return "\n".join(blocks)
+
+
+async def _repair(rejected: list[tuple[RawFinding, SuggestedEdit]], rules: dict[str, RuleView],
+                  llm: LLMProvider, judge: JudgeProvider,
+                  confidential: list[str] | None) -> list[tuple[RawFinding, SuggestedEdit]]:
+    """A second proposal for each rejected fix, through the same screen and gate. One round: a fix that
+    fails twice is a sign the model can't do it here, and the creator is better off with the explanation."""
+    items = [(str(i), f, rules.get(f.rule_code or "")) for i, (f, _) in enumerate(rejected)]
+    told = {str(i): (s, _why_rejected(s.gate or {})) for i, (_, s) in enumerate(rejected)}
+    batches = [items[start:start + BATCH] for start in range(0, len(items), BATCH)]
+    try:
+        results = await asyncio.gather(*(llm.run(RepairTask(b, {k: told[k] for k, _, _ in b})) for b in batches))
+    except Exception:  # noqa: BLE001, a failed repair leaves the explanations, which are already written
+        return []
+    retries = []
+    for b, result in zip(batches, results, strict=True):
+        by_key = {fix.key: fix for fix in result.fixes}
+        for key, f, _ in b:
+            fix = by_key.get(key)
+            edit = _screen(f, fix, llm.name, confidential) if fix else None
+            if edit is not None and (edit.original, edit.proposed) != (told[key][0].original, told[key][0].proposed):
+                edit.repaired = True
+                retries.append((f, edit))
+    passed, _ = await _check_intent(retries, judge, rules)
+    return passed
 
 
 def _examples(rule: RuleView | None) -> str:
@@ -169,9 +249,11 @@ def _examples(rule: RuleView | None) -> str:
 
 
 async def _check_intent(proposals: list[tuple[RawFinding, SuggestedEdit]], judge: JudgeProvider,
-                        rules: dict[str, RuleView] | None = None) -> list[tuple[RawFinding, SuggestedEdit]]:
+                        rules: dict[str, RuleView] | None = None
+                        ) -> tuple[list[tuple[RawFinding, SuggestedEdit]], list[tuple[RawFinding, SuggestedEdit]]]:
+    """(passed, rejected). Each fix carries the gate's answers either way."""
     if not proposals or judge.name.startswith("offline"):
-        return proposals  # the offline judge can't judge meaning; intent stays unscored (shown as such)
+        return proposals, []  # the offline judge can't judge meaning; intent stays unscored (shown as such)
     rules = rules or {}
 
     async def check(f: RawFinding, s: SuggestedEdit) -> bool:
@@ -183,13 +265,16 @@ async def _check_intent(proposals: list[tuple[RawFinding, SuggestedEdit]], judge
             {"rule": f"{rule.title}. {rule.text}" if rule else f.title, "original": original,
              "revised": revised or "(removed)"},
             GATE)
+        s.gate = {q: round(a.p_yes, 4) for q, a in answers.items()}
         # Shown on the fix as how sure the judge is that the creator's content survived: its weakest part.
         s.intent_preserved = round(min(answers[q].p_yes for q in _CONTENT), 4)
         return s.intent_preserved >= INTENT_FLOOR and answers["follows_rule"].p_yes >= RULE_FLOOR
 
     # Each fix is judged on its own, so all of them at once: one round trip instead of one per fix.
     verdicts = await asyncio.gather(*(check(f, s) for f, s in proposals))
-    return [p for p, ok in zip(proposals, verdicts, strict=True) if ok]
+    passed = [p for p, ok in zip(proposals, verdicts, strict=True) if ok]
+    rejected = [p for p, ok in zip(proposals, verdicts, strict=True) if not ok]
+    return passed, rejected
 
 
 # The fix gate, as narrow questions a small judge answers reliably (one call for all of them). One broad

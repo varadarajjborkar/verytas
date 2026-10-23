@@ -380,7 +380,7 @@ async def gate() -> str:
             numbers_ok = not suggest._new_numbers(pair["original"], pair["revised"])
             old = numbers_ok and old_judged["same_intent"].p_yes >= suggest.INTENT_FLOOR
             edit = SuggestedEdit(pair["original"], pair["revised"], "")
-            new = numbers_ok and bool(await suggest._check_intent([(f, edit)], judge, rules))
+            new = numbers_ok and bool((await suggest._check_intent([(f, edit)], judge, rules))[0])
             rows.append(pair | {"old": old, "new": new})
     (RESULTS / "fix_gate.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
     good = [r for r in rows if r["should_pass"]]
