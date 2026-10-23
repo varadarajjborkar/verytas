@@ -121,7 +121,7 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
             <p className="truncate text-xs text-muted" title={readable(title)}>{readable(title)}</p>
           </div>
           <button type="button" onClick={refresh} disabled={phase === "loading"} title="Write the summary again from the latest data"
-            className="vt-btn vt-btn-quiet h-8 px-2.5 text-xs">
+            className="vt-btn vt-btn-quiet vt-btn-sm">
             <RefreshIcon size={13} className={phase === "loading" ? "animate-spin" : ""} />
             <span className="hidden sm:inline">Refresh summary</span>
             <span className="sm:hidden">Refresh</span>

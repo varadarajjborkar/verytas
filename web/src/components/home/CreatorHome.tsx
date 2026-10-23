@@ -90,7 +90,7 @@ export function CreatorHome() {
 
       <div className="grid gap-5 xl:grid-cols-5">
         <Panel title="Needs you" className="xl:col-span-3" scroll
-          aside={<Link href="/review" className="vt-btn vt-btn-primary py-1.5"><PlusIcon size={14} /> New review</Link>}>
+          aside={<Link href="/review" className="vt-btn vt-btn-primary vt-btn-sm"><PlusIcon size={14} /> New review</Link>}>
           {rows === null ? <Skeleton /> : groups.fix.length === 0 ? (
             <p className="text-sm text-muted">Nothing to fix. Start a new review when you have something to post.</p>
           ) : (

@@ -60,7 +60,7 @@ export function MeetingPreview({ side, className = "" }: { side: "creator" | "ma
             <p className="mt-1 text-[13px] leading-5 text-muted">{copy.lead}</p>
           </div>
         </div>
-        <button type="button" onClick={() => setOpen(true)} className="vt-btn vt-btn-quiet h-9 shrink-0 self-start text-xs sm:self-center">
+        <button type="button" onClick={() => setOpen(true)} className="vt-btn vt-btn-quiet shrink-0 self-start sm:self-center">
           See how it will work
         </button>
       </section>

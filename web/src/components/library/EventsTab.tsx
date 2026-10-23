@@ -45,7 +45,7 @@ export function EventsTab({ events, editable, onChanged }: { events: BrandEvent[
         </p>
         {editable && (
           <button type="button" onClick={() => setForm({ kind: "campaign", starts_on: on, hashtags: [], avoid_terms: [] })}
-            className="vt-btn vt-btn-primary ml-auto py-1.5"><PlusIcon size={14} /> New event</button>
+            className="vt-btn vt-btn-primary ml-auto vt-btn-sm"><PlusIcon size={14} /> New event</button>
         )}
       </div>
       {form && <EventForm key={form.id ?? "new"} initial={form} onCancel={() => setForm(null)} onDone={() => { setForm(null); onChanged(); }} />}
@@ -103,11 +103,11 @@ function EventDetail({ event, editable, onEdit, onChanged }: { event: BrandEvent
         )}
         {editable && (
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={onEdit} className="vt-btn vt-btn-quiet py-1.5">Edit</button>
+            <button type="button" onClick={onEdit} className="vt-btn vt-btn-quiet vt-btn-sm">Edit</button>
             {confirm ? (
               <span className="vt-pop flex items-center gap-1.5 text-xs">
                 <span className="text-[var(--vt-blocker)]">Cancel the event and retire its rules?</span>
-                <button type="button" disabled={busy} className="vt-btn px-2 py-1 text-xs text-[var(--vt-blocker)]" onClick={async () => {
+                <button type="button" disabled={busy} className="vt-btn vt-btn-xs text-[var(--vt-blocker)]" onClick={async () => {
                   setBusy(true);
                   try {
                     const out = await cancelEvent(event.id);
@@ -119,9 +119,9 @@ function EventDetail({ event, editable, onEdit, onChanged }: { event: BrandEvent
                     setBusy(false);
                   }
                 }}>Cancel event</button>
-                <button type="button" onClick={() => setConfirm(false)} className="vt-btn vt-btn-quiet px-2 py-1 text-xs">Keep</button>
+                <button type="button" onClick={() => setConfirm(false)} className="vt-btn vt-btn-quiet vt-btn-xs">Keep</button>
               </span>
-            ) : <button type="button" onClick={() => setConfirm(true)} className="vt-btn py-1.5 text-subtle hover:text-[var(--vt-blocker)]">Cancel event</button>}
+            ) : <button type="button" onClick={() => setConfirm(true)} className="vt-btn vt-btn-sm text-subtle hover:text-[var(--vt-blocker)]">Cancel event</button>}
           </div>
         )}
       </div>
@@ -205,10 +205,10 @@ function EventForm({ initial, onCancel, onDone }: { initial: Partial<BrandEvent>
         <span><span className="font-medium">Blackout</span><span className="block text-xs text-muted">Pause promotional posts while it runs, for a crisis or a day of mourning.</span></span>
       </label>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled={busy || e.name.trim().length < 2 || !e.starts_on} onClick={save} className="vt-btn vt-btn-primary py-1.5">
+        <button type="button" disabled={busy || e.name.trim().length < 2 || !e.starts_on} onClick={save} className="vt-btn vt-btn-primary vt-btn-sm">
           {busy ? "Saving..." : editing ? "Save and re-check" : "Add event"}
         </button>
-        <button type="button" onClick={onCancel} className="vt-btn vt-btn-quiet py-1.5">Cancel</button>
+        <button type="button" onClick={onCancel} className="vt-btn vt-btn-quiet vt-btn-sm">Cancel</button>
         <span className="text-[11px] text-subtle">Pieces in review are re-checked against the new version.</span>
       </div>
     </section>

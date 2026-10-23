@@ -70,7 +70,7 @@ function Profile({ id }: { id: number }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         {back}
         <h2 className="text-xl font-semibold tracking-tight">{person.name}</h2>
-        <Link href={`/review?queue=all&creator=${person.id}`} className="vt-btn vt-btn-quiet py-1.5 text-xs">Their pieces in the queue</Link>
+        <Link href={`/review?queue=all&creator=${person.id}`} className="vt-btn vt-btn-quiet vt-btn-sm">Their pieces in the queue</Link>
       </div>
 
       <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">

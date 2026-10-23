@@ -90,8 +90,8 @@ export function ImportTab({ onAdded }: { onAdded: (done: boolean) => void }) {
           <p className="text-sm"><span className="font-semibold">{proposals.length}</span> proposed rule{proposals.length === 1 ? "" : "s"}
             <span className="text-muted"> · read by {model.startsWith("offline") ? "the offline reader" : <code>{model}</code>}</span></p>
           <div className="ml-auto flex gap-2">
-            <button type="button" onClick={() => { setProposals([]); setPhase("idle"); }} className="vt-btn vt-btn-quiet py-1.5">Start over</button>
-            <button type="button" disabled={phase === "adding" || kept === 0} onClick={add} className="vt-btn vt-btn-primary py-1.5">
+            <button type="button" onClick={() => { setProposals([]); setPhase("idle"); }} className="vt-btn vt-btn-quiet vt-btn-sm">Start over</button>
+            <button type="button" disabled={phase === "adding" || kept === 0} onClick={add} className="vt-btn vt-btn-primary vt-btn-sm">
               {phase === "adding" ? "Adding..." : `Add ${kept} as drafts`}
             </button>
           </div>

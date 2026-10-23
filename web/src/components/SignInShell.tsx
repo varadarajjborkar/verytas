@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { CheckIcon, OctagonIcon } from "./Icons";
-import { Logo } from "./Logo";
+import { Wordmark } from "./Wordmark";
 
 const PROMISES = [
   "Claims are checked against facts the brand approved",
@@ -17,10 +17,7 @@ export function SignInShell({ children }: { children: ReactNode }) {
   return (
     <div className="vt-card mx-auto grid w-full max-w-6xl overflow-hidden md:min-h-[calc(100vh-4.5rem)] md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
       <aside className="vt-signin-aside relative flex flex-col gap-8 border-b border-line p-6 md:border-b-0 md:border-r md:p-10">
-        <div className="flex items-center gap-3">
-          <Logo size={44} />
-          <span className="text-xl font-semibold tracking-tight">Verytas</span>
-        </div>
+        <Wordmark size="lg" />
         <div className="flex flex-col gap-3">
           <h2 className="text-[1.65rem] font-semibold leading-tight tracking-tight md:text-[2rem]">
             Brand review that shows its work.

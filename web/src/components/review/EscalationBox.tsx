@@ -82,7 +82,7 @@ export function EscalationBox({ f, request, onEscalate, onChanged, side }: {
   if (!onEscalate) return null;
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="vt-btn vt-btn-quiet self-start py-1.5 text-xs">
+      <button type="button" onClick={() => setOpen(true)} className="vt-btn vt-btn-quiet self-start vt-btn-sm">
         Ask the brand team
       </button>
     );
@@ -115,10 +115,10 @@ export function EscalationBox({ f, request, onEscalate, onChanged, side }: {
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled={busy || left > 0} onClick={send} className="vt-btn vt-btn-primary py-1.5 text-xs">
+        <button type="button" disabled={busy || left > 0} onClick={send} className="vt-btn vt-btn-primary vt-btn-sm">
           {busy ? "Sending..." : "Send to the brand team"}
         </button>
-        <button type="button" onClick={() => { setOpen(false); setRefusal(null); }} className="vt-btn vt-btn-quiet py-1.5 text-xs">Cancel</button>
+        <button type="button" onClick={() => { setOpen(false); setRefusal(null); }} className="vt-btn vt-btn-quiet vt-btn-sm">Cancel</button>
         <span id={`esc-${f.id}-note`} className="text-[11px] text-subtle">
           {left > 0 ? `${left} more character${left === 1 ? "" : "s"}` : "A person reviews it by hand. No phone numbers or offers."}
         </span>

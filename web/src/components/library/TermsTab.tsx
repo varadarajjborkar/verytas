@@ -40,7 +40,7 @@ export function TermsTab({ terms, onChanged }: { terms: Term[]; onChanged: () =>
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
         <p className="text-xs text-muted">Only brand admins see this list. The audit log records changes, never the terms.</p>
-        <button type="button" onClick={() => setAdding(true)} className="vt-btn vt-btn-primary ml-auto py-1.5"><PlusIcon size={14} /> Add term</button>
+        <button type="button" onClick={() => setAdding(true)} className="vt-btn vt-btn-primary ml-auto vt-btn-sm"><PlusIcon size={14} /> Add term</button>
       </div>
       {adding && (
         <section className="vt-pop vt-card grid gap-3 p-4 md:grid-cols-[1fr_1fr_10rem_auto] md:items-end" aria-label="Add term">
@@ -77,13 +77,13 @@ export function TermsTab({ terms, onChanged }: { terms: Term[]; onChanged: () =>
                       <span className="vt-pop flex items-center gap-1.5 text-xs">
                         <span className="text-[var(--vt-blocker)]">Stop guarding it?</span>
                         <button type="button" disabled={busy} onClick={async () => { if (await act(() => deleteTerm(t.id), "Term removed")) setRemoving(null); }}
-                          className="vt-btn px-2 py-1 text-xs text-[var(--vt-blocker)]">Remove</button>
-                        <button type="button" onClick={() => setRemoving(null)} className="vt-btn vt-btn-quiet px-2 py-1 text-xs">Keep</button>
+                          className="vt-btn vt-btn-xs text-[var(--vt-blocker)]">Remove</button>
+                        <button type="button" onClick={() => setRemoving(null)} className="vt-btn vt-btn-quiet vt-btn-xs">Keep</button>
                       </span>
                     ) : (
                       <span className="flex gap-1.5">
-                        <button type="button" onClick={() => setEditing(t.id)} className="vt-btn vt-btn-quiet px-2.5 py-1 text-xs">Edit</button>
-                        <button type="button" onClick={() => setRemoving(t.id)} className="vt-btn px-2.5 py-1 text-xs text-subtle hover:text-[var(--vt-blocker)]">Remove</button>
+                        <button type="button" onClick={() => setEditing(t.id)} className="vt-btn vt-btn-quiet vt-btn-xs">Edit</button>
+                        <button type="button" onClick={() => setRemoving(t.id)} className="vt-btn vt-btn-xs text-subtle hover:text-[var(--vt-blocker)]">Remove</button>
                       </span>
                     )}
                   </div>

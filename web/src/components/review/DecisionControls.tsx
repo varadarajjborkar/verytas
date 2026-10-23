@@ -95,18 +95,18 @@ export function DecisionControls({ f, decide, canDismissBlockers, people }: {
             aria-label="Note" className="vt-input min-h-14 text-xs" />
           <div className="flex items-center gap-2">
             <button type="button" disabled={busy || !code} onClick={() => run("rejected", code, note.trim())}
-              className="vt-btn vt-btn-primary px-3 py-1.5 text-xs">Dismiss</button>
-            <button type="button" onClick={() => setDismissing(false)} className="vt-btn vt-btn-quiet px-3 py-1.5 text-xs">Cancel</button>
+              className="vt-btn vt-btn-primary vt-btn-sm">Dismiss</button>
+            <button type="button" onClick={() => setDismissing(false)} className="vt-btn vt-btn-quiet vt-btn-sm">Cancel</button>
           </div>
         </div>
       ) : (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <button type="button" disabled={busy} onClick={() => run("accepted")} className="vt-btn vt-btn-quiet px-2.5 py-1 text-xs"
+          <button type="button" disabled={busy} onClick={() => run("accepted")} className="vt-btn vt-btn-quiet vt-btn-xs"
             title="Agree: this must change before it goes out">Confirm</button>
           <button type="button" disabled={busy || blockedDismiss} onClick={() => setDismissing(true)}
-            className="vt-btn vt-btn-quiet px-2.5 py-1 text-xs"
+            className="vt-btn vt-btn-quiet vt-btn-xs"
             title={blockedDismiss ? "Only approvers can dismiss a must-fix issue" : "Clear it, with a reason"}>Dismiss</button>
-          <button type="button" disabled={busy} onClick={() => run("escalated")} className="vt-btn vt-btn-quiet px-2.5 py-1 text-xs"
+          <button type="button" disabled={busy} onClick={() => run("escalated")} className="vt-btn vt-btn-quiet vt-btn-xs"
             title="Hand it to an approver">Escalate</button>
           {blockedDismiss && <span className="text-[11px] text-subtle">Approvers dismiss must-fix issues</span>}
         </div>

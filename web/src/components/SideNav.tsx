@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { countEscalations } from "@/lib/review-client";
 import { BookIcon, DashboardIcon, GaugeIcon, HomeIcon, InboxIcon, PanelIcon, ReviewIcon, SparkIcon, UsersIcon } from "./Icons";
 import { Logo } from "./Logo";
+import { NAME } from "./Wordmark";
 import { SettingsMenu } from "./SettingsMenu";
 import { useViewer } from "./Viewer";
 
@@ -49,7 +50,7 @@ export function SideNav() {
   );
 
   // The sign-in page comes before any account: there is nothing to navigate yet.
-  if (pathname === "/signin") return null;
+  if (pathname === "/signin" || pathname.startsWith("/signin/")) return null;
   return (
     <header className={`border-b border-line bg-surface/70 backdrop-blur md:sticky md:top-0 md:flex md:h-screen md:shrink-0 md:flex-col md:border-b-0 md:border-r md:transition-[width] md:duration-300 md:ease-out ${
       collapsed ? "md:w-[4.5rem]" : "md:w-60"}`}>
@@ -60,8 +61,8 @@ export function SideNav() {
           onClick={(e) => { if (pathname === "/") e.preventDefault(); }}>
           <Logo size={32} className="shrink-0" />
           <p className={`leading-tight ${collapsed ? "md:sr-only" : ""}`}>
-            <span className="block text-[15px] font-semibold tracking-tight">Verytas</span>
-            {app && <span className="block text-[11px] font-medium text-subtle">{app === "manager" ? "Brand Console" : "Studio"}</span>}
+            <span className={`block text-[21px] ${NAME}`}>Verytas</span>
+            {app && <span className="mt-1 block text-[11px] font-medium text-subtle">{app === "manager" ? "Brand Console" : "Studio"}</span>}
           </p>
         </Link>
         {toggle}

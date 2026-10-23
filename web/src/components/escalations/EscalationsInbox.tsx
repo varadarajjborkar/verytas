@@ -288,12 +288,12 @@ function Decide({ r, approver, onDone }: { r: EscalationRequest; approver: boole
         </select>
       )}
       <div className="grid grid-cols-2 gap-1.5">
-        <button type="button" disabled={busy} onClick={() => run("upheld")} className="vt-btn vt-btn-quiet py-1.5 text-xs"
+        <button type="button" disabled={busy} onClick={() => run("upheld")} className="vt-btn vt-btn-quiet vt-btn-sm"
           title="The finding is right: the creator fixes it">Uphold</button>
         {clearing ? (
-          <button type="button" disabled={busy || !code} onClick={() => run("cleared")} className="vt-btn vt-btn-primary py-1.5 text-xs">Clear it</button>
+          <button type="button" disabled={busy || !code} onClick={() => run("cleared")} className="vt-btn vt-btn-primary vt-btn-sm">Clear it</button>
         ) : (
-          <button type="button" disabled={busy || blocked} onClick={() => setClearing(true)} className="vt-btn vt-btn-quiet py-1.5 text-xs"
+          <button type="button" disabled={busy || blocked} onClick={() => setClearing(true)} className="vt-btn vt-btn-quiet vt-btn-sm"
             title={blocked ? "Only approvers clear a must-fix finding" : "The finding is wrong here: dismiss it, with a reason"}>Clear</button>
         )}
       </div>

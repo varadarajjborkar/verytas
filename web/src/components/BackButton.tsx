@@ -14,7 +14,7 @@ export function BackButton({ label, href, onClick }: { label: string; href?: str
   // undefined on the server (the slot is only known in the browser), then the slot, or null for inline.
   const slot = useSyncExternalStore(noSubscription, () => document.getElementById(HEADER_BACK), () => undefined);
 
-  const cls = "vt-btn vt-btn-quiet h-9 rounded-full pl-2.5 pr-3.5 text-sm font-medium";
+  const cls = "vt-btn vt-btn-quiet rounded-full pl-2.5 pr-3.5";
   const body = <><ArrowLeftIcon size={16} />{label}</>;
   const button = href
     ? <Link href={href} className={cls}>{body}</Link>

@@ -67,6 +67,7 @@
   --color-accent-ink: var(--vt-accent-ink);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-bricolage);
 }
 
 body {
@@ -127,12 +128,18 @@ table, .tabular-nums { font-variant-numeric: tabular-nums; }
     justify-content: center;
     gap: 0.4rem;
     border-radius: 9px;
-    padding: 0.5rem 0.9rem;
+    /* Three fixed heights, so buttons side by side always line up: default (36px) for page actions,
+       sm (32px) inside toolbars and cards, xs (28px) for row-level actions. */
+    height: 2.25rem;
+    padding: 0 0.9rem;
     font-size: 0.8125rem;
     font-weight: 550;
     line-height: 1.25rem;
+    white-space: nowrap;
     transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out, transform 90ms ease-out;
   }
+  .vt-btn-sm { height: 2rem; padding: 0 0.75rem; font-size: 0.75rem; }
+  .vt-btn-xs { height: 1.75rem; padding: 0 0.6rem; font-size: 0.75rem; border-radius: 7px; }
   .vt-btn:active:not(:disabled) { transform: scale(0.98); }
   .vt-btn:disabled { cursor: not-allowed; opacity: 0.5; }
   .vt-btn-primary { background: var(--vt-accent); color: var(--vt-accent-ink); }

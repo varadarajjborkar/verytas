@@ -4,7 +4,7 @@ import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPoi
 import { ApiError, listContents, listCreators, listEscalations, listEvents, listPeople } from "@/lib/review-client";
 import { useStored, writeStored } from "@/lib/stored";
 import type { BrandEvent, EscalationRequest, Overview, Person, Recurring, RuleHealth } from "@/lib/types";
-import { CloseIcon, GripIcon, PlusIcon } from "../Icons";
+import { CloseIcon, DashboardIcon, GripIcon, PlusIcon } from "../Icons";
 import { useViewer } from "../Viewer";
 import { type DashData, DEFAULT_LAYOUT, type Size, WIDGETS, WidgetPanel } from "./widgets";
 
@@ -15,8 +15,8 @@ const EDIT_EVENT = "vt-dashboard-edit";
 /** Sits in the page header; the dashboard below listens for it. */
 export function CustomizeButton() {
   return (
-    <button type="button" onClick={() => window.dispatchEvent(new Event(EDIT_EVENT))} className="vt-btn vt-btn-quiet py-1.5 text-xs">
-      Customize
+    <button type="button" onClick={() => window.dispatchEvent(new Event(EDIT_EVENT))} className="vt-btn vt-btn-quiet">
+      <DashboardIcon size={15} />Customize
     </button>
   );
 }
@@ -313,7 +313,7 @@ function Arrange({ layout, onSave, onDone }: { layout: Item[]; onSave: (items: I
         <button type="button" onClick={reset} className="text-xs font-medium text-subtle hover:text-ink">
           Reset
         </button>
-        <button type="button" onClick={onDone} className="vt-btn vt-btn-primary py-1.5">Done</button>
+        <button type="button" onClick={onDone} className="vt-btn vt-btn-primary vt-btn-sm">Done</button>
       </div>
       <p className="sr-only" role="status" aria-live="polite">{said}</p>
 

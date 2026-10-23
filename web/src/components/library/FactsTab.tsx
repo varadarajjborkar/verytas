@@ -53,7 +53,7 @@ export function FactsTab({ facts, editable, onChanged }: { facts: Fact[]; editab
           Show expired and withdrawn
         </label>
         {editable && (
-          <button type="button" onClick={() => setForm({ valid_from: on, tier: "public" })} className="vt-btn vt-btn-primary ml-auto py-1.5">
+          <button type="button" onClick={() => setForm({ valid_from: on, tier: "public" })} className="vt-btn vt-btn-primary ml-auto vt-btn-sm">
             <PlusIcon size={14} /> New fact
           </button>
         )}
@@ -75,12 +75,12 @@ export function FactsTab({ facts, editable, onChanged }: { facts: Fact[]; editab
                 <Badge tone={WINDOW[w].tone}>{WINDOW[w].label}</Badge>
                 {editable && (w === "current" || w === "scheduled") && (
                   <div className="flex shrink-0 gap-1.5">
-                    <button type="button" className="vt-btn vt-btn-quiet px-2.5 py-1 text-xs"
+                    <button type="button" className="vt-btn vt-btn-quiet vt-btn-xs"
                       onClick={() => setForm({ statement: f.statement, value: f.value, unit: f.unit, subject: f.subject, tier: f.tier,
                         source_ref: "", valid_from: on > f.valid_from ? on : nextDay(f.valid_from), supersedes_id: f.id })}>
                       Update figure
                     </button>
-                    <button type="button" onClick={() => retire(f)} className="vt-btn px-2.5 py-1 text-xs text-subtle hover:text-[var(--vt-blocker)]">Retire</button>
+                    <button type="button" onClick={() => retire(f)} className="vt-btn vt-btn-xs text-subtle hover:text-[var(--vt-blocker)]">Retire</button>
                   </div>
                 )}
               </li>
@@ -137,8 +137,8 @@ function FactForm({ initial, onCancel, onDone }: { initial: Partial<Fact>; onCan
       </div>
       <div className="flex items-center gap-2">
         <button type="button" disabled={busy || !f.statement?.trim() || !f.source_ref?.trim() || !f.valid_from} onClick={save}
-          className="vt-btn vt-btn-primary py-1.5">{replacing ? "Save new figure" : "Add fact"}</button>
-        <button type="button" onClick={onCancel} className="vt-btn vt-btn-quiet py-1.5">Cancel</button>
+          className="vt-btn vt-btn-primary vt-btn-sm">{replacing ? "Save new figure" : "Add fact"}</button>
+        <button type="button" onClick={onCancel} className="vt-btn vt-btn-quiet vt-btn-sm">Cancel</button>
       </div>
     </section>
   );

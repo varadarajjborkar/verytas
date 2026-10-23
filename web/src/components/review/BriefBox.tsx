@@ -135,12 +135,12 @@ export function BriefBox({ text, audio, required, onText, onAudio }: {
               className="grid h-6 w-6 place-items-center rounded text-muted hover:bg-raised hover:text-ink"><CloseIcon size={12} /></button>
           </span>
         ) : recording ? (
-          <button type="button" onClick={stop} className="vt-btn vt-btn-quiet h-8 text-xs">
+          <button type="button" onClick={stop} className="vt-btn vt-btn-quiet vt-btn-sm">
             <span aria-hidden className="h-2 w-2 animate-pulse rounded-full bg-[var(--vt-blocker)]" />
             Stop recording · {clock(seconds)}
           </button>
         ) : (
-          <button type="button" onClick={start} disabled={busy} className="vt-btn vt-btn-quiet h-8 text-xs">
+          <button type="button" onClick={start} disabled={busy} className="vt-btn vt-btn-quiet vt-btn-sm">
             {busy ? "Uploading the voice note…" : "Record a voice note instead"}
           </button>
         )}

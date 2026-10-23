@@ -27,7 +27,7 @@ export function RefreshButton({ onRefresh, compact = false }: { onRefresh?: () =
 
   return (
     <button type="button" onClick={refresh} aria-busy={busy} title="Fetch the latest"
-      className={`vt-btn vt-btn-quiet ${compact ? "h-8 px-2.5 text-xs" : "h-9 text-sm"}`}>
+      className={`vt-btn vt-btn-quiet ${compact ? "vt-btn-sm px-2.5" : ""}`}>
       <RefreshIcon size={compact ? 14 : 15} className={busy ? "animate-spin" : undefined} />
       <span aria-live="polite" className={compact ? "sr-only" : undefined}>{busy ? "Refreshing" : "Refresh"}</span>
     </button>

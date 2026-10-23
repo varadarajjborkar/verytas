@@ -67,7 +67,7 @@ export function ContactsTab({ contacts, editable, onChanged }: { contacts: Publi
                 <p className="truncate text-[11px] text-subtle">{c.label ?? "No label"}{c.source_ref ? ` · ${c.source_ref}` : ""}</p>
               </div>
               {editable && (
-                <button type="button" disabled={busy === c.id} className="vt-btn px-2.5 py-1 text-xs text-subtle hover:text-[var(--vt-blocker)]"
+                <button type="button" disabled={busy === c.id} className="vt-btn vt-btn-xs text-subtle hover:text-[var(--vt-blocker)]"
                   onClick={async () => {
                     setBusy(c.id);
                     try {

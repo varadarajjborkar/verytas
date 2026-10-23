@@ -326,12 +326,12 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
             <span className="vt-pop flex items-center gap-1.5 rounded-xl bg-[var(--vt-blocker-bg)] py-1 pl-3 pr-1 text-xs">
               <span className="font-medium text-[var(--vt-blocker)]">Withdraw for good?</span>
               <button type="button" disabled={busy} onClick={() => { setConfirmWithdraw(false); void move("withdrawn"); }}
-                className="vt-btn px-2 py-1 text-xs text-[var(--vt-blocker)]">Withdraw</button>
-              <button type="button" onClick={() => setConfirmWithdraw(false)} className="vt-btn vt-btn-quiet px-2 py-1 text-xs">Keep</button>
+                className="vt-btn vt-btn-xs text-[var(--vt-blocker)]">Withdraw</button>
+              <button type="button" onClick={() => setConfirmWithdraw(false)} className="vt-btn vt-btn-quiet vt-btn-xs">Keep</button>
             </span>
           ) : (
             <button type="button" disabled={busy} onClick={() => setConfirmWithdraw(true)}
-              className="vt-btn px-2 text-xs text-subtle hover:text-[var(--vt-blocker)]">
+              className="vt-btn vt-btn-xs text-subtle hover:text-[var(--vt-blocker)]">
               Withdraw
             </button>
           ))}

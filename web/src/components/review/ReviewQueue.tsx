@@ -134,9 +134,9 @@ export function ReviewQueue() {
           <BackButton onClick={() => set({ id: null })} label={QUEUES[queue].label} />
           {at >= 0 && <span className="text-xs tabular-nums text-subtle">{at + 1} of {order.length}</span>}
           <div className="ml-auto flex gap-1.5">
-            <button type="button" disabled={prev == null} onClick={() => prev != null && set({ id: prev })} className="vt-btn vt-btn-quiet py-1.5"
+            <button type="button" disabled={prev == null} onClick={() => prev != null && set({ id: prev })} className="vt-btn vt-btn-quiet vt-btn-sm"
               aria-label="Previous piece in the queue">Previous</button>
-            <button type="button" disabled={next == null} onClick={() => next != null && set({ id: next })} className="vt-btn vt-btn-quiet py-1.5"
+            <button type="button" disabled={next == null} onClick={() => next != null && set({ id: next })} className="vt-btn vt-btn-quiet vt-btn-sm"
               aria-label="Next piece in the queue">Next <ArrowRightIcon size={14} /></button>
           </div>
         </div>
@@ -174,7 +174,7 @@ export function ReviewQueue() {
           className="flex-1 md:min-w-72 md:max-w-md" />
         {/* Phones fold the filters behind one button; there is no room for five selects in a row. */}
         <button type="button" onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters} aria-controls="queue-filters"
-          className="vt-btn vt-btn-quiet h-9 text-xs md:hidden">
+          className="vt-btn vt-btn-quiet md:hidden">
           Filters{filters ? <span className="rounded-full bg-accent/12 px-1.5 tabular-nums text-accent">{filters}</span> : null}
         </button>
         <div id="queue-filters" className={`${showFilters ? "flex" : "hidden"} w-full flex-wrap items-center gap-2 md:flex md:w-auto`}>

@@ -60,7 +60,7 @@ export function RulesTab({ rules, editable, onChanged, initialState, initialQuer
         <SearchField value={query} onChange={setQuery} placeholder="Search rules by code or words" label="Search rules"
           className="w-full sm:w-72" />
         {editable && (
-          <button type="button" onClick={() => setCreating(true)} className="vt-btn vt-btn-primary ml-auto py-1.5">
+          <button type="button" onClick={() => setCreating(true)} className="vt-btn vt-btn-primary ml-auto vt-btn-sm">
             <PlusIcon size={14} /> New rule
           </button>
         )}
@@ -136,10 +136,10 @@ function RuleDetail({ rule, editable, onChanged }: { rule: Rule; editable: boole
       <p className="text-[11px] text-subtle">Visible to {rule.tier} content and above{rule.system ? " · built in" : ""}</p>
       {editable && (
         <div className="flex flex-wrap gap-2">
-          {rule.status === "draft" && <button type="button" disabled={busy} onClick={() => patch({ status: "active" }, "Rule is live")} className="vt-btn vt-btn-primary py-1.5">Activate</button>}
-          {rule.status === "retired" && <button type="button" disabled={busy} onClick={() => patch({ status: "active" }, "Rule is live again")} className="vt-btn vt-btn-quiet py-1.5">Reactivate</button>}
-          {rule.status !== "retired" && <button type="button" disabled={busy} onClick={() => setEditing(true)} className="vt-btn vt-btn-quiet py-1.5">Edit</button>}
-          {rule.status !== "retired" && <button type="button" disabled={busy} onClick={() => patch({ status: "retired" }, "Rule retired")} className="vt-btn vt-btn-quiet py-1.5 text-subtle">Retire</button>}
+          {rule.status === "draft" && <button type="button" disabled={busy} onClick={() => patch({ status: "active" }, "Rule is live")} className="vt-btn vt-btn-primary vt-btn-sm">Activate</button>}
+          {rule.status === "retired" && <button type="button" disabled={busy} onClick={() => patch({ status: "active" }, "Rule is live again")} className="vt-btn vt-btn-quiet vt-btn-sm">Reactivate</button>}
+          {rule.status !== "retired" && <button type="button" disabled={busy} onClick={() => setEditing(true)} className="vt-btn vt-btn-quiet vt-btn-sm">Edit</button>}
+          {rule.status !== "retired" && <button type="button" disabled={busy} onClick={() => patch({ status: "retired" }, "Rule retired")} className="vt-btn vt-btn-quiet vt-btn-sm text-subtle">Retire</button>}
         </div>
       )}
     </div>
@@ -228,8 +228,8 @@ function RuleEdit({ rule, busy, onSave, onCancel }: { rule: Rule; busy: boolean;
         <Field label="Off-brand examples" hint="one per line"><textarea value={bad} onChange={(e) => setBad(e.target.value)} className="vt-input min-h-16 text-xs" /></Field>
       </div>
       <div className="flex items-center gap-2">
-        <button type="button" disabled={busy || !title.trim() || !text.trim()} onClick={save} className="vt-btn vt-btn-primary py-1.5">Save as new version</button>
-        <button type="button" onClick={onCancel} className="vt-btn vt-btn-quiet py-1.5">Cancel</button>
+        <button type="button" disabled={busy || !title.trim() || !text.trim()} onClick={save} className="vt-btn vt-btn-primary vt-btn-sm">Save as new version</button>
+        <button type="button" onClick={onCancel} className="vt-btn vt-btn-quiet vt-btn-sm">Cancel</button>
         <span className="text-[11px] text-subtle">Past findings keep citing the version they were judged against.</span>
       </div>
     </div>
@@ -312,8 +312,8 @@ function RuleForm({ onDone, onCancel, taken }: { onDone: () => void; onCancel: (
       </div>
       <div className="flex items-center gap-2">
         <button type="button" disabled={busy || !codeOk || !draft.title.trim() || !draft.text.trim() || (draft.matcher !== "semantic" && !draft.terms.trim())}
-          onClick={save} className="vt-btn vt-btn-primary py-1.5">Add as draft</button>
-        <button type="button" onClick={onCancel} className="vt-btn vt-btn-quiet py-1.5">Cancel</button>
+          onClick={save} className="vt-btn vt-btn-primary vt-btn-sm">Add as draft</button>
+        <button type="button" onClick={onCancel} className="vt-btn vt-btn-quiet vt-btn-sm">Cancel</button>
       </div>
     </section>
   );

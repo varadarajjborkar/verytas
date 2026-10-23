@@ -105,7 +105,7 @@ export function Activity({ timeline, contentId, versionId, onPosted }: {
           onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void post(); }} />
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-[11px] text-subtle">Saved with the current version</span>
-          <button type="button" disabled={busy || !text.trim()} onClick={post} className="vt-btn vt-btn-primary py-1.5">
+          <button type="button" disabled={busy || !text.trim()} onClick={post} className="vt-btn vt-btn-primary vt-btn-sm">
             {busy ? "Posting..." : replyTo ? "Reply" : "Comment"}
           </button>
         </div>

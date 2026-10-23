@@ -197,7 +197,7 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                         </div>
                       </div>
                     ) : (
-                      <button type="button" onClick={() => onRow(f.id, { disputing: true })} className="vt-btn vt-btn-quiet self-start py-1.5 text-xs">
+                      <button type="button" onClick={() => onRow(f.id, { disputing: true })} className="vt-btn vt-btn-quiet self-start vt-btn-sm">
                         Dispute
                       </button>
                     ))}

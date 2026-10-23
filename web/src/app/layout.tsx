@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
 import "@openuidev/react-ui/styles/index.css";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
@@ -8,6 +8,9 @@ import { APP, APP_NAME } from "@/lib/app";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+// The name beside the mark (components/Wordmark.tsx): heavy and a little quirky, like the mark itself.
+// Only that word uses it; the interface stays in Geist.
+const display = Bricolage_Grotesque({ variable: "--font-bricolage", subsets: ["latin"], weight: "800" });
 
 // Also claims OpenUI's development inspector flag before the library loads: its floating button sat on
 // top of page content in dev and widened phone layouts. Production builds never include it.
@@ -23,7 +26,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} ${display.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
         {/* Apply a saved theme before first paint, so dark mode never flashes white. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
