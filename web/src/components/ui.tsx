@@ -11,11 +11,12 @@ export function PageHeader({ title, lead, aside, refresh = false }: { title: str
   return (
     <div className="mb-7 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
       <div>
-        {/* A detail view puts its way back beside the title (BackButton), so every title starts where the
-            others do and the way back is where the eye already is. */}
+        {/* A detail view puts its way back just before the title (BackButton): a chevron that hangs in the
+            margin on wider screens, so every title still starts where the others do. */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {/* 2rem button + 0.375rem gap, pulled back by the same 2.375rem: inside the main column's 2.5rem margin. */}
+          <span id={HEADER_BACK} className="-mr-2.5 flex empty:hidden md:-ml-[2.375rem]" />
           <h1 className="text-[1.65rem] font-semibold leading-tight tracking-tight">{title}</h1>
-          <div id={HEADER_BACK} className="contents" />
           {/* On a phone the refresh rides in the title row as an icon, not a row of its own under the lead. */}
           {refresh && <span className="ml-auto md:hidden"><RefreshButton compact /></span>}
         </div>
