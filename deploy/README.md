@@ -30,6 +30,10 @@ only after the build succeeds, and moves back if the new release fails its healt
 recent releases are kept. A commit that failed is not retried until something new lands on `main` (or
 `deploy.sh --force`). `deploy.sh` triggers a deploy now instead of waiting for the timer.
 
+A deploy restarts the API. Reviews running or waiting at that moment are queued again when it starts
+(`Prism.recover`) and run from the beginning; nothing they found was saved yet, so nothing is doubled.
+Brand material being read in Intake is marked for a person to retry.
+
 Spend is capped by an AWS budget that stops both instances automatically at its limit.
 
 **Own accounts.** Beside the seeded companies, visitors can sign up (`/signin/account`): a brand team makes

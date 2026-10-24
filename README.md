@@ -20,7 +20,7 @@ Verytas checks every post, caption, image, document and video against a brand's 
 
 </div>
 
-<p align="center"><img src="docs/assets/review.png" alt="A piece open on the review screen: the caption with each issue marked in place, the issues listed beside it with the rule and source behind each and the call made on it, and a bar offering to send the piece back with the changes asked for" width="900"></p>
+<p align="center"><img src="docs/assets/review.png" alt="A piece open on the review screen: the caption with each issue marked in place, the issues listed beside it with the rule, the approved fact and the suggested fix, and a bar at the bottom with one dot per issue and a Next issue button" width="900"></p>
 
 ## The problem
 
@@ -38,15 +38,18 @@ A brand works with dozens of creators and agencies who post every day, in many l
 | **Shows where, in every file** | Issues are marked in place: in the caption, boxed on the image, and inside attached documents page by page (slide by slide, sheet by sheet). *Preview* shows a document as it looks, with a box on each flagged phrase; a sheet becomes a table with the flagged cells tinted. |
 | **Fixes, not just flags** | It swaps a phrase, rewrites a sentence or removes a dig, whichever the rule needs, and a judge that knows the rule checks the offer and call to action survive. One click applies it. |
 | **Keeps people in charge** | Creators can dispute a reading; the brand team walks through the issues one by one (asking for a fix, keeping it as is with a reason, or escalating), then approves or sends the piece back with the fixes it asked for, and every override needs a written reason. |
+| **Easy to pick up** | A guided tour on the first visit to each side, plain-word summaries of any piece, and every status, score and empty page explained where it appears. Shaped by [user testing](docs/research/user-testing.md) with three first-time users. |
 | **Learns from decisions** | Rules that reviewers keep overriding are surfaced as unclear, and model-judged rules tune how confident they must be before flagging. |
 
 ## Try it in 60 seconds
 
-1. Open **[verytas.pages.dev](https://verytas.pages.dev)** and pick a person at *Kitepath*, a made-up online learning brand with three weeks of history.
+1. Open **[verytas.pages.dev](https://verytas.pages.dev)** and pick a person at *Kitepath*, a made-up online learning brand with eight weeks of history. A short tour shows where things are; skip it, or replay it from Settings.
 2. As **Dev Sharma** (creator), open *My reviews*, paste a caption like *"Kitepath has 2 million learners. Guaranteed results!"* and run it. The claim is checked against the approved fact (1.2 million), a fix appears, and the promise is flagged. Apply the fixes and send it for approval.
 3. Use **Switch account** to become **Arjun Mehta** (brand team). Your piece is now in the review queue, ranked by what needs attention first. Approve it, or send it back with a note.
 
-<p align="center"><img src="docs/assets/dashboard.png" alt="The brand team's dashboard: pieces waiting for a decision, creators, escalations and findings over time" width="900"></p>
+<p align="center"><img src="docs/assets/dashboard.png" alt="The brand team's dashboard: pieces waiting for a decision, creators, escalations and how work is flowing" width="900"></p>
+
+<p align="center"><img src="docs/assets/tour.png" alt="The guided tour on a first visit: the Review queue in the sidebar is lit, and a card beside it, step 3 of 9, says what the queue is for, with Skip, Back and Next" width="900"></p>
 
 ## How a review works
 
@@ -204,9 +207,11 @@ flowchart LR
 
 - **Every finding is signed** when it is made, so an edited verdict shows as tampered.
 - **Every action is logged** in a hash-chained audit log; changing or deleting an old entry breaks the chain, and anyone with audit access can verify it.
-- **Confidential terms never reach a model**: they are redacted from text and blacked out in image pixels first. Confidential-tier content is never sent as pixels at all.
+- **Confidential terms never reach a model**: they are redacted from text and blacked out in image pixels first, including a codename said without its "Project". Confidential-tier content is never sent as pixels at all.
+- **The assistants keep their instructions to themselves.** Asking a chat for its prompt gets a fixed answer, and a reply that starts reciting it is cut off before any of it is sent ([how](docs/security/README.md#the-chat-assistants-instructions)).
 - **People's faces follow the brand's records.** A face is identified against the approved-people library; public portraits are looked up only when the brief names someone and the content isn't confidential.
 - **Uploaded files are handled as hostile.** Types are read from the bytes; zips, XML and pictures are read within size and pixel budgets; a web page is shown only in a frame with no scripts and a policy that loads nothing from outside, after every outside address is cut from it; Word and PowerPoint are converted in a sealed service (above).
+- **Checked before going public.** The whole git history was scanned for secrets with gitleaks: none.
 - **Signing out ends the session at the server.** A password account's token is revoked on sign-out and lapses after 7 days.
 - **What people type is screened too.** Bribes, "WhatsApp me" style contact swaps and instructions aimed at the AI are refused before they are stored.
 - **Access follows role and clearance**, checked on the server on every request, including in the audit log.
@@ -216,15 +221,31 @@ flowchart LR
 
 ## Quality
 
-- **Over 620 backend tests** run fully offline in a few minutes, plus type checks, lint and a production build for the web apps, all on every push.
-- **Measured, not guessed.** The [explain-and-fix eval](backend/evals/explain_and_fix.py) runs the production path on 73 findings with two independent graders: the rule-aware fix pipeline took useful fixes **from 45% to 82%** on the same model. The [mascot benchmark](backend/evals/mascots) runs 425 generated scenes through the vision chain: every character found, defects named in 73 to 100% of cases. On the [artwork benchmark](backend/evals/results/assets.md) (1,200 scenes of logos, icons, wordmarks and packs), misuse is caught in **93%** of scenes (up from 76%) with false alarms on correct use at **13%** (down from 25%); every mirrored logo is caught. On recorded Hindi and Hinglish speech, spoken prices went from 2 of 48 readable to 12, and spoken percentages the cross-check can compare from 0 of 96 to 18, with no wrong figure.
-- **Parts compared with each other.** A caption that says 50% off over a poster that says 30%, or a voice-over saying 499 rupees while the screen shows Rs 999, is one finding citing both. On the [cross-source benchmark](backend/evals/crossmodal) it caught 14 of 14 planted contradictions with 0 false alarms on 14 controls. Must rules also get a [second look](backend/evals/second_look) from the larger model, which was right on 30 of 32 hard cases against 27 for the small judge alone. A model-judged finding also shows what reviewers decided before on similar words (precedent memory), and every finding how often reviewers agreed with ones like it (calibration). Fixes learn which kind of edit reviewers take per rule, and a rule reviewers keep disagreeing about can get a clearer wording drafted from its own cases, applied only by an admin.
-- **Tested from the outside.** [`blackbox/`](blackbox/README.md) is a simulator that knows Verytas only through its API. It invents brands, writes posts, images, PDFs and video with planted violations, and steers each round toward what Verytas misses. Across a 216-case campaign, recall on core checks rose **from 78% to 96%**, false alarms on clean posts fell **from 7% to 0%**, and server errors fell **from 17 to 0**, even at 32 parallel submissions.
+Each engine is measured on its own benchmark through the production code. The sets are generated or
+hand-labelled rather than live traffic, so real-world figures will run somewhat lower. Each link has the
+method and the full results.
+
+| Engine | Tested on | Result |
+| --- | --- | --- |
+| [Artwork](backend/evals/results/assets.md) | 1,200 scenes | **93%** of misuse caught, **4.7%** false alarms (recoloured icons still weak, 33%) |
+| [Mascots](backend/evals/mascots) | 425 scenes | every character found; what changed named in 73 to 100% of cases |
+| [Text in images](backend/evals/results/ocr.md) | 240 images | **88%** of prices, codes and names read exactly |
+| [Speech](backend/evals/results/speech.md) | 104 clips | about **10%** word error in English; Hindi much weaker, so codenames are also matched by sound |
+| [Video](backend/evals/results/video.md) | 36 videos | on-screen claims **11/11**, spoken claims **8/10**, artwork misuse 32/45, each at the right moment |
+| [Parts that disagree](backend/evals/results/crossmodal.md) | 28 posts | **14/14** caught, **0** false alarms |
+| [Judgement rules](backend/evals/results/second_look.md) | 32 sentences | **30/32** right |
+| [Suggested fixes](backend/evals/results/summary.md) | 73 findings | **82%** useful (45% before), **0** invented numbers |
+| [Black-box simulator](blackbox/README.md) | 216 cases | **96%** recall, **0%** false alarms on clean posts |
+
+- **Over 630 backend tests** run offline on every push, with type checks, lint and a production build for the web apps.
+- **Tried by people.** Three first-time users outside the team used the live demo and wrote up what confused them. Each point has a shipped change, listed in the [user testing report](docs/research/user-testing.md).
+- **Tested from the outside.** [`blackbox/`](blackbox/README.md) knows Verytas only through its API: it invents brands and posts with planted violations and steers each round toward what Verytas misses.
 
 ## What comes next
 
 - **One-on-one meetings.** A creator asks the manager who looks after them for a meeting by chat, voice or video; the manager accepts or proposes another time or way. Calls go through temporary masked numbers, the way delivery apps connect a rider and a customer, and only the time, the way and an outcome note go on the record. It is designed and previewed in both apps (marked *Planned*), not built: in a demo one person plays both sides, and masked calling needs a paid telephony provider.
 - **Managing it all from the console:** an approved-people tab in the Library, a video player with findings on its timeline, and managers marking moments and areas with comments (the API supports all three today).
+- **A second round of user testing** with the same people, to see whether the changes landed.
 - **Sharper visual checks on busy backgrounds**, where a mascot's cut-out still takes in some background and raises false alarms, and on recoloured app icons (caught in a third of cases); a better Hindi speech model, since the general one still mishears much of it; and a GPU for the language and vision models once AWS grants the quota.
 
 ## Run it locally
@@ -245,7 +266,7 @@ pnpm dev:manager                     # Brand Console on :3000
 pnpm dev:creator                     # Studio on :3001
 ```
 
-The seed creates the *Kitepath* brand with seven creators and three weeks of history, and writes their tokens into `web/.env.local`. Without any API keys, model-judged checks fall back to an offline heuristic and every review says so. Without a backend, the web app shows clearly labelled sample data.
+The seed creates the *Kitepath* brand with seven creators and eight weeks of history, and writes their tokens into `web/.env.local`. Without any API keys, model-judged checks fall back to an offline heuristic and every review says so. Without a backend, the web app shows clearly labelled sample data.
 
 ## Repository layout
 

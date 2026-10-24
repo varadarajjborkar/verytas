@@ -9,7 +9,7 @@ see; the apps only lay it out.
 
 | Route | What it does |
 |---|---|
-| `/` | Home: for the brand team, the dashboard (what is waiting, findings over time, recurring problems); for a creator, their work. First steps for a new account |
+| `/` | Home: for the brand team, the dashboard (what is waiting, findings over time, recurring problems); for a creator, their work. First steps for a new account, and a guided tour on the first visit to each side (Settings > Profile replays it) |
 | `/review` | The review queue (brand team) or my reviews (creator). A piece opens on the review screen: the text with issues marked in place, the issue list beside it, a bar that walks through them, and attached documents page by page with *Preview* to see them as they look |
 | `/escalations` | Questions creators and Prism raised for a person |
 | `/creators` | Each creator's record (brand team) |
@@ -20,7 +20,9 @@ see; the apps only lay it out.
 | `/signin` | The demo's person picker, and `/signin/account` for own accounts |
 
 Every browser call goes through `/api/v/...`, a server-side proxy that holds the session token and
-forwards only an allowlist of API routes.
+forwards only an allowlist of API routes. The two chats, Ask Verytas (`api/chat`) and Summarize
+(`api/assist`), stream through `src/lib/guard.ts`, which answers requests for their instructions itself and
+cuts off a reply that starts reciting them.
 
 ## Run
 

@@ -36,20 +36,23 @@ What they liked: the interface and first impression (Vaibhav), separate creator 
 
 ## What we changed
 
-Status is updated as each change ships; the commit is the record.
+Each change links to its commit.
 
-| Theme | Response | Status |
+| Theme | What changed | Status |
 |---|---|---|
-| Where to start | Sign-in redesigned: the left half says what Verytas does, with a real finding as the example, before the picker | Shipped |
-| Where to start | Guided tour for the first visit, step by step, per role | Planned |
-| Words and numbers | Plain-word summaries (no codes, scores or checker jargon); explanations on status words | Summaries shipped; status words planned |
-| What was checked | A clean result lists the checks that ran and what each looked at | Planned |
-| Review running | Progress shown from "Run review" until the result | Planned |
-| Empty pages | Each empty state says why it is empty and offers the next step | Planned |
-| Long form | Optional fields folded away; the essentials first | Planned |
-| Cut-off text | Truncated labels found and fixed, full text on hover where space is short | Planned |
-| AI disclaimer | Kept, and linked to how the checks work and their measured accuracy | Planned |
-| Accuracy | Measured accuracy is published per check in `evals/results/` (for example the artwork check's catch and false-alarm rates) and linked from the product | Partly shipped |
+| Where to start | The sign-in page says what Verytas does, with a real finding as the example, before the person picker; the picker itself was cut to what you need to choose ([`b1574a5`](https://github.com/varadarajjborkar/verytas/commit/b1574a5), [`adcac51`](https://github.com/varadarajjborkar/verytas/commit/adcac51)) | Shipped |
+| Where to start | A guided tour on the first visit to each side: a spotlight on each section and a card saying what it is for, with Back, Next and Skip; Settings starts it again ([`4778c4e`](https://github.com/varadarajjborkar/verytas/commit/4778c4e)) | Shipped |
+| Words and numbers | Draft, In review, Changes requested and the other statuses explain themselves on hover; the tour explains Draft, Clean and escalation; summaries use plain words with no codes or scores ([`ab37aa7`](https://github.com/varadarajjborkar/verytas/commit/ab37aa7), [`4778c4e`](https://github.com/varadarajjborkar/verytas/commit/4778c4e), [`5bd74ca`](https://github.com/varadarajjborkar/verytas/commit/5bd74ca)) | Shipped |
+| What was checked | A clean result lists each check that ran, in plain words, and says which ran only in a simpler form or not at all; the score and "Clean" explain themselves on hover ([`ab37aa7`](https://github.com/varadarajjborkar/verytas/commit/ab37aa7)) | Shipped |
+| Review running | While a review runs it says what is being checked and how long it takes, beside the elapsed time; a review cut off by a server restart now runs again instead of hanging ([`ab37aa7`](https://github.com/varadarajjborkar/verytas/commit/ab37aa7), [`e890ba0`](https://github.com/varadarajjborkar/verytas/commit/e890ba0)) | Shipped |
+| Empty pages | Each queue tab says why it is empty and what fills it ([`ab37aa7`](https://github.com/varadarajjborkar/verytas/commit/ab37aa7)) | Shipped |
+| Long form | Only title, channel, text and files are up front; audience, campaign and notes sit under More options, whose header shows their settings ([`ab37aa7`](https://github.com/varadarajjborkar/verytas/commit/ab37aa7)) | Shipped |
+| Cut-off text | Truncated names and titles show in full on hover; the review heading wraps to two lines ([`ab37aa7`](https://github.com/varadarajjborkar/verytas/commit/ab37aa7)); names and descriptions on the sign-in cards no longer clip ([`adcac51`](https://github.com/varadarajjborkar/verytas/commit/adcac51)) | Shipped |
+| AI disclaimer | Kept, and now says which checks are plain code, that every finding names its source, that a person makes each call, and the measured accuracy including the weak spot ([`ab37aa7`](https://github.com/varadarajjborkar/verytas/commit/ab37aa7)) | Shipped |
+| Accuracy | Measured per check and published in [`backend/evals/results`](../../backend/evals/results); the artwork check's false alarms fell from 12.6% to 4.7% this round ([`2e24e91`](https://github.com/varadarajjborkar/verytas/commit/2e24e91)). Confidence per finding is shown in the review. | Shipped |
+
+Not done: a second round with the same three people to see whether the changes landed. Planned before the
+final round.
 
 ## The reviews as written
 
