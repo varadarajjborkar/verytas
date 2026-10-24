@@ -35,16 +35,19 @@ export function StageDots({ status, checked }: { status: ContentStatus; checked:
 export function JourneyMap({ journey, status }: { journey: Journey; status: ContentStatus }) {
   const { milestones, rounds, lastSentBack, withdrawn } = journey;
   return (
-    <section aria-label="Where this piece is" className="vt-card px-4 py-4 md:px-5">
-      <ol className="flex flex-col gap-3 md:flex-row md:items-start md:gap-0">
+    <section aria-label="Where this piece is" className="vt-card @container px-4 py-4 md:px-5">
+      <ol className="flex flex-col gap-3 @[30rem]:flex-row @[30rem]:items-start @[30rem]:gap-0">
         {milestones.map((m, i) => {
           // The loop sits on the road between "Checked" and "Sent for approval": sent back, fixed, re-checked.
           const loopHere = i === 1 && rounds > 0;
           return (
-            <li key={m.label} className="relative flex gap-3 md:flex-1 md:flex-col md:gap-2">
-              {/* The road to the next stop: down the side on phones, across on wider screens. */}
+            // Down the side when the card is narrow, across when it has room: the card, not the screen, decides,
+            // since the review column narrows when the list beside it is open. min-w-0 keeps a long label or
+            // date from pushing the last stop out of the card.
+            <li key={m.label} className="relative flex min-w-0 gap-3 @[30rem]:flex-1 @[30rem]:flex-col @[30rem]:gap-2">
+              {/* The road to the next stop: down the side in a narrow card, across in a wide one. */}
               {i < milestones.length - 1 && (
-                <span aria-hidden className={`absolute -bottom-2.5 left-[11px] top-7 w-px md:bottom-auto md:left-8 md:right-2 md:top-[11px] md:h-px md:w-auto ${
+                <span aria-hidden className={`absolute -bottom-2.5 left-[11px] top-7 w-px @[30rem]:bottom-auto @[30rem]:left-8 @[30rem]:right-2 @[30rem]:top-[11px] @[30rem]:h-px @[30rem]:w-auto ${
                   milestones[i + 1].state === "todo" ? "bg-line-strong" : "bg-accent"}`} />
               )}
               <span className={`relative z-[1] grid h-6 w-6 shrink-0 place-items-center rounded-full border text-[11px] font-semibold ${
@@ -53,7 +56,7 @@ export function JourneyMap({ journey, status }: { journey: Journey; status: Cont
                     : "border-line-strong bg-raised text-subtle"}`}>
                 {m.state === "done" ? <CheckIcon size={13} strokeWidth={2.5} /> : i + 1}
               </span>
-              <div className="min-w-0 md:pr-3">
+              <div className="min-w-0 @[30rem]:pr-3">
                 <p className={`text-[13px] font-medium ${m.state === "todo" ? "text-subtle" : ""}`}>
                   {m.label}
                   <span className="sr-only">{m.state === "current" ? " (current step)" : m.state === "done" ? " (done)" : " (not yet)"}</span>
