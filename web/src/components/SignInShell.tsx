@@ -11,15 +11,19 @@ const PROMISES = [
 
 /**
  * The front door, for the demo picker and the token form alike: what Verytas is on the left (a real
- * finding, the way the product shows one), the way in on the right. Stacks on a phone, brand first but
- * short, so the choice is still on the first screen.
+ * finding, the way the product shows one), the way in on the right. It takes the whole screen and is laid
+ * out to fit one desktop screen; each side still scrolls on its own when a window is too short, so nothing
+ * is ever cut off. Stacks on a phone, brand first but short, so the choice is still on the first screen.
  */
 export function SignInShell({ children }: { children: ReactNode }) {
   return (
-    <div className="vt-card mx-auto grid w-full max-w-6xl overflow-hidden md:min-h-[calc(100vh-4.5rem)] md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-      <aside className="vt-signin-aside relative flex flex-col gap-8 border-b border-line p-6 md:border-b-0 md:border-r md:p-10">
+    <div className="fixed inset-0 z-40 grid overflow-y-auto bg-surface md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:overflow-hidden">
+      <aside className="vt-signin-aside relative flex flex-col md:min-h-0 gap-7 p-6 md:overflow-y-auto md:px-12 md:py-10 [@media(min-width:768px)_and_(max-height:760px)]:gap-5 [@media(min-width:768px)_and_(max-height:760px)]:py-8">
+        {/* The two halves meet in a fade, not a rule: one surface with the brand side lit at its corner. */}
+        <span aria-hidden className="pointer-events-none absolute inset-y-0 right-0 hidden w-32 bg-gradient-to-r from-transparent to-surface md:block" />
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-b from-transparent to-surface md:hidden" />
         <Wordmark size="lg" />
-        <div className="flex flex-col gap-3">
+        <div className="relative flex flex-col gap-3">
           <h2 className="text-[1.65rem] font-semibold leading-tight tracking-tight md:text-[2rem]">
             Brand review that shows its work.
           </h2>
@@ -29,9 +33,9 @@ export function SignInShell({ children }: { children: ReactNode }) {
           </p>
         </div>
 
-        <FindingDeck />
+        <div className="relative my-auto"><FindingDeck /></div>
 
-        <ul className="hidden flex-col gap-2.5 text-sm sm:flex">
+        <ul className="relative hidden flex-col gap-2.5 text-sm sm:flex [@media(min-width:768px)_and_(max-height:760px)]:hidden">
           {PROMISES.map((p) => (
             <li key={p} className="flex items-start gap-2.5">
               <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent/12 text-accent"><CheckIcon size={12} /></span>
@@ -40,7 +44,9 @@ export function SignInShell({ children }: { children: ReactNode }) {
           ))}
         </ul>
       </aside>
-      <section className="flex flex-col gap-7 bg-surface p-6 md:p-10">{children}</section>
+      <section className="flex flex-col gap-5 bg-surface md:min-h-0 p-6 md:overflow-y-auto md:px-12 md:py-10 [@media(min-width:768px)_and_(max-height:760px)]:gap-4 [@media(min-width:768px)_and_(max-height:760px)]:py-7">
+        {children}
+      </section>
     </div>
   );
 }

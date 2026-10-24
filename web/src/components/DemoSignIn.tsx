@@ -65,14 +65,17 @@ export function DemoSignIn({ companies, resetsOn, next, selfSignup }:
         </div>
         <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Pick someone at {brand} to be</h1>
         <p className="max-w-xl text-sm leading-6 text-muted">
-          {brand} is a made-up brand with eight weeks of work already in it. Each person below is a real account with
-          their own role, so you see exactly what they would.
+          A made-up brand with eight weeks of work already in it. Each person is a real account with their own
+          role, so you see exactly what they would.
         </p>
       </header>
 
       {companies.length > 1 && (
         <section aria-labelledby="pick-company" className="flex flex-col gap-2">
-          <h2 id="pick-company" className="text-sm font-semibold">Company</h2>
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 id="pick-company" className="text-sm font-semibold">Company</h2>
+            {company.industry && <p className="hidden truncate text-xs text-subtle sm:block">{company.industry}</p>}
+          </div>
           <div role="radiogroup" aria-labelledby="pick-company" className="flex flex-wrap gap-2">
             {companies.map((c) => (
               <button key={c.slug} type="button" role="radio" aria-checked={c.slug === company.slug}
@@ -83,29 +86,28 @@ export function DemoSignIn({ companies, resetsOn, next, selfSignup }:
               </button>
             ))}
           </div>
-          {company.industry && <p className="text-xs leading-5 text-subtle">{company.industry}.</p>}
         </section>
       )}
 
       {SIDES.map(({ side, label, lead }) => (
-        <section key={side} aria-labelledby={`side-${side}`} className="flex flex-col gap-3">
+        <section key={side} aria-labelledby={`side-${side}`} className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between gap-3">
             <h2 id={`side-${side}`} className="text-sm font-semibold">{label}</h2>
             <p className="hidden text-xs text-subtle sm:block">{lead}</p>
           </div>
-          <ul className="vt-stagger grid gap-2.5 sm:grid-cols-2">
+          <ul className="vt-stagger grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             {people.filter((p) => p.side === side).map((p) => (
               <li key={p.key}>
                 <button type="button" onClick={() => enter(p.key)} disabled={busy !== null}
-                  className="vt-lift group flex h-full w-full items-start gap-3 rounded-[14px] border border-line bg-raised p-4 text-left shadow-[var(--vt-shadow)] hover:border-accent/60 disabled:opacity-60">
-                  <span aria-hidden className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-xs font-semibold ${
+                  className="vt-lift group flex h-full w-full items-start gap-3 rounded-[14px] border border-line bg-raised p-3.5 text-left shadow-[var(--vt-shadow)] hover:border-accent/60 disabled:opacity-60">
+                  <span aria-hidden className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-semibold ${
                     side === "manager" ? "bg-accent/12 text-accent" : "bg-[var(--vt-ok-bg)] text-[var(--vt-ok)]"}`}>
                     {p.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{p.name}</span>
                     <span className="block truncate text-xs text-subtle">{p.title}</span>
-                    <span className="mt-1.5 block text-xs leading-5 text-muted">{p.blurb}</span>
+                    <span className="mt-1 line-clamp-2 text-xs leading-5 text-muted [@media(min-height:820px)]:line-clamp-none" title={p.blurb}>{p.blurb}</span>
                   </span>
                   {busy === p.key ? (
                     <span role="img" aria-label="Signing in" className="mt-1 h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
@@ -121,11 +123,11 @@ export function DemoSignIn({ companies, resetsOn, next, selfSignup }:
 
       {error && <p role="alert" className="rounded-xl bg-[var(--vt-blocker-bg)] px-4 py-3 text-sm text-[var(--vt-blocker)]">{error}</p>}
 
-      <section aria-labelledby="demo-notes" className="mt-auto rounded-2xl bg-sunken/70 p-4">
-        <h2 id="demo-notes" className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-subtle">Good to know</h2>
-        <ul className="grid gap-3 text-xs leading-5 text-muted sm:grid-cols-2">
+      <section aria-labelledby="demo-notes" className="mt-auto rounded-2xl bg-sunken/70 px-4 py-3">
+        <h2 id="demo-notes" className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-subtle">Good to know</h2>
+        <ul className="grid gap-x-5 gap-y-2 text-xs leading-[1.125rem] text-muted sm:grid-cols-2">
           <li className="flex gap-2.5"><UsersIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
-            <span>The companies, people and history are made up for the demo. It is shared: what you add or change is saved, and other visitors see it too.</span></li>
+            <span>Everyone here is made up. The demo is shared: what you change, other visitors see too.</span></li>
           <li className="flex gap-2.5"><RefreshIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
             <span>Be someone else any time with <span className="font-medium text-ink">Switch account</span> in the sidebar. Your work stays.</span></li>
           <li className="flex gap-2.5"><CalendarIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
