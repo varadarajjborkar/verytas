@@ -636,3 +636,4 @@ Inkloom builds specialised AI models for logo design (public site and repository
 - ITU-T Recommendation X.800 (1991). *Security architecture for Open Systems Interconnection.*
 - RFC 6962 (2013). *Certificate Transparency* (hash-chained, tamper-evident logs).
 - W3C (2023). *Web Content Accessibility Guidelines (WCAG) 2.2.*
+- Anthropic (2024). *Building effective agents* (orchestrator-workers pattern).
