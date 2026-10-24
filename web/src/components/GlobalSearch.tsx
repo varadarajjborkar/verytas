@@ -350,12 +350,6 @@ export function GlobalSearch() {
                     : "Nothing to suggest yet. Start typing to search."}
                 </p>
               )}
-              <div aria-hidden className="hidden items-center gap-4 border-t border-[var(--vt-glass-rim-low)] px-4 py-2 text-[11px] text-subtle md:flex">
-                <span className="flex items-center gap-1.5"><kbd className="vt-kbd">&uarr;</kbd><kbd className="vt-kbd">&darr;</kbd> move</span>
-                <span className="flex items-center gap-1.5"><kbd className="vt-kbd">&crarr;</kbd> open</span>
-                <span className="flex items-center gap-1.5"><kbd className="vt-kbd">esc</kbd> close</span>
-                {pending && <span className="ml-auto">Searching…</span>}
-              </div>
             </div>
           </div>
         )}
