@@ -30,7 +30,7 @@ A brand works with dozens of creators and agencies who post every day, in many l
 
 | Capability | What it means |
 | --- | --- |
-| **Reads everything in a post** | The caption, text inside images (OCR), every page of a PDF or Word file (including text drawn as shapes), and video: on-screen text, subtitles and speech. |
+| **Reads everything in a post** | The caption, text inside images (OCR), every page of a PDF or Word file (including text drawn as shapes), every slide of a PowerPoint deck (speaker notes and hidden slides too), every sheet of an Excel workbook, an HTML page or email (title, share text, alt text; nothing linked is fetched), and video: on-screen text, subtitles and speech. |
 | **Sees what is in the pictures** | Finds the brand's mascots even when an AI has redrawn them and names what changed (a wrong colour, an extra eye, a missing tail), with the box and, in video, the time range. Identifies faces against the brand's approved people and flags anyone shown without an agreement. |
 | **Checks it against the brand's own sources** | Approved facts with validity dates, banned and preferred words, confidential terms, official artwork, tone, accessibility and AI-disclosure rules. |
 | **Explains every flag** | Each issue quotes the exact passage and cites the rule or fact behind it, with page numbers. No unexplained scores. |

@@ -50,7 +50,7 @@ from verytas.ingest.segment import image_units, segment
 from verytas.media import assets as asset_match
 from verytas.media import ocr as local_ocr
 from verytas.media import pixels
-from verytas.media.documents import extract_docx, extract_pdf
+from verytas.media.documents import extract_docx, extract_html, extract_pdf, extract_pptx, extract_xlsx
 from verytas.media.files import (
     MAX_DOC_BYTES,
     MAX_IMAGE_BYTES,
@@ -311,20 +311,22 @@ async def plan(run: ReviewRun, root: AgentNode) -> None:
 
 # --- text ---------------------------------------------------------------------------------------------
 
-async def text_agent(run: ReviewRun, node: AgentNode, source: Source) -> None:
-    """The three text workers on one source, as child agents."""
+async def text_agent(run: ReviewRun, node: AgentNode, source: Source,
+                     attachments: dict[str, Any] | None = None) -> None:
+    """The three text workers on one source, as child agents. `attachments` are pictures that belong to
+    this source (a web page's), for the checks that read them."""
     run.sources.append(source)
     for fig in figures(source.id, source.text, source.timeline, source.kind):
         run.board.post(Evidence("figure", source.id, fig, fig.time))
     node.detail = {"source": source.id, "route": source.route, "chars": len(source.text),
                    "confidence": round(source.confidence, 3)}
-    if not source.text.strip():
+    if not source.text.strip() and not attachments:
         node.note = "no text"
         return
     is_body = source.id == "body"
     ctx = run.base if is_body else CheckContext(
         body=source.text, units=segment(source.text), rules=run.base.rules, facts=run.base.facts,
-        terms=run.base.terms, attachments={}, channel=run.base.channel, today=run.base.today,
+        terms=run.base.terms, attachments=attachments or {}, channel=run.base.channel, today=run.base.today,
         profile=run.base.profile, whole_post=False, spoken=source.kind == "speech",
     )
     if is_body:
@@ -862,16 +864,27 @@ def _judge_assets(run: ReviewRun, image_id: str, locator: dict[str, Any],
 
 # --- documents ---------------------------------------------------------------------------------------
 
+def _first_up(s: str) -> str:
+    return s[:1].upper() + s[1:]  # "sheet Prices" -> "Sheet Prices", keeping the sheet's own name
+
+
+_DOCUMENT_READERS = {
+    "application/pdf": extract_pdf,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": extract_docx,
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": extract_pptx,
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": extract_xlsx,
+    "text/html": extract_html,
+}
+
+
 async def document_agent(run: ReviewRun, node: AgentNode, doc: dict[str, Any]) -> None:
     raw = run.payload(doc, MAX_DOC_BYTES)
     kind = sniff(raw)
     doc_id = str(doc.get("id"))
-    if kind == "application/pdf":
-        extracted = await run.blocking(extract_pdf, raw)
-    elif kind.endswith("wordprocessingml.document"):
-        extracted = await run.blocking(extract_docx, raw)
-    else:
-        raise MediaError(f"{doc_id} is not a PDF or Word file (looks like {kind})")
+    reader = _DOCUMENT_READERS.get(kind)
+    if reader is None:
+        raise MediaError(f"{doc_id} is not a PDF, Word, PowerPoint, Excel or HTML file (looks like {kind})")
+    extracted = await run.blocking(reader, raw)
     node.detail = {"kind": extracted.kind, "pages": extracted.page_count, "notes": extracted.notes}
     # A page with a text layer and one image needs about a dozen agents.
     run.tree.grow(12 * len(extracted.pages))
@@ -879,7 +892,8 @@ async def document_agent(run: ReviewRun, node: AgentNode, doc: dict[str, Any]) -
     if extracted.partial:
         run.partial |= MEDIA_COVERS
     await asyncio.gather(*(
-        run.tree.spawn(node, "page", f"Page {page.number}", lambda n, page=page: page_agent(run, n, doc_id, page,
+        run.tree.spawn(node, "page", _first_up(page.label or f"page {page.number}"),
+                       lambda n, page=page: page_agent(run, n, doc_id, page,
                                                                                                extracted.kind))
         for page in extracted.pages
     ))
@@ -887,13 +901,16 @@ async def document_agent(run: ReviewRun, node: AgentNode, doc: dict[str, Any]) -
 
 async def page_agent(run: ReviewRun, node: AgentNode, doc_id: str, page, kind: str) -> None:
     base = f"doc:{doc_id}:p{page.number}"
-    locator = {"document": doc_id, "page": page.number}
+    locator = {"document": doc_id, "page": page.number} | ({"label": page.label} if page.label else {})
     node.detail = {"scanned": page.scanned, "images": len(page.images), "text_chars": len(page.text)}
     work = []
-    if page.text.strip():
-        src = Source(f"{base}:text", "pdf_text" if kind == "pdf" else "docx_text", page.text,
-                     "pdf-text-layer" if kind == "pdf" else "docx", 1.0, locator, parent=doc_id)
-        work.append(run.tree.spawn(node, "text", "Text layer", lambda n: text_agent(run, n, src)))
+    # A web page's pictures go through the same alt-text rule as a post's images.
+    pictures = {"images": page.alts} if page.alts else None
+    if page.text.strip() or pictures:
+        src = Source(f"{base}:text", f"{kind}_text", page.text, "pdf-text-layer" if kind == "pdf" else kind, 1.0,
+                     locator, parent=doc_id)
+        work.append(run.tree.spawn(node, "text", "Text layer",
+                                   lambda n: text_agent(run, n, src, attachments=pictures)))
     # Renders and images stay compressed until here, and decode off the loop.
     if page.scanned and page.render_jpeg is not None:
         async def scan(n: AgentNode) -> None:

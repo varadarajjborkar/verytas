@@ -28,7 +28,8 @@ from verytas.schemas import MediaOut, PrecheckIn
 
 router = APIRouter(tags=["media"])
 Writer = Annotated[User, Depends(require(Role.creator, Role.reviewer, Role.approver, Role.brand_admin))]
-_ACCEPTED = ("image/", "video/", "audio/", "application/pdf", "application/vnd.openxmlformats-officedocument")
+_ACCEPTED = ("image/", "video/", "audio/", "application/pdf", "application/vnd.openxmlformats-officedocument",
+             "text/html")
 # Uploads are read whole into memory once, so cap the request before reading.
 _UPLOAD_CAP = 150 * 1024 * 1024
 _METRICS_DEADLINE = 30  # seconds
@@ -42,13 +43,15 @@ async def upload(request: Request, session: Session, user: Writer, file: Annotat
     raw = await file.read(_UPLOAD_CAP + 1)
     if len(raw) > _UPLOAD_CAP:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "file is over 150 MB")
-    kind = sniff(raw)
+    # Off the loop: telling an Office file apart lists the zip's entries, which a crafted file can make slow.
+    kind = await asyncio.to_thread(sniff, raw)
     if kind in UNSUPPORTED_IMAGES:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                             f"{kind.split('/')[1].upper()} images can't be read yet; export as JPEG or PNG")
     if not kind.startswith(_ACCEPTED):
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                            f"unsupported file type ({kind}); use an image, video, PDF, Word file or a voice note")
+                            f"unsupported file type ({kind}); use an image, video, PDF, Word, PowerPoint, Excel or "
+                            "HTML file, or a voice note")
     if len(raw) > limit_for(kind):
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE,
                             f"{kind} files are limited to {limit_for(kind) // 1024 // 1024} MB")

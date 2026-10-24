@@ -544,8 +544,8 @@ Posts are rarely just text. Prism plans a review from what the submission contai
 |---|---|---|
 | Caption / typed text | text agent | rule checks, claim verifier, semantic judge |
 | Image | image agent | OCR agent (local RapidOCR, vision fallback when confidence is low), asset matcher, scene reader, then a text agent for any text found |
-| PDF or Word file | document agent | one page agent per page |
-| Page | page agent | text agent for the text layer; image agent for a scanned page (rendered at about 144 dpi, because it has no text layer); image agent per pasted screenshot |
+| PDF, Word, PowerPoint, Excel or HTML file | document agent | one page agent per page; a slide, a sheet and a web page are pages, named as such in each finding's location |
+| Page | page agent | text agent for the text layer (a slide's speaker notes and a web page's title and share text included; a web page's pictures go through the alt-text rule); image agent for a scanned page (rendered at about 144 dpi, because it has no text layer); image agent per pasted screenshot or embedded picture |
 | Video | video agent | burned-in captions (frame OCR on text-edge change), subtitle tracks, speech (local Whisper with voice detection), keyframes (asset matcher plus one contact sheet for the vision model) |
 
 Depth (8) and agent count (200) are capped per review. Every node records role, status, timing and findings and is returned with the review; anything cut off, timed out or crashed is a "not checked" gap that blocks approval without a noted override. Findings from derived text carry their source and a locator (image, page, pixel box, video time), sealed into the signature.

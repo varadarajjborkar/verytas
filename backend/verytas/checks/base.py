@@ -154,7 +154,7 @@ class Source:
     """
 
     id: str
-    kind: str  # body | pdf_text | docx_text | ocr
+    kind: str  # body | pdf_text | docx_text | pptx_text | xlsx_text | html_text | ocr | speech | captions
     text: str
     route: str  # typed | pdf-text-layer | docx | ocr:local | ocr:vision | ocr:local+vision
     confidence: float = 1.0

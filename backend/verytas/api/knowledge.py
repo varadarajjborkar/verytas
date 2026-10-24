@@ -19,7 +19,7 @@ from verytas.checks.claims import relevance
 from verytas.checks.patterns import validate_pattern
 from verytas.media import assets as asset_match
 from verytas.media import documents
-from verytas.media.files import MAX_IMAGE_BYTES, MediaError, decode_b64, open_image, sniff
+from verytas.media.files import DOCX, MAX_IMAGE_BYTES, MediaError, decode_b64, open_image, sniff
 from verytas.models import BrandAsset, ConfidentialTerm, Fact, MediaBlob, Role, Rule, RuleStatus, User
 from verytas.prism import clarify, rulebook
 from verytas.prism.disputes import workspace_redactor
@@ -190,9 +190,7 @@ async def extract_rules(body: ExtractIn, session: Session, admin: Admin, prism: 
         blob = await session.get(MediaBlob, body.blob_id)
         if blob is None or blob.workspace_id != admin.workspace_id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "upload not found")
-        reader = {"application/pdf": documents.extract_pdf}.get(blob.media_type)
-        if reader is None and blob.media_type.startswith("application/vnd.openxmlformats"):
-            reader = documents.extract_docx
+        reader = {"application/pdf": documents.extract_pdf, DOCX: documents.extract_docx}.get(blob.media_type)
         if reader is None:
             raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "import reads PDF and Word files")
         try:

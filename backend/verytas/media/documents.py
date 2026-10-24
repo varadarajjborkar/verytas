@@ -1,4 +1,4 @@
-"""PDF and Word extraction, page by page.
+"""PDF, Word, PowerPoint, Excel and HTML extraction, page by page (a slide, a sheet and a web page are pages).
 
 Real-world PDFs are rarely clean. One file can mix pages with a proper text
 layer, pages that are a scanned photo (no selectable text at all) and pages
@@ -19,6 +19,7 @@ cut by a budget is reported as a partial read, never passed over in silence.
 from __future__ import annotations
 
 import io
+import re
 import threading
 import zipfile
 import zlib
@@ -26,7 +27,7 @@ from dataclasses import dataclass, field
 
 from PIL import Image, ImageDraw
 
-from verytas.media.files import WORK_SIDE, MediaError, flatten, shrink
+from verytas.media.files import MAX_HTML_BYTES, WORK_SIDE, MediaError, flatten, shrink
 
 MAX_PAGES = 40
 MAX_IMAGES_PER_PAGE = 12
@@ -76,6 +77,9 @@ class Page:
     render_jpeg: bytes | None = None  # set when the page needs OCR
     # Set when a page with a text layer also draws vector shapes: what is drawn may say more than the layer.
     graphics_jpeg: bytes | None = None
+    label: str | None = None  # how people name it when it is not a page: "slide 3", "sheet Prices"
+    # Pictures a web page shows, as alt-text checks read them: {"id", "alt", "decorative"}.
+    alts: list[dict] = field(default_factory=list)
 
     @property
     def render(self) -> Image.Image | None:
@@ -84,7 +88,7 @@ class Page:
 
 @dataclass
 class Extracted:
-    kind: str  # pdf | docx
+    kind: str  # pdf | docx | pptx | xlsx | html
     pages: list[Page]
     page_count: int
     notes: list[str] = field(default_factory=list)
@@ -372,3 +376,323 @@ def _docx_images(zf: zipfile.ZipFile, names: dict, budget: _Budget, out: Extract
         images.append(EmbeddedImage(k, _png(flatten(pil))))
         budget.images -= 1
     return images
+
+
+# --- PowerPoint ------------------------------------------------------------------------------------------
+
+_A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_P = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
+_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+_R_EMBED = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
+MAX_SLIDES = 60
+
+
+def _office_zip(raw: bytes, what: str, required: str) -> tuple[zipfile.ZipFile, dict]:
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile as exc:
+        raise MediaError(f"not a readable {what} file") from exc
+    infos = {info.filename: info for info in zf.infolist()}
+    if sum(info.file_size for info in infos.values()) > MAX_DOCX_UNZIPPED:
+        zf.close()
+        raise MediaError(f"{what} file expands to more than {MAX_DOCX_UNZIPPED // 1024 // 1024} MB; refused")
+    if required not in infos:
+        zf.close()
+        raise MediaError(f"not a readable {what} file")
+    return zf, infos
+
+
+def _xml(zf: zipfile.ZipFile, infos: dict, name: str, out: Extracted):
+    """One XML part, parsed without entities or network; None (and a note) when it is too big or damaged."""
+    from lxml import etree
+
+    if infos[name].file_size > MAX_DOCX_PART:
+        out.notes.append(f"{name} is over {MAX_DOCX_PART // 1024 // 1024} MB and was not read")
+        out.partial = True
+        return None
+    parser = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=False, load_dtd=False)
+    try:
+        return etree.fromstring(zf.read(name), parser)
+    except (etree.XMLSyntaxError, zipfile.BadZipFile, zlib.error, EOFError):
+        out.notes.append(f"{name} is damaged and was not read")
+        out.partial = True
+        return None
+
+
+def _rel_targets(zf: zipfile.ZipFile, infos: dict, part: str, out: Extracted) -> dict[str, str]:
+    """Relationship id -> zip path, for a part's own .rels file."""
+    folder, _, leaf = part.rpartition("/")
+    rels = f"{folder}/_rels/{leaf}.rels"
+    if rels not in infos:
+        return {}
+    root = _xml(zf, infos, rels, out)
+    if root is None:
+        return {}
+    targets = {}
+    for rel in root.iter(f"{_REL}Relationship"):
+        target = rel.get("Target") or ""
+        if rel.get("TargetMode") == "External":
+            continue  # a linked picture on the web is not fetched
+        path = target.lstrip("/") if target.startswith("/") else _join(folder, target)
+        targets[rel.get("Id")] = path
+    return targets
+
+
+def _join(folder: str, target: str) -> str:
+    parts = folder.split("/")
+    for piece in target.split("/"):
+        if piece == "..":
+            parts = parts[:-1]
+        elif piece and piece != ".":
+            parts.append(piece)
+    return "/".join(parts)
+
+
+def _picture(zf: zipfile.ZipFile, infos: dict, name: str, index: int, budget: _Budget,
+             out: Extracted) -> EmbeddedImage | None:
+    """One embedded picture, shrunk and budgeted as Word's are."""
+    if name not in infos or budget.images <= 0:
+        if budget.images <= 0:
+            out.notes.append("some images were skipped (limit reached)")
+            out.partial = True
+        return None
+    try:
+        pil = Image.open(io.BytesIO(zf.read(name)))
+        pw, ph = pil.size
+        if min(pw, ph) < MIN_IMAGE_SIDE:
+            return None
+        if pw * ph > MAX_EMBEDDED_PIXELS or not budget.take_pixels(pw * ph):
+            out.notes.append(f"an image of {pw}x{ph} was too large to check")
+            out.partial = True
+            return None
+        pil.draft("RGB", (WORK_SIDE, WORK_SIDE))
+        pil.load()
+    except Image.DecompressionBombError:
+        out.notes.append(f"{name.rsplit('/', 1)[-1]} was too large to check")
+        out.partial = True
+        return None
+    except Exception:  # noqa: BLE001, as in Word: an unreadable picture is reported, never passed over
+        out.notes.append(f"{name.rsplit('/', 1)[-1]}: an image in a format that can't be read here")
+        out.partial = True
+        return None
+    budget.images -= 1
+    return EmbeddedImage(index, _png(flatten(pil)))
+
+
+def extract_pptx(raw: bytes) -> Extracted:
+    """A deck, one page per slide in the deck's own order: its text in reading order, its pictures, and its
+    speaker notes, which travel with the file to whoever it is sent to (as Word's comments do)."""
+    zf, infos = _office_zip(raw, "PowerPoint", "ppt/presentation.xml")
+    out = Extracted("pptx", [], 0)
+    budget = _Budget()
+    with zf:
+        slides = _deck_order(zf, infos, out)
+        out.page_count = len(slides)
+        if len(slides) > MAX_SLIDES:
+            out.notes.append(f"only the first {MAX_SLIDES} of {len(slides)} slides were read")
+            out.partial = True
+        _unread_parts(infos, out, {"ppt/charts/": "charts", "ppt/diagrams/": "SmartArt", "ppt/comments/": "comments"})
+        # A picture is read once per deck, however many times slides place it (a logo on every slide, or a
+        # crafted file pointing ten thousand placements at one part); failures count against the budget too.
+        seen: dict[str, EmbeddedImage | None] = {}
+        for number, name in enumerate(slides[:MAX_SLIDES], start=1):
+            root = _xml(zf, infos, name, out)
+            if root is None:
+                continue
+            rels = _rel_targets(zf, infos, name, out)
+            lines = ["".join(t.text or "" for t in p.iter(f"{_A}t")).strip() for p in root.iter(f"{_A}p")]
+            text = "\n".join(ln for ln in lines if ln)
+            notes_part = next((t for t in rels.values() if "notesSlide" in t and t in infos), None)
+            if notes_part is not None and (notes := _xml(zf, infos, notes_part, out)) is not None:
+                said = [ln for p in notes.iter(f"{_A}p")
+                        if (ln := "".join(t.text or "" for t in p.iter(f"{_A}t")).strip()) and not ln.isdigit()]
+                if said:
+                    text += "\n[Speaker notes] " + " ".join(said)
+            if root.get("show") == "0":
+                text = "[Hidden slide] " + text
+            kept, cut = budget.text(text)
+            if cut:
+                out.notes.append(f"text cut at {MAX_DOC_CHARS:,} characters")
+                out.partial = True
+            targets = list(dict.fromkeys(t for blip in root.iter(f"{_A}blip") if (t := rels.get(blip.get(_R_EMBED)))))
+            images = []
+            for k, target in enumerate(targets, start=1):
+                if target in seen or len(images) >= MAX_IMAGES_PER_PAGE:
+                    continue
+                if len(seen) >= 2 * MAX_IMAGES_TOTAL:
+                    out.notes.append("some pictures were not read (too many in one deck)")
+                    out.partial = True
+                    break
+                seen[target] = img = _picture(zf, infos, target, k, budget, out)
+                if img is not None:
+                    images.append(img)
+            out.pages.append(Page(number, kept, images, label=f"slide {number}"))
+    out.notes = list(dict.fromkeys(out.notes))
+    return out
+
+
+def _deck_order(zf: zipfile.ZipFile, infos: dict, out: Extracted) -> list[str]:
+    """Slide parts in the order the deck shows them (presentation.xml's slide list), so "slide 3" in a finding
+    is the third slide people see. A slide part the deck does not list is not part of it."""
+    listed = []
+    root = _xml(zf, infos, "ppt/presentation.xml", out)
+    if root is not None:
+        rels = _rel_targets(zf, infos, "ppt/presentation.xml", out)
+        listed = [t for s in root.iter(f"{_P}sldId") if (t := rels.get(s.get(_R_ID))) and t in infos]
+    if listed:
+        return list(dict.fromkeys(listed))
+    # No slide list to go by (a hand-made or damaged file): the part names' own numbering.
+    return sorted((n for n in infos if _SLIDE.fullmatch(n)), key=lambda n: int(_SLIDE.fullmatch(n)[1]))
+
+
+def _unread_parts(infos: dict, out: Extracted, kinds: dict[str, str]) -> None:
+    """Say which parts were not read, so a deck with a chart is never passed as fully checked."""
+    found = [label for prefix, label in kinds.items() if any(n.startswith(prefix) for n in infos)]
+    if found:
+        out.notes.append(f"{', '.join(found)} in the file were not read; check them by eye or attach them as images")
+        out.partial = True
+
+
+_R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+_SLIDE = re.compile(r"ppt/slides/slide(\d+)\.xml")
+
+
+# --- Excel -----------------------------------------------------------------------------------------------
+
+def extract_xlsx(raw: bytes) -> Extracted:
+    """A workbook, one page per sheet, each read as its table (header then every row), with its pictures.
+    Cells are read by the same bounded reader Intake uses; whatever its caps leave out is reported."""
+    from verytas.intake import readers
+
+    zf, infos = _office_zip(raw, "Excel", "xl/workbook.xml")
+    with zf:
+        reading = readers.read(raw, readers.XLSX, "workbook")
+        out = Extracted("xlsx", [], len(reading.tables), notes=list(reading.notes))
+        out.partial = bool(reading.notes)
+        _unread_parts(infos, out, {"xl/charts/": "charts", "xl/comments": "comments", "xl/threadedComments/":
+                                   "comments"})
+        budget = _Budget()
+        for number, table in enumerate(reading.tables, start=1):
+            if len(table.rows) >= readers.MAX_ROWS:
+                out.notes.append(f"sheet {table.name}: only the first {readers.MAX_ROWS:,} rows were read")
+                out.partial = True
+            lines = [f"[{table.name}]", " | ".join(table.header), *(" | ".join(r) for r in table.rows)]
+            kept, cut = budget.text("\n".join(lines))
+            if cut:
+                out.notes.append(f"text cut at {MAX_DOC_CHARS:,} characters")
+                out.partial = True
+            out.pages.append(Page(number, kept, label=f"sheet {table.name}"))
+        images = []
+        for k, name in enumerate(sorted(n for n in infos if n.startswith("xl/media/")), start=1):
+            if len(images) >= MAX_IMAGES_PER_PAGE or k > 2 * MAX_IMAGES_TOTAL:
+                out.notes.append("some pictures were not read (too many in one workbook)")
+                out.partial = True
+                break
+            if (img := _picture(zf, infos, name, k, budget, out)) is not None:
+                images.append(img)
+    if images:
+        # Which sheet shows a picture takes the drawing parts to tell; the pictures are checked all the same.
+        if not out.pages:
+            out.pages.append(Page(1, "", label="workbook"))
+        out.pages[0].images.extend(images)
+    return out
+
+
+# --- HTML ------------------------------------------------------------------------------------------------
+
+MAX_ALTS = 200  # pictures on one page whose alt text is checked; past this the page is said to be partly read
+_HIDDEN_TAGS = ("script", "style", "noscript", "template", "svg", "iframe", "object", "embed", "head")
+_BLOCKS = {"p", "div", "section", "article", "header", "footer", "aside", "nav", "main", "li", "ul", "ol",
+           "h1", "h2", "h3", "h4", "h5", "h6", "tr", "table", "blockquote", "figcaption", "figure", "br", "hr",
+           "button", "label", "dt", "dd", "pre", "form"}
+
+
+def extract_html(raw: bytes) -> Extracted:
+    """A web page or an HTML email as one page: the visible text, the title and share text people see in a
+    link preview, inline (data:) pictures, and every picture's alt text for the accessibility checks.
+    Nothing is fetched: linked pictures, styles and scripts stay where they are, and the page says so."""
+    import base64
+    import binascii
+
+    from lxml import etree, html
+
+    if len(raw) > MAX_HTML_BYTES:
+        raise MediaError(f"HTML file is over {MAX_HTML_BYTES // 1024 // 1024} MB; refused")
+    out = Extracted("html", [], 1)
+    try:
+        # huge_tree: libxml2 otherwise stops at 256 levels and drops the rest without a word, while a browser
+        # still shows it, so deep nesting could hide text from review. The 5 MB cap bounds the cost.
+        root = html.document_fromstring(raw, parser=html.HTMLParser(no_network=True, remove_comments=True,
+                                                                    remove_pis=True, huge_tree=True))
+    except (etree.ParserError, ValueError) as exc:
+        raise MediaError("not a readable HTML file") from exc
+    preview = []
+    if (title := root.findtext(".//title")) and title.strip():
+        preview.append(f"[Page title] {title.strip()}")
+    for meta in root.iter("meta"):
+        key = (meta.get("name") or meta.get("property") or "").lower()
+        value = (meta.get("content") or "").strip()
+        if value and key in ("description", "og:title", "og:description", "twitter:title", "twitter:description"):
+            preview.append(f"[{key}] {value}")
+    # What the page hides is not checked, its pictures included (a tracking pixel in <noscript>).
+    for bad in list(root.iter(*_HIDDEN_TAGS)):
+        bad.drop_tree()
+    for el in list(root.iter()):
+        if el is root or not isinstance(el.tag, str):
+            continue
+        if el.get("hidden") is not None or el.get("aria-hidden") == "true" or "display:none" in (
+                el.get("style") or "").replace(" ", "").lower():
+            el.drop_tree()
+    budget = _Budget()
+    images, alts, linked = [], [], 0
+    for k, img in enumerate(root.iter("img"), start=1):
+        if k > MAX_ALTS:
+            out.notes.append(f"only the first {MAX_ALTS} pictures were checked")
+            out.partial = True
+            break
+        alt = img.get("alt")
+        # alt="" is how a page marks a picture decorative; a missing alt is the problem.
+        decorative = alt == "" or img.get("role") == "presentation"
+        alts.append({"id": str(k), "alt": alt or "", "decorative": decorative})
+        src = (img.get("src") or "").strip()
+        if not src.startswith("data:image/"):
+            linked += not decorative  # a spacer or a flourish is nothing to check
+            continue
+        try:
+            data = base64.b64decode(src.split(",", 1)[1], validate=False)
+        except (IndexError, binascii.Error, ValueError):
+            continue
+        if len(images) < MAX_IMAGES_PER_PAGE and (pic := _data_picture(data, k, budget, out)) is not None:
+            images.append(pic)
+    for el in root.iter(*_BLOCKS):
+        el.tail = "\n" + (el.tail or "")
+    lines = [" ".join(ln.split()) for ln in (root.text_content() or "").splitlines()]
+    body = "\n".join(ln for ln in lines if ln)
+    kept, cut = budget.text("\n".join([*preview, body]))
+    if cut:
+        out.notes.append(f"text cut at {MAX_DOC_CHARS:,} characters")
+        out.partial = True
+    if linked:
+        out.notes.append(f"{linked} linked picture(s) were not fetched; attach them as images to check them")
+        out.partial = True
+    out.pages.append(Page(1, kept, images, label="the page", alts=alts))
+    return out
+
+
+def _data_picture(data: bytes, index: int, budget: _Budget, out: Extracted) -> EmbeddedImage | None:
+    try:
+        pil = Image.open(io.BytesIO(data))
+        pw, ph = pil.size
+        if min(pw, ph) < MIN_IMAGE_SIDE:
+            return None
+        if pw * ph > MAX_EMBEDDED_PIXELS or not budget.take_pixels(pw * ph):
+            out.notes.append(f"an inline picture of {pw}x{ph} was too large to check")
+            out.partial = True
+            return None
+        pil.load()
+    except Exception:  # noqa: BLE001, a broken inline picture is reported, never passed over
+        out.notes.append(f"inline picture {index} could not be read")
+        out.partial = True
+        return None
+    budget.images -= 1
+    return EmbeddedImage(index, _png(flatten(pil)))

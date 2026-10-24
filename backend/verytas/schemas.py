@@ -208,6 +208,9 @@ class DocumentIn(BaseModel):
     media_type: Literal[
         "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/html",
     ] = "application/pdf"
     # About 20 MB of file once decoded. Real type is checked from the bytes.
     data_base64: str | None = Field(default=None, max_length=28_000_000)
@@ -290,6 +293,12 @@ class ImageRefOut(BaseModel):
     media_type: str = "image/png"
 
 
+class DocumentRefOut(BaseModel):
+    id: str
+    name: str | None = None
+    media_type: str = "application/pdf"
+
+
 class VersionOut(ORM):
     id: int
     version_no: int
@@ -298,6 +307,7 @@ class VersionOut(ORM):
     created_by: int
     created_at: datetime
     images: list[ImageRefOut] = []
+    documents: list[DocumentRefOut] = []
 
 
 class ContentOut(ORM):

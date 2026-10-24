@@ -18,6 +18,7 @@ import numpy as np
 from PIL import Image, UnidentifiedImageError
 
 MAX_DOC_BYTES = 20 * 1024 * 1024
+MAX_HTML_BYTES = 5 * 1024 * 1024  # a page or an email; review refuses larger (media/documents.py)
 MAX_IMAGE_BYTES = 6 * 1024 * 1024
 MAX_VIDEO_BYTES = 150 * 1024 * 1024
 MAX_AUDIO_BYTES = 25 * 1024 * 1024  # a voice note of several minutes
@@ -56,8 +57,8 @@ def sniff(raw: bytes) -> str:
         return "image/webp"
     if raw[:6] in (b"GIF87a", b"GIF89a"):
         return "image/gif"
-    if raw.startswith(b"PK\x03\x04") and b"word/" in raw[:4096]:
-        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if raw.startswith(b"PK\x03\x04") and (office := _office(raw)):
+        return office
     if raw[4:8] == b"ftyp":
         # Phones save HEIC and AVIF stills in the same ISO container as MP4;
         # the major brand tells them apart.
@@ -77,7 +78,45 @@ def sniff(raw: bytes) -> str:
         return "audio/ogg"
     if raw.startswith(b"ID3") or _mp3_frame(raw):
         return "audio/mpeg"
+    if _html(raw[:2048]):
+        return "text/html"
     return "unknown"
+
+
+def _html(head: bytes) -> bool:
+    """A whole HTML page or email: a doctype or an <html> or <head> tag first, after a byte-order mark, an XML
+    prolog and comments. A bare fragment is not a page."""
+    h = head.removeprefix(b"\xef\xbb\xbf").lower()
+    while True:
+        h = h.lstrip()
+        if h.startswith(b"<?xml") and b"?>" in h:
+            h = h.split(b"?>", 1)[1]
+        elif h.startswith(b"<!--") and b"-->" in h:
+            h = h.split(b"-->", 1)[1]
+        else:
+            return h.startswith((b"<!doctype html", b"<html", b"<head"))
+
+
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _office(raw: bytes) -> str | None:
+    """Which Office file a zip is, by the part that defines it (the central directory is read, not the
+    contents). A zip too damaged to list is judged by its first entries, as Word files always were."""
+    import io
+    import zipfile
+
+    if len(raw) > MAX_DOC_BYTES:
+        # Too large to be a document anyway (the upload says so); listing a huge zip's entries is not free.
+        return DOCX if b"word/" in raw[:4096] else None
+    try:
+        names = set(zipfile.ZipFile(io.BytesIO(raw)).namelist())
+    except Exception:  # noqa: BLE001, a damaged zip raises more than BadZipFile; it is simply not an Office file
+        return DOCX if b"word/" in raw[:4096] else None
+    return (DOCX if "word/document.xml" in names else PPTX if "ppt/presentation.xml" in names
+            else XLSX if "xl/workbook.xml" in names else None)
 
 
 def _mp3_frame(raw: bytes) -> bool:
@@ -174,6 +213,8 @@ def limit_for(media_type: str) -> int:
         return MAX_AUDIO_BYTES
     if media_type.startswith("image/"):
         return MAX_IMAGE_BYTES
+    if media_type == "text/html":
+        return MAX_HTML_BYTES
     return MAX_DOC_BYTES
 
 

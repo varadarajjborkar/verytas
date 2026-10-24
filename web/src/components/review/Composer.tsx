@@ -45,15 +45,23 @@ export function attachmentsPayload(d: Draft) {
     images: by("image").map((a) => ({ id: a.localId, alt: a.alt || null, blob_id: a.id,
       media_type: ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(a.media_type) ? a.media_type : "image/png" })),
     documents: by("document").map((a) => ({ id: a.localId, name: a.name, blob_id: a.id,
-      media_type: a.media_type === "application/pdf" ? "application/pdf"
-        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })),
+      media_type: (DOCUMENT_TYPES as readonly string[]).includes(a.media_type) ? a.media_type : "application/pdf" })),
     videos: by("video").map((a) => ({ id: a.localId, name: a.name, blob_id: a.id })),
   };
 }
 
+// The API sniffs the real type from the bytes; these are the documents review reads page by page.
+const DOCUMENT_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/html",
+] as const;
+
 const KIND_OF = (type: string): Attachment["kind"] | null =>
   type.startsWith("image/") ? "image" : type.startsWith("video/") ? "video"
-    : type === "application/pdf" || type.includes("wordprocessingml") ? "document" : null;
+    : (DOCUMENT_TYPES as readonly string[]).includes(type) ? "document" : null;
 
 const field = "vt-input";
 
@@ -187,7 +195,7 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
         <div className="grid gap-2 sm:grid-cols-3">
           <DropTile id={`${ids}-img`} label="Images" hint="PNG, JPG, WebP, GIF · up to 6 MB" accept="image/png,image/jpeg,image/webp,image/gif"
             disabled={demo} onFiles={(f) => addFiles(f, "image")} />
-          <DropTile id={`${ids}-doc`} label="Documents" hint="PDF or Word" accept="application/pdf,.docx"
+          <DropTile id={`${ids}-doc`} label="Documents" hint="PDF, Word, PowerPoint, Excel, HTML" accept="application/pdf,.docx,.pptx,.xlsx,.html,.htm"
             disabled={demo} onFiles={(f) => addFiles(f, "document")} />
           <DropTile id={`${ids}-vid`} label="Video" hint="MP4, MOV, WebM" accept="video/mp4,video/quicktime,video/webm"
             disabled={demo} onFiles={(f) => addFiles(f, "video")} />

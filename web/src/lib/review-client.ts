@@ -218,7 +218,8 @@ export function whereLabel(f: Pick<Finding, "source" | "locator">): string {
     return `Image “${name}”`;
   }
   if (parts[0] === "doc") {
-    const page = parts[2]?.replace("p", "page ");
+    // Slides and sheets are pages to the API; the locator says what people call them.
+    const page = loc.label ?? parts[2]?.replace("p", "page ");
     if (parts[3] === "text") return `${parts[1]} · ${page}`;
     if (parts[3] === "scan") return `${parts[1]} · ${page} (scanned)`;
     if (parts[3]?.startsWith("img")) return `${parts[1]} · ${page} · picture ${parts[3].slice(3)}`;
