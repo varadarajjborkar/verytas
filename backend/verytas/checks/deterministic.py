@@ -17,6 +17,7 @@ from collections.abc import Callable, Iterator
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
+from verytas.checks import phonetic
 from verytas.checks.base import CheckContext, RawFinding, RuleView, SuggestedEdit, Unit
 from verytas.checks.color import (
     contrast_ratio,
@@ -226,16 +227,33 @@ def casing(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
 
 # --- confidentiality ---------------------------------------------------------
 
+# Below the blocker bar (Settings.blocker_confidence, 0.85): a sound-alike is something to listen to, not proof.
+SOUND_ALIKE_CONFIDENCE = 0.75
+
+
 @matcher("confidential_terms")
 def confidential_terms(ctx: CheckContext, rule: RuleView) -> Iterator[RawFinding]:
     for t in ctx.terms:
         if t.embargo_until is not None and ctx.today >= t.embargo_until:
             continue
         until = f" until {t.embargo_until.isoformat()}" if t.embargo_until else ""
-        for start, end, _ in find_folded(term_pattern(t.term), ctx.body):
+        hits = list(find_folded(term_pattern(t.term), ctx.body))
+        for start, end, _ in hits:
             yield _finding(
                 ctx, rule, start, end, f'Confidential term "{ctx.body[start:end]}"',
                 f'"{t.term}" is marked confidential{until}. Publishing it would leak protected information.',
+            )
+        # Speech is transcribed by ear: a codename said aloud in a Hindi or Hinglish clip comes back in
+        # Devanagari or misspelt, so an exact search misses it. Only distinctive terms are looked for by sound,
+        # and a hit is a prompt to listen, never a block on its own (kept under the blocker bar). The finding
+        # does not name the term: the speaker said something else, and the term list is not theirs to read.
+        if ctx.spoken and not hits and phonetic.soundable(t.term) and (heard := phonetic.locate(t.term, ctx.body)):
+            start, end, s = heard
+            yield _finding(
+                ctx, rule, start, end, "May say a confidential term",
+                f'The speech says "{ctx.body[start:end]}", which sounds like a term the brand keeps confidential '
+                "(an approver can see which). Listen to that moment before publishing.",
+                confidence=round(min(SOUND_ALIKE_CONFIDENCE, s.score), 2),
             )
 
 

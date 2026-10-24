@@ -324,7 +324,7 @@ async def text_agent(run: ReviewRun, node: AgentNode, source: Source) -> None:
     ctx = run.base if is_body else CheckContext(
         body=source.text, units=segment(source.text), rules=run.base.rules, facts=run.base.facts,
         terms=run.base.terms, attachments={}, channel=run.base.channel, today=run.base.today,
-        profile=run.base.profile, whole_post=False,
+        profile=run.base.profile, whole_post=False, spoken=source.kind == "speech",
     )
     if is_body:
         ctx.units = segment(source.text) + image_units(run.base.attachments)
