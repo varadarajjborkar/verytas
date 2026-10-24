@@ -286,10 +286,10 @@ export function ReviewQueue() {
           <div className="relative hidden overflow-x-auto md:block">
             {/* relative: the header's screen-reader label is absolutely positioned and would otherwise escape
                 this scroller and widen the whole page on a phone. */}
-            <table className="w-full min-w-[56rem] table-fixed text-sm">
+            <table className="w-full min-w-[62rem] table-fixed text-sm">
               <colgroup>
                 <col className="w-[7.5rem]" /><col /><col className="w-[14.5rem]" /><col className="w-[11rem]" />
-                <col className="w-[7.5rem]" /><col className="w-[7rem]" /><col className="w-12" />
+                <col className="w-[11rem]" /><col className="w-[7.5rem]" /><col className="w-12" />
               </colgroup>
               <thead>
                 <tr className="border-b border-line text-left text-[11px] font-medium uppercase tracking-wide text-subtle">
@@ -298,7 +298,8 @@ export function ReviewQueue() {
                   <SortHeader col="stage" label="Where it is" sorted={col} dir={dir} onSort={sortBy} />
                   <SortHeader col="check" label="Latest check" sorted={col} dir={dir} onSort={sortBy} />
                   <SortHeader col="signals" label="Signals" sorted={col} dir={dir} onSort={sortBy} />
-                  <SortHeader col="age" label={queue === "waiting" ? "Waiting" : "Updated"} sorted={col} dir={dir} onSort={sortBy} />
+                  <SortHeader col="age" label={queue === "waiting" ? "Waiting" : "Updated"} sorted={col} dir={dir} onSort={sortBy}
+                    className="px-3 text-center" />
                   <th scope="col" className="w-8 py-2 pr-4 md:pr-5"><span className="sr-only">Open</span></th>
                 </tr>
               </thead>
@@ -373,8 +374,8 @@ function QueueRow({ r, queue, creatorName, eventName, onOpen }: {
         </span>
       </td>
       <td className="whitespace-nowrap px-3 py-2.5 text-xs"><CheckSummary r={r} /></td>
-      <td className="whitespace-nowrap px-3 py-2.5 text-xs"><SignalTags r={r} empty /></td>
-      <td className="whitespace-nowrap px-3 py-2.5 text-xs text-muted">{relativeTime(queue === "waiting" ? sinceOf(r) : r.updated_at ?? r.created_at)}</td>
+      <td className="px-3 py-2.5 text-xs"><SignalTags r={r} empty /></td>
+      <td className="whitespace-nowrap px-3 py-2.5 text-center text-xs text-muted">{relativeTime(queue === "waiting" ? sinceOf(r) : r.updated_at ?? r.created_at)}</td>
       <td className="py-2.5 pr-4 md:pr-5">
         <ArrowRightIcon size={14} className="text-subtle transition group-hover:translate-x-0.5 group-hover:text-ink" />
       </td>
@@ -443,7 +444,7 @@ function SignalTags({ r, empty = false }: { r: ContentRow; empty?: boolean }) {
   const event = r.rechecked_for_event != null;
   if (!asked && !event) return empty ? <span className="text-subtle">-</span> : null;
   return (
-    <span className="flex items-center gap-2">
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-nowrap">
       {asked && (
         <span className="inline-flex items-center gap-1 rounded-md bg-accent/12 px-1.5 py-0.5 font-medium text-accent" title="The creator asked a person to look">
           <InboxIcon size={12} /> Asked

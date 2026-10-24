@@ -291,7 +291,9 @@ export function AskVerytas() {
   );
 
   return (
-    <div className="flex h-[calc(100dvh-9.5rem)] min-h-[520px] flex-col md:h-[calc(100dvh-4.5rem)]">
+    // Exactly the room left under the top bars and above the main padding, so the page itself never scrolls;
+    // only the conversation does. (Phone: 181px above, 24px below. Desktop: 72px above, 36px below.)
+    <div className="flex h-[calc(100dvh-205px)] min-h-[480px] flex-col md:h-[calc(100dvh-108px)]">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h1 className="text-[1.65rem] font-semibold leading-tight tracking-tight">Ask Verytas</h1>
         <div className="flex items-center gap-2 md:hidden">

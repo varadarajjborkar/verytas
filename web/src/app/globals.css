@@ -173,6 +173,8 @@ table, .tabular-nums { font-variant-numeric: tabular-nums; }
   /* Search fields stand apart from the filters beside them: a stronger edge and a lift. */
   .vt-search { border-color: var(--vt-line-strong); box-shadow: var(--vt-shadow); }
   .vt-search::-webkit-search-cancel-button { cursor: pointer; }
+  /* Search boxes take focus quietly: a firmer neutral edge, no accent ring (the caret says where typing goes). */
+  .vt-input.vt-search:focus { border-color: color-mix(in srgb, var(--vt-ink) 40%, transparent); box-shadow: var(--vt-shadow); }
   /* Native selects keep their keyboard and screen-reader behaviour; only the arrow is redrawn, inset from
      the edge like every other control's padding, instead of the platform's arrow pressed against the border. */
   select.vt-input:not(.appearance-none) {
@@ -229,7 +231,9 @@ table, .tabular-nums { font-variant-numeric: tabular-nums; }
    :focus-visible rule is unlayered, which a utility class cannot beat). */
 .vt-glass input:focus-visible { outline: none; }
 /* The search pill shows it has the caret by a firmer neutral rim, not an accent ring around it. */
-.vt-search:focus-within::before { background: var(--vt-line-strong); }
+.vt-search-pill:focus-within::before { background: var(--vt-line-strong); }
+/* Unlayered, like the :focus-visible rule it overrides: search boxes show focus by their own neutral edge. */
+input.vt-search:focus-visible { outline: none; }
 /* What the search matched, inside a result. */
 .vt-hit { background: transparent; color: var(--vt-accent); font-weight: 650; }
 .vt-kbd {
