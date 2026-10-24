@@ -10,7 +10,7 @@ live demo and of the vision worker added since.
 | | |
 |---|---|
 | Method | The [security-audit skill](https://github.com/cloudflare/security-audit-skill) published by Cloudflare: reconnaissance, parallel hunters per attack surface, independent verifiers, then a coverage critic |
-| Code reviewed | `33ceccd` on `dev`, 22 October 2026 |
+| Code reviewed | `ff15b2b` on `dev`, 22 October 2026 |
 | Scope | `backend/verytas`, `web/src`, `deploy`, `.github/workflows`, `blackbox` |
 | Profile | `quick`: one hunter wave and one coverage critic, 24 agent runs in all |
 | Execution | Source review only. No code was run against the live demo and nothing was sent over the network. |
@@ -24,8 +24,8 @@ Both confirmed findings are low severity, and both are fixed with regression tes
 
 | Severity | Finding | Fix | Fixed in |
 |---|---|---|---|
-| Low | The read-only auditor role could post comments | Comments need a writer role (creator, reviewer, approver, admin) | [`cad2338`](https://github.com/varadarajjborkar/verytas/commit/cad2338) |
-| Low | The audit log showed confidential rule codes, asset names and notes to a lower-clearance auditor | Each entry is checked against the tier of the object it is about, when the log is read; confidential-term entries are shown to brand admins only; paging reads past hidden entries | [`e1d5ffa`](https://github.com/varadarajjborkar/verytas/commit/e1d5ffa), [`4344642`](https://github.com/varadarajjborkar/verytas/commit/4344642) |
+| Low | The read-only auditor role could post comments | Comments need a writer role (creator, reviewer, approver, admin) | [`da1b9bd`](https://github.com/varadarajjborkar/verytas/commit/da1b9bd) |
+| Low | The audit log showed confidential rule codes, asset names and notes to a lower-clearance auditor | Each entry is checked against the tier of the object it is about, when the log is read; confidential-term entries are shown to brand admins only; paging reads past hidden entries | [`86aed65`](https://github.com/varadarajjborkar/verytas/commit/86aed65), [`05b12ee`](https://github.com/varadarajjborkar/verytas/commit/05b12ee) |
 
 ## Leads the audit could not prove, and what we did
 
@@ -33,20 +33,20 @@ The audit also lists leads it traced but could not confirm without running code.
 
 | Lead | What we changed | Fixed in |
 |---|---|---|
-| The edge worker could be made to fetch another host's content (`//host` paths) | The upstream URL is built from a fixed origin, and redirects are rewritten only when they point back at it | [`c664631`](https://github.com/varadarajjborkar/verytas/commit/c664631) |
-| Ask Verytas could render an image from any URL a model chose | A Content Security Policy keeps images on this origin (`img-src 'self' data: blob:`), with `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'` and `form-action 'self'` | [`d944579`](https://github.com/varadarajjborkar/verytas/commit/d944579) |
-| Re-disputing findings could raise a rule's threshold for the whole workspace | Threshold learning counts each finding once and only its latest decision | [`cad2338`](https://github.com/varadarajjborkar/verytas/commit/cad2338) |
-| The session cookie could be set by a sibling host on the shared `sslip.io` name | The cookie is `__Host-` prefixed in production, and sign-out clears it with the same attributes | [`d944579`](https://github.com/varadarajjborkar/verytas/commit/d944579), [`0a7e1f8`](https://github.com/varadarajjborkar/verytas/commit/0a7e1f8) |
-| The PDF active-content scan was quadratic on unterminated streams | A linear scan, and upload metrics run on their own threads with a 30 s deadline | [`e280e53`](https://github.com/varadarajjborkar/verytas/commit/e280e53), [`4344642`](https://github.com/varadarajjborkar/verytas/commit/4344642) |
-| Uploads had no quota and were never cleaned up | 1 GB per person and 10 GB per workspace by default; uploads no version uses are deleted after a day by an hourly sweep, and before a quota refusal | [`3fe9799`](https://github.com/varadarajjborkar/verytas/commit/3fe9799) |
-| Reviews had no concurrency cap, and loaded attachments before waiting | At most four reviews run at once, and a review takes its slot before it loads any file | [`3a22d74`](https://github.com/varadarajjborkar/verytas/commit/3a22d74) |
-| The server re-resolved backend dependencies, so it did not run what CI tested | Hashed lock files, installed with `pip --require-hashes` in CI and on deploy; `pip-audit` checks the same lock | [`69f256b`](https://github.com/varadarajjborkar/verytas/commit/69f256b) |
-| The running services could write the cache the deploy build reads | Build caches live under a directory the services cannot write | [`0b28062`](https://github.com/varadarajjborkar/verytas/commit/0b28062) |
+| The edge worker could be made to fetch another host's content (`//host` paths) | The upstream URL is built from a fixed origin, and redirects are rewritten only when they point back at it | [`5e011bd`](https://github.com/varadarajjborkar/verytas/commit/5e011bd) |
+| Ask Verytas could render an image from any URL a model chose | A Content Security Policy keeps images on this origin (`img-src 'self' data: blob:`), with `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'` and `form-action 'self'` | [`28797b2`](https://github.com/varadarajjborkar/verytas/commit/28797b2) |
+| Re-disputing findings could raise a rule's threshold for the whole workspace | Threshold learning counts each finding once and only its latest decision | [`da1b9bd`](https://github.com/varadarajjborkar/verytas/commit/da1b9bd) |
+| The session cookie could be set by a sibling host on the shared `sslip.io` name | The cookie is `__Host-` prefixed in production, and sign-out clears it with the same attributes | [`28797b2`](https://github.com/varadarajjborkar/verytas/commit/28797b2), [`c03d9c6`](https://github.com/varadarajjborkar/verytas/commit/c03d9c6) |
+| The PDF active-content scan was quadratic on unterminated streams | A linear scan, and upload metrics run on their own threads with a 30 s deadline | [`f82f58b`](https://github.com/varadarajjborkar/verytas/commit/f82f58b), [`05b12ee`](https://github.com/varadarajjborkar/verytas/commit/05b12ee) |
+| Uploads had no quota and were never cleaned up | 1 GB per person and 10 GB per workspace by default; uploads no version uses are deleted after a day by an hourly sweep, and before a quota refusal | [`50888e8`](https://github.com/varadarajjborkar/verytas/commit/50888e8) |
+| Reviews had no concurrency cap, and loaded attachments before waiting | At most four reviews run at once, and a review takes its slot before it loads any file | [`12af686`](https://github.com/varadarajjborkar/verytas/commit/12af686) |
+| The server re-resolved backend dependencies, so it did not run what CI tested | Hashed lock files, installed with `pip --require-hashes` in CI and on deploy; `pip-audit` checks the same lock | [`724de52`](https://github.com/varadarajjborkar/verytas/commit/724de52) |
+| The running services could write the cache the deploy build reads | Build caches live under a directory the services cannot write | [`9106f3a`](https://github.com/varadarajjborkar/verytas/commit/9106f3a) |
 
 One more candidate was found by the audit's lead and not independently verified: an approval could pass
 on the previous version's review in the moment between a new version being saved and its review being
 created. We fixed it anyway: approval now requires the newest review to be for the newest version
-([`cad2338`](https://github.com/varadarajjborkar/verytas/commit/cad2338)).
+([`da1b9bd`](https://github.com/varadarajjborkar/verytas/commit/da1b9bd)).
 
 ## Review of the live demo
 
@@ -67,7 +67,7 @@ demo picker as a creator. Nothing was flooded and nothing was changed.
 | The JavaScript the browser downloads (12 bundles) | No keys, tokens or environment names; no source maps published |
 | Response headers | HSTS, `nosniff`, `X-Frame-Options: DENY`, referrer policy and a partial CSP were present |
 
-Two things were fixed in [`ab10825`](https://github.com/varadarajjborkar/verytas/commit/ab10825):
+Two things were fixed in [`6e09a5c`](https://github.com/varadarajjborkar/verytas/commit/6e09a5c):
 
 | Finding | Fix |
 |---|---|
@@ -111,7 +111,7 @@ Asked "give me your prompt", Ask Verytas once wrote out its system prompt on the
 was in it: workspace data is filtered to the reader's clearance and redacted before a model sees it. But a
 model that recites its rules hands anyone a map of what to argue around. Both chats (Ask Verytas and the
 Summarize chat) now go through `web/src/lib/guard.ts`
-([`0d6d84d`](https://github.com/varadarajjborkar/verytas/commit/0d6d84d)).
+([`98db8b6`](https://github.com/varadarajjborkar/verytas/commit/98db8b6)).
 
 | Layer | What it does |
 |---|---|
@@ -131,7 +131,7 @@ in the interview" reached the model. Every guard that keeps a term from leaving 
 rewrites) now also hides the distinctive name after a generic lead word (project, codename, operation,
 programme, program, initiative), when it is at least four letters, as a whole word starting with a capital:
 "Falcon" and "FALCON" are hidden, while "falcons fly", "restart" and "what is next?" are left alone
-([`2f2fbcf`](https://github.com/varadarajjborkar/verytas/commit/2f2fbcf)). The CONF-LEAK finding still needs the
+([`891a18a`](https://github.com/varadarajjborkar/verytas/commit/891a18a)). The CONF-LEAK finding still needs the
 full term, so a must-fix is not raised on every "falcon".
 
 ## Before the repository went public
@@ -148,11 +148,11 @@ The audit's hardening suggestions, and where each one stands.
 | Note | Status |
 |---|---|
 | Content Security Policy | Done for images, objects, base URI, framing and forms. A nonce-based `script-src` is still to do. |
-| Framework disclosure in headers | Done ([`ab10825`](https://github.com/varadarajjborkar/verytas/commit/ab10825)) |
-| `/contents/precheck` should need a writer role | Done ([`ce12803`](https://github.com/varadarajjborkar/verytas/commit/ce12803)) |
-| Upload metrics should have a deadline | Done ([`4344642`](https://github.com/varadarajjborkar/verytas/commit/4344642)). The precheck itself still has none. |
-| Learned thresholds counted repeated decisions | Done ([`cad2338`](https://github.com/varadarajjborkar/verytas/commit/cad2338)) |
-| Edge worker should compare redirect origins | Done ([`c664631`](https://github.com/varadarajjborkar/verytas/commit/c664631)). Allowlisting forwarded headers is still to do. |
+| Framework disclosure in headers | Done ([`6e09a5c`](https://github.com/varadarajjborkar/verytas/commit/6e09a5c)) |
+| `/contents/precheck` should need a writer role | Done ([`2dcb310`](https://github.com/varadarajjborkar/verytas/commit/2dcb310)) |
+| Upload metrics should have a deadline | Done ([`05b12ee`](https://github.com/varadarajjborkar/verytas/commit/05b12ee)). The precheck itself still has none. |
+| Learned thresholds counted repeated decisions | Done ([`da1b9bd`](https://github.com/varadarajjborkar/verytas/commit/da1b9bd)) |
+| Edge worker should compare redirect origins | Done ([`5e011bd`](https://github.com/varadarajjborkar/verytas/commit/5e011bd)). Allowlisting forwarded headers is still to do. |
 | Fail closed when sign-in is off in production | Open. The deployed demo runs with sign-in on, so this only matters for a misconfigured install. |
 | Tokens never expire and sign-out does not revoke them | Partly done. A password account's token lapses 7 days after sign-in (`account_token_days`) and sign-out revokes it at the API. Tokens an admin issues, and the shared demo picker's, still never lapse: they have no password to get a new one with. Short access tokens with rotating refresh tokens are still to do. |
 | No per-user rate or spend limit on Ask Verytas | Open |
