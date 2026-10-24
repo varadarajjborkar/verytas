@@ -78,6 +78,14 @@ SHEAR_TOLERANCE_DEG = 6.0
 # Corner-to-corner variation in the fit's area scale above which the artwork was photographed at an
 # angle, and its proportions are not judged (a 12% keystone already reads as a 10% stretch).
 PERSPECTIVE_LIMIT = 0.12
+ECC_PAD = 0.3  # window around the placement, as a share of the artwork's longer side
+ECC_BELOW_INLIERS = 40  # keypoint fits with fewer inliers than this are aligned by ECC as well
+ECC_ITERATIONS = 80
+ECC_MIN_LEVEL_SIDE = 40  # pyramid levels whose artwork would be thinner than this are skipped
+ECC_MIN_NCC = 0.6  # the aligned artwork must correlate at least this well with the scene
+ECC_MIN_GAIN = 0.01  # and better than the placement it started from
+MAX_ANISOTROPY = 3.0  # longest over shortest axis scale of a believable placement
+AFFINE_PREFERRED = 0.85  # an affine fit with this share of the homography's inliers is the one believed
 
 
 @dataclass
@@ -299,7 +307,12 @@ def _match(asset: PreparedAsset, feats: SceneFeatures) -> AssetMatch:
             and len(feats.keypoints) >= MIN_INLIERS:
         found = _sift_match(asset, feats)
         if not isinstance(found, AssetMatch):
-            by_keypoints = _from_homography(asset, feats.rgb, *found)
+            H, inliers, core = found
+            if inliers < ECC_BELOW_INLIERS and _perspective(H, *asset.gray.shape[::-1]) < 0.02:
+                # A few keypoints fix the position well and the proportions badly; the pixels settle it.
+                refined = _fit_affine(asset, feats.gray, H)
+                H = H if refined is None else refined
+            by_keypoints = _from_homography(asset, feats.rgb, H, inliers, core)
             if not flat(asset):
                 return by_keypoints
         else:
@@ -310,7 +323,8 @@ def _match(asset: PreparedAsset, feats: SceneFeatures) -> AssetMatch:
         # kept: the template wins on copies in proportion, keypoints on rotated ones.
         placed = _template_match(asset, feats.gray)
         if placed is not None:
-            by_template = _from_homography(asset, feats.rgb, _refine(asset, feats.gray, placed[0]), 0)
+            by_template = _from_homography(
+                asset, feats.rgb, _fit_affine_or_refine(asset, feats.gray, placed[0]), 0)
             if by_keypoints is None or (by_template.similarity or 0) >= (by_keypoints.similarity or 0):
                 return by_template
     return by_keypoints or miss
@@ -336,7 +350,7 @@ def _sift_match(asset: PreparedAsset, feats: SceneFeatures) -> tuple[np.ndarray,
         return AssetMatch(asset.asset_id, False, inliers=len(good))
     src = np.float32(src_pts).reshape(-1, 1, 2)
     dst = np.float32(dst_pts).reshape(-1, 1, 2)
-    H, inlier_mask = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
+    H, inlier_mask = _fit(src, dst)
     if H is None:
         return AssetMatch(asset.asset_id, False, inliers=0)
     inliers = int(inlier_mask.sum())
@@ -345,6 +359,48 @@ def _sift_match(asset: PreparedAsset, feats: SceneFeatures) -> tuple[np.ndarray,
     agreed = dst.reshape(-1, 2)[inlier_mask.ravel().astype(bool)]
     core = (int(agreed[:, 0].min()), int(agreed[:, 1].min()), int(agreed[:, 0].max()) + 1, int(agreed[:, 1].max()) + 1)
     return H, inliers, core
+
+
+def _fit(src: np.ndarray, dst: np.ndarray) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """RANSAC fit of matched keypoints, as a 3x3 matrix and its inlier mask.
+
+    Artwork is placed flat far more often than photographed at an angle, so an affine fit (six numbers) is
+    preferred whenever it explains nearly as many points as a homography (eight). A homography fitted to
+    a dozen or two points has the freedom to bend itself around a stretched or skewed copy, reading the
+    distortion as perspective, which the placement check then ignores; the affine cannot, and a copy
+    really photographed at an angle still gains enough inliers from the projective terms to win.
+    """
+    H, hmask = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
+    M, amask = cv2.estimateAffine2D(src, dst, method=cv2.RANSAC, ransacReprojThreshold=5.0)
+    if M is None or amask is None:
+        return H, hmask
+    affine = np.vstack([M, [0, 0, 1]]).astype(np.float64)
+    if H is None or hmask is None or not _plausible(H):
+        return affine, amask
+    kept, held = int(amask.sum()), int(hmask.sum())
+    # The affine only takes over when it would pass the same gates the homography passes (a match is never
+    # lost to it), and not when many points agree on a real tilt: a homography with that much support is a
+    # photograph taken at an angle, whose keystone would otherwise read as a stretched copy.
+    passes = kept >= max(4, MIN_INLIERS) and kept / len(src) >= MIN_INLIER_RATIO
+    if passes and kept >= AFFINE_PREFERRED * held and not _tilted(src, dst, H, affine, hmask):
+        return affine, amask
+    return H, hmask
+
+
+TILT_FIT_GAIN = 0.75  # the homography's mean error under this share of the affine's: the tilt is real
+
+
+def _tilted(src: np.ndarray, dst: np.ndarray, H: np.ndarray, A: np.ndarray, mask: np.ndarray) -> bool:
+    """Whether the points show a real camera tilt. Both fits can keep every point of a poster shot at an angle,
+    but only the homography follows its narrowing: its error on those points is clearly smaller. On a flat but
+    stretched copy the two fit alike, and the affine (which cannot bend around the stretch) is the one to keep."""
+    keep = mask.ravel().astype(bool)
+    if keep.sum() < 3 * MIN_INLIERS:
+        return False  # too few points for the comparison to mean anything; a dozen can fit either way
+    s, d = src[keep], dst[keep].reshape(-1, 2)
+    err_h = float(np.linalg.norm(cv2.perspectiveTransform(s, H).reshape(-1, 2) - d, axis=1).mean())
+    err_a = float(np.linalg.norm(cv2.transform(s, A[:2]).reshape(-1, 2) - d, axis=1).mean())
+    return err_a > 0.5 and err_h < TILT_FIT_GAIN * err_a
 
 
 def _template_match(asset: PreparedAsset, scene_gray: np.ndarray) -> tuple[np.ndarray, int] | None:
@@ -433,6 +489,97 @@ def _refine(asset: PreparedAsset, scene_gray: np.ndarray, H: np.ndarray) -> np.n
     return refined
 
 
+def _masked_ncc(a: np.ndarray, b: np.ndarray, mask: np.ndarray) -> float:
+    """Zero-mean normalised correlation of two grey images over the mask."""
+    m = mask > 0
+    if m.sum() < 50:
+        return -1.0
+    x, y = a[m].astype(np.float64), b[m].astype(np.float64)
+    x -= x.mean()
+    y -= y.mean()
+    d = float(np.sqrt((x * x).sum() * (y * y).sum()))
+    return float((x * y).sum() / d) if d > 1e-6 else -1.0
+
+
+def _fit_affine(asset: PreparedAsset, scene_gray: np.ndarray, H: np.ndarray) -> np.ndarray | None:
+    """Affine alignment of the artwork inside a padded window around its placement, or None.
+
+    ECC (enhanced correlation coefficient) maximises the correlation between the artwork and the scene
+    under a full affine warp, so scale along each axis and shear are free, which template matching (a
+    scale and an aspect from a short list) and a handful of keypoints cannot measure. It runs coarse to
+    fine because the correlation is only smooth near the answer, and only over the artwork's own pixels
+    (the scene behind a logo is anything). The start is the placement already found; the result is kept
+    only if it correlates clearly better than the start and has not wandered to an implausible shape.
+    """
+    A, t = H[:2, :2], H[:2, 2]
+    scale = float(np.sqrt(abs(np.linalg.det(A))))
+    ah, aw = asset.gray.shape
+    if scale < 0.03 or not np.isfinite(scale):
+        return None
+    tw, th = max(16, round(aw * scale)), max(16, round(ah * scale))
+    if min(tw, th) > 700:
+        return None
+    tpl = cv2.resize(asset.gray, (tw, th), interpolation=cv2.INTER_AREA)
+    tmask = (cv2.resize(asset.mask.astype(np.uint8) * 255, (tw, th), interpolation=cv2.INTER_AREA) > 127
+             ).astype(np.uint8) * 255
+    if tmask.mean() < 8:
+        return None
+    to_tpl = np.diag([tw / aw, th / ah])  # asset pixels to template pixels
+    lin = A @ np.linalg.inv(to_tpl)  # template pixels to scene pixels
+    corners = (lin @ np.array([[0, tw, tw, 0], [0, 0, th, th]], dtype=np.float64)).T + t
+    pad = ECC_PAD * max(tw, th)
+    x0, y0 = max(0, int(corners[:, 0].min() - pad)), max(0, int(corners[:, 1].min() - pad))
+    x1, y1 = min(scene_gray.shape[1], int(corners[:, 0].max() + pad)), min(scene_gray.shape[0],
+                                                                         int(corners[:, 1].max() + pad))
+    if x1 - x0 < 16 or y1 - y0 < 16:
+        return None
+    roi = scene_gray[y0:y1, x0:x1].astype(np.float32)
+    start = np.hstack([lin, (t - [x0, y0]).reshape(2, 1)]).astype(np.float32)
+
+    def score(w: np.ndarray) -> float:
+        seen = cv2.warpAffine(roi, w, (tw, th), flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR)
+        return _masked_ncc(tpl, seen, tmask)
+
+    before = score(start)
+    warp = start.copy()
+    for f in (0.25, 0.5, 1.0):
+        if f < 1.0 and min(tw, th) * f < ECC_MIN_LEVEL_SIDE:
+            continue
+        sz = (max(8, round(tw * f)), max(8, round(th * f)))
+        t_f = cv2.resize(tpl, sz, interpolation=cv2.INTER_AREA).astype(np.float32)
+        r_f = cv2.resize(roi, None, fx=f, fy=f, interpolation=cv2.INTER_AREA) if f < 1.0 else roi
+        # The window's mask in the scene's frame; ECC reads it as which scene pixels are valid.
+        w_f = warp.copy()
+        w_f[:, 2] *= f
+        valid = cv2.warpAffine(cv2.resize(tmask, sz, interpolation=cv2.INTER_NEAREST), w_f, r_f.shape[::-1],
+                               flags=cv2.INTER_NEAREST)
+        try:
+            _, w_f = cv2.findTransformECC(t_f, r_f, w_f, cv2.MOTION_AFFINE,
+                                          (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, ECC_ITERATIONS, 1e-4),
+                                          valid, 5)
+        except cv2.error:
+            # Not converging is common from a poor start at a coarse level; a finer one may still settle, and a
+            # finest level that fails keeps what the coarser ones found (the score below still has to agree).
+            continue
+        warp = w_f.copy()
+        warp[:, 2] /= f
+    # The artwork's centre may move a little, never out of the window it was looked for in: past that the fit
+    # has locked onto something else nearby.
+    centre = np.array([tw / 2, th / 2, 1.0])
+    if np.linalg.norm(warp @ centre - start @ centre) > pad:
+        return None
+    after = score(warp)
+    if after < ECC_MIN_NCC or after < before + ECC_MIN_GAIN:
+        return None
+    out = np.vstack([np.hstack([warp[:, :2] @ to_tpl, (warp[:, 2] + [x0, y0]).reshape(2, 1)]), [0, 0, 1]])
+    return out.astype(np.float64) if _plausible(out) else None
+
+
+def _fit_affine_or_refine(asset: PreparedAsset, scene_gray: np.ndarray, H: np.ndarray) -> np.ndarray:
+    fitted = _fit_affine(asset, scene_gray, H)
+    return _refine(asset, scene_gray, H) if fitted is None else fitted
+
+
 def _valid(res: np.ndarray) -> np.ndarray:
     """Masked correlation divides by almost nothing over flat patches; those scores are noise, not matches."""
     res[~np.isfinite(res) | (res > 1.0)] = 0.0
@@ -502,9 +649,14 @@ def _placement(H: np.ndarray, w: int, h: int) -> tuple[float, float, float]:
 
 
 def _plausible(H: np.ndarray) -> bool:
-    """Reject degenerate fits: mirrored, collapsed or wildly sheared."""
+    """Reject degenerate fits: mirrored, collapsed, wildly sheared or stretched past any real layout."""
     det = float(np.linalg.det(H[:2, :2]))
-    return 0.005 < det < 200 and abs(H[2, 0]) < 0.005 and abs(H[2, 1]) < 0.005
+    if not (0.005 < det < 200 and abs(H[2, 0]) < 0.005 and abs(H[2, 1]) < 0.005):
+        return False
+    # A dozen keypoints can be fitted by a very anisotropic affine map (3x to 40x) that no designer would
+    # make; reporting that as "out of proportion" accuses a coincidence, so such a fit is no match at all.
+    sv = np.linalg.svd(H[:2, :2], compute_uv=False)
+    return bool(sv[0] <= MAX_ANISOTROPY * sv[1])
 
 
 def _lab(rgb: np.ndarray) -> np.ndarray:

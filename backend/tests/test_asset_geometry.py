@@ -96,6 +96,22 @@ def test_the_measured_stretch_is_close_to_the_real_one(wordmark):
     assert m.stretch == pytest.approx(1.3, abs=0.06)
 
 
+def test_the_character_stretched_or_squashed_is_measured_not_mirrored():
+    """Few keypoints on a rounded emblem let a homography bend around the distortion, or a flipped fit
+    stand in for it; the affine fit and the pixel alignment keep it a proportion error."""
+    kit = asset_match.prepare(2, _kit())
+    for how, expect in (({"wide": 1.3}, 1.3), ({"wide": 0.75}, 0.75)):
+        m = asset_match.match(kit, _scene(_kit(), **how))
+        assert m.found and not m.mirrored and m.stretch == pytest.approx(expect, abs=0.08), (how, m.stretch)
+
+
+def test_a_fit_no_layout_could_produce_is_no_match():
+    """A dozen keypoints can be fitted by a map that squeezes one axis 20 times; that is a coincidence,
+    not artwork, and accusing it of being out of proportion would be a false alarm."""
+    assert not asset_match._plausible(np.array([[20.0, 0, 0], [0, 1.0, 0], [0, 0, 1]]))
+    assert asset_match._plausible(np.array([[1.3, 0, 0], [0, 1.0, 0], [0, 0, 1]]))
+
+
 def test_a_mirrored_character_is_found_and_called_mirrored():
     m = asset_match.match(asset_match.prepare(2, _kit()), _scene(_kit(), mirror=True))
     assert m.found and m.mirrored
@@ -214,3 +230,19 @@ def test_an_altered_logo_says_where_in_plain_words():
     [f] = run.findings
     assert "colour differs at the top left" in f.explanation and "shape at the bottom right" in f.explanation
     assert "r1c1" not in f.explanation
+
+
+@pytest.mark.parametrize("keystone", [0.10, 0.15, 0.25])
+def test_artwork_photographed_at_an_angle_is_not_called_out_of_proportion(wordmark, keystone):
+    """A poster shot from one side narrows towards its far edge. Many keypoints agree on that tilt, so the
+    homography keeps it as perspective; preferring the flat (affine) fit read it as a stretched copy."""
+    import cv2
+
+    scene = np.asarray(_scene(_wordmark("Kitepath")))
+    h, w = scene.shape[:2]
+    pull = keystone * h / 2
+    src = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
+    dst = np.float32([[0, 0], [w, pull], [w, h - pull], [0, h]])
+    tilted = cv2.warpPerspective(scene, cv2.getPerspectiveTransform(src, dst), (w, h), borderValue=(235, 232, 225))
+    m = asset_match.match(wordmark, Image.fromarray(tilted))
+    assert m.found and not any("proportion" in d for d in m.distortions), m.distortions
