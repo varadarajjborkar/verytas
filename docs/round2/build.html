@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Verytas: Round 2 Build</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0f172a; --body: #1e293b; --muted: #475569; --subtle: #64748b;
+    --line: #dbe3ee; --soft: #f4f7fb; --accent: #0b6bcb; --accent-ink: #0a4f96; --accent-soft: #e8f2fd;
+    --ok: #15803d; --ok-soft: #e7f6ec; --warn: #b45309; --warn-soft: #fdf3e3; --bad: #b91c1c; --bad-soft: #fdeaea;
+    --priv: #8a5a00; --priv-soft: #fff7e6;
+  }
+  @page {
+    size: A4; margin: 17mm 16mm 18mm;
+    @bottom-left { content: "Verytas  ·  Team kotekarprajyot953  ·  Round 2: The Build"; font: 500 7.5pt Inter, sans-serif; color: #64748b; }
+    @bottom-right { content: counter(page) " / " counter(pages); font: 500 7.5pt Inter, sans-serif; color: #64748b; }
+  }
+  @page cover { margin: 0; @bottom-left { content: none; } @bottom-right { content: none; } }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; background: #fff; color: var(--body); font: 9.4pt/1.52 Inter, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  h1, h2, h3, h4 { color: var(--ink); line-height: 1.25; margin: 0; }
+  h2 { font-size: 17pt; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 4mm; display: flex; align-items: baseline; gap: 3mm; }
+  h2 .n { font-size: 10pt; font-weight: 600; color: var(--accent); min-width: 7mm; }
+  h3 { font-size: 11.5pt; font-weight: 600; margin: 6mm 0 2mm; }
+  h4 { font-size: 9.8pt; font-weight: 600; margin: 3mm 0 1mm; }
+  p { margin: 0 0 2.6mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 5mm; }
+  li { margin: 0 0 1mm; }
+  li::marker { color: var(--subtle); }
+  strong { color: var(--ink); font-weight: 600; }
+  a { color: var(--accent-ink); text-decoration: none; }
+  code, .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 8.4pt; }
+  section.chapter { margin-top: 12mm; }
+  .opener { break-inside: avoid; }
+  .reserve { height: 70mm; margin-bottom: -70mm; }
+  section.newpage { break-before: page; margin-top: 0; }
+  .kicker, h2, .lead, h3, h4 { break-after: avoid; }
+  .lead { font-size: 11pt; line-height: 1.5; color: var(--muted); margin-bottom: 5mm; max-width: 165mm; }
+  .kicker { font-size: 7.6pt; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.5mm; }
+
+  /* Cover */
+  .cover { page: cover; height: 297mm; width: 210mm; position: relative; overflow: hidden; background: #0b1f3a; color: #fff; break-after: page; }
+  .cover .grid { position: absolute; inset: 0; }
+  .cover .inner { position: absolute; left: 20mm; right: 20mm; top: 34mm; }
+  .cover .tag { font-size: 8.5pt; letter-spacing: 0.16em; text-transform: uppercase; color: #8ec5ff; font-weight: 600; }
+  .cover h1 { color: #fff; font-size: 46pt; font-weight: 700; letter-spacing: -0.03em; margin: 8mm 0 3mm; }
+  .cover .sub { font-size: 16pt; color: #d6e7fb; font-weight: 500; max-width: 150mm; line-height: 1.35; }
+  .cover .line { height: 1px; background: rgba(255,255,255,0.18); margin: 12mm 0 8mm; }
+  .cover .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm 10mm; font-size: 9.5pt; color: #c9d9ee; }
+  .cover .meta b { display: block; color: #fff; font-weight: 600; font-size: 10.5pt; margin-top: 0.8mm; }
+  .cover .ctoc { position: absolute; left: 20mm; right: 20mm; top: 176mm; }
+  .cover .ch { font-size: 8.5pt; letter-spacing: 0.16em; text-transform: uppercase; color: #8ec5ff; font-weight: 600; margin-bottom: 3mm; }
+  .cover .cl { columns: 2; column-gap: 12mm; width: 150mm; font-size: 9.5pt; color: #d6e7fb; }
+  .cover .cl div { padding: 1.3mm 0; border-bottom: 1px solid rgba(255,255,255,0.10); break-inside: avoid; }
+  .cover .cl span { color: #8ec5ff; font-weight: 600; display: inline-block; width: 8mm; }
+  .cover .foot { position: absolute; left: 20mm; right: 20mm; bottom: 18mm; font-size: 8.5pt; color: #9fb6d3; display: flex; justify-content: space-between; }
+
+  /* Components */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+  .cols3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .card { border: 1px solid var(--line); border-radius: 3mm; padding: 3.5mm 4mm; background: #fff; break-inside: avoid; }
+  .card.soft { background: var(--soft); border-color: transparent; }
+  .card.accent { background: var(--accent-soft); border-color: #c6dcf5; }
+  .card h4 { margin-top: 0; }
+  .card p:last-child, .card ul:last-child { margin-bottom: 0; }
+  .stat { border-left: 2.5px solid var(--accent); padding: 0.5mm 0 0.5mm 3.5mm; break-inside: avoid; }
+  .stat .v { font-size: 21pt; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; line-height: 1.1; }
+  .stat .l { font-size: 8.4pt; color: var(--muted); margin-top: 1mm; line-height: 1.4; }
+  .stat .s { font-size: 7.2pt; color: var(--subtle); margin-top: 1mm; }
+  .callout { border-radius: 3mm; background: var(--accent-soft); padding: 4mm 5mm; margin: 4mm 0; break-inside: avoid; }
+  .callout p:last-child { margin: 0; }
+  .callout .big { font-size: 12pt; font-weight: 600; color: var(--accent-ink); line-height: 1.4; }
+  table { width: 100%; border-collapse: collapse; margin: 1mm 0 4mm; font-size: 8.6pt; break-inside: auto; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  th { text-align: left; font-weight: 600; color: var(--ink); background: var(--soft); padding: 1.8mm 2.4mm; border-bottom: 1px solid var(--line); vertical-align: bottom; }
+  td { padding: 1.8mm 2.4mm; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.k { font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .pill { display: inline-block; font-size: 7pt; font-weight: 600; padding: 0.3mm 1.8mm; border-radius: 10mm; background: var(--soft); color: var(--muted); white-space: nowrap; }
+  .pill.r2 { background: var(--accent-soft); color: var(--accent-ink); }
+  .pill.r3 { background: var(--ok-soft); color: var(--ok); }
+  .pill.later { background: #f1f5f9; color: var(--subtle); }
+  figure { margin: 3mm 0 5mm; break-inside: avoid; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { font-size: 8pt; color: var(--subtle); margin-top: 2mm; line-height: 1.45; }
+  figcaption b { color: var(--muted); font-weight: 600; }
+  .note { font-size: 8pt; color: var(--subtle); }
+  .toc { columns: 2; column-gap: 10mm; font-size: 10pt; margin-top: 4mm; }
+  .toc div { display: flex; gap: 3mm; padding: 1.6mm 0; border-bottom: 1px solid var(--line); break-inside: avoid; }
+  .toc .n { color: var(--accent); font-weight: 600; min-width: 7mm; }
+  .persona { break-inside: avoid; }
+  .persona .role { font-size: 7.4pt; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  .persona h4 { font-size: 10.5pt; margin: 0.6mm 0 1.5mm; }
+  .persona dl { margin: 0; font-size: 8.5pt; }
+  .persona dt { font-weight: 600; color: var(--ink); margin-top: 1.4mm; }
+  .persona dd { margin: 0; color: var(--muted); }
+
+  /* Finding mock-up */
+  .mock { border: 1px solid var(--line); border-radius: 3.5mm; overflow: hidden; break-inside: avoid; font-size: 8.6pt; }
+  .mock .bar { background: var(--soft); padding: 2mm 4mm; display: flex; justify-content: space-between; color: var(--subtle); font-size: 7.6pt; border-bottom: 1px solid var(--line); }
+  .mock .body { display: grid; grid-template-columns: 1.05fr 1fr; }
+  .mock .doc { padding: 4mm; border-right: 1px solid var(--line); line-height: 1.7; color: var(--body); }
+  .mock mark { background: var(--bad-soft); color: var(--bad); border-bottom: 1.5px solid var(--bad); padding: 0 0.5mm; }
+  .mock mark.w { background: var(--warn-soft); color: var(--warn); border-bottom-color: var(--warn); }
+  .mock .side { padding: 3.5mm 4mm; display: flex; flex-direction: column; gap: 2.5mm; }
+  .mock .f { border: 1px solid var(--line); border-radius: 2.5mm; padding: 2.5mm 3mm; }
+  .mock .f .h { display: flex; gap: 2mm; align-items: center; font-weight: 600; color: var(--ink); }
+  .mock .lv { font-size: 6.8pt; font-weight: 700; padding: 0.3mm 1.6mm; border-radius: 1mm; background: var(--bad-soft); color: var(--bad); }
+  .mock .lv.w { background: var(--warn-soft); color: var(--warn); }
+  .mock .why { color: var(--muted); margin-top: 1mm; }
+  .mock .cite { font-size: 7.4pt; color: var(--accent-ink); margin-top: 1mm; }
+  .mock .fix { margin-top: 1.5mm; background: var(--ok-soft); color: var(--ok); border-radius: 1.5mm; padding: 1.2mm 2mm; font-weight: 500; }
+  .mock .acts { display: flex; gap: 1.5mm; margin-top: 1.8mm; flex-wrap: wrap; }
+  .mock .acts span { font-size: 7pt; border: 1px solid var(--line); border-radius: 1.2mm; padding: 0.3mm 1.6mm; color: var(--muted); }
+  .mock .acts span.p { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  svg text { font-family: Inter, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  .avoid { break-inside: avoid; }
+  .refs { font-size: 7.8pt; color: var(--muted); }
+  .refs li { margin-bottom: 1.2mm; word-break: break-word; }
+  .spacer { height: 3mm; }
+  /* Round 2 additions */
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .shot { margin: 3mm 0 4mm; }
+  .shot img { width: 100%; display: block; border: 1px solid var(--line); border-radius: 2.5mm; }
+  ol.steps { padding-left: 5.5mm; }
+  ol.steps li { margin-bottom: 1.8mm; }
+  ol.steps li::marker { color: var(--accent); font-weight: 600; }
+  .imp { display: grid; grid-template-columns: 11mm 1fr; gap: 4mm; border: 1px solid var(--line); border-radius: 3mm; padding: 4mm 5mm 2mm; margin-bottom: 4mm; break-inside: avoid; }
+  .imp .num { width: 9mm; height: 9mm; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 12pt; display: grid; place-items: center; }
+  .imp h3 { margin-top: 0.8mm; }
+  table.wrap td.k { white-space: normal; }
+</style>
+</head>
+<body>
+
+<!-- ============================== COVER ============================== -->
+<div class="cover">
+  <svg class="grid" viewBox="0 0 210 297" preserveAspectRatio="none" aria-hidden="true">
+    <defs>
+      <pattern id="dots" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.35" fill="#ffffff" opacity="0.10"/></pattern>
+      <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f6fd1" stop-opacity="0.55"/><stop offset="1" stop-color="#0b1f3a" stop-opacity="0"/></linearGradient>
+    </defs>
+    <rect width="210" height="297" fill="url(#dots)"/>
+    <circle cx="200" cy="250" r="120" fill="url(#glow)"/>
+    <g transform="translate(118 242)" opacity="0.95">
+      <line x1="-22" y1="28" x2="18" y2="20" stroke="#ffffff" stroke-width="0.8" opacity="0.7"/>
+      <polygon points="30,-12 6,30 54,30" fill="none" stroke="#8ec5ff" stroke-width="0.9"/>
+      <line x1="42" y1="18" x2="92" y2="2" stroke="#8ec5ff" stroke-width="0.7"/>
+      <line x1="42" y1="19" x2="92" y2="12" stroke="#5aa8f5" stroke-width="0.7"/>
+      <line x1="42" y1="20" x2="92" y2="22" stroke="#2e86e6" stroke-width="0.7"/>
+      <line x1="42" y1="21" x2="92" y2="32" stroke="#1f6fd1" stroke-width="0.7"/>
+    </g>
+  </svg>
+  <div class="inner">
+    <div class="tag">Inkloom AI Challenge  ·  Round 2: The Build</div>
+    <h1>Verytas</h1>
+    <div class="sub">Brand review that shows its work: every post, image, document and video checked against the brand's own rules and facts before it is published, with a person making the final call.</div>
+    <div class="line"></div>
+    <div class="meta">
+      <div>Team<b>kotekarprajyot953</b></div>
+      <div>Members<b>Prajyot Malesh Kotekar (team leader)<br>Varadaraj J Borkar</b></div>
+      <div>Live demo<b>verytas.pages.dev</b></div>
+      <div>Source code<b>github.com/varadarajjborkar/verytas</b></div>
+    </div>
+  </div>
+  <div class="ctoc"><div class="ch">Contents</div><div class="cl"><div><span>01</span>What works today</div><div><span>02</span>Try it: the core workflow</div><div><span>03</span>Completed features</div><div><span>04</span>Architecture and key decisions</div><div><span>05</span>Technology, models and services</div><div><span>06</span>What was hard, and how we solved it</div><div><span>07</span>How well it works</div><div><span>08</span>User testing</div><div><span>09</span>Security, privacy and responsible AI</div><div><span>10</span>Changes from the Round 1 plan</div><div><span>11</span>What does not work yet</div><div><span>12</span>Three improvements for Round 3</div><div><span>13</span>Team and contributions</div></div></div>
+  <div class="foot"><span>Round 2 build report  ·  October 2026</span><span>v2.0</span></div>
+</div>
+
+<!-- ============================== 1. AT A GLANCE ============================== -->
+<section>
+  <div class="kicker">Section 1</div>
+  <h2><span class="n">01</span>What works today</h2>
+  <p class="lead">In Round 1 we planned a review gate that sits between a finished draft and publishing. It is now built, deployed and usable without help: a creator submits a post, Verytas finds and explains the problems, suggests fixes, and the brand team approves or sends it back, with every step recorded.</p>
+
+  <div class="cols3" style="margin-bottom:5mm">
+    <div class="stat"><div class="v">93%</div><div class="l">of official-artwork misuse caught, with 4.7% false alarms, on 1,200 test scenes.</div><div class="s">backend/evals/results/assets.md</div></div>
+    <div class="stat"><div class="v">96%</div><div class="l">of planted violations found by a black-box tester that knows Verytas only through its public API; 0% false alarms on clean posts.</div><div class="s">blackbox/, 216 cases</div></div>
+    <div class="stat"><div class="v">630+</div><div class="l">backend tests run offline on every push, with type checks, lint, a production build, a secret scan and dependency audits.</div><div class="s">GitHub Actions</div></div>
+  </div>
+
+  <div class="callout">
+    <p class="big">Open verytas.pages.dev, pick a person at Kitepath (a made-up online learning brand with eight weeks of history), and follow the short tour. Both sides of the workflow, creator and brand team, are one click apart.</p>
+  </div>
+
+  <h3>Round 1 promises against what shipped</h3>
+  <table>
+    <thead><tr><th style="width:44%">Round 2 cut line from our plan</th><th style="width:14%">Status</th><th>Where to see it</th></tr></thead>
+    <tbody>
+      <tr><td>Brand-book import with approval; facts with dates; terms; artwork</td><td><span class="pill ok">Done</span></td><td>Library: Intake, Rules, Facts, Events, Contacts, Terms, Artwork</td></tr>
+      <tr><td>Submit a caption with images or a PDF; get cited findings with fixes</td><td><span class="pill ok">Done</span></td><td>My reviews (creator)</td></tr>
+      <tr><td>Claims, terms, tone, legal patterns, accessibility, confidentiality, palette and artwork checks</td><td><span class="pill ok">Done</span></td><td>Any review; "How it was checked"</td></tr>
+      <tr><td>Roles, states, comments, versions, overrides with notes</td><td><span class="pill ok">Done</span></td><td>Review queue (brand team)</td></tr>
+      <tr><td>Redaction, signed findings, audit chain; deployed demo</td><td><span class="pill ok">Done</span></td><td>Live site; audit log through the API</td></tr>
+    </tbody>
+  </table>
+  <p>We also delivered work planned for Round 3: video review, Hindi and Hinglish speech, cross-checks between the parts of a post, guideline health, creator drift profiles and calibrated confidence. Section 10 explains why, and Section 12 names three new improvements for Round 3.</p>
+</section>
+
+<!-- ============================== 2. WORKFLOW ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 2</div>
+  <h2><span class="n">02</span>Try it: the core workflow</h2>
+  <p class="lead">The demo signs you in by picking a person, so judges can try both sides without creating accounts; signing up for your own empty workspace is also possible. A guided tour runs on the first visit to each side and can be replayed from Settings.</p>
+
+  <ol class="steps">
+    <li><strong>Sign in as Dev Sharma (creator).</strong> Open <em>My reviews</em>, paste a caption such as <em>"Kitepath has 2 million learners. Guaranteed results!"</em>, optionally attach an image, PDF or deck, and run the review. A video also needs a short brief saying what and who is in it, typed or as a voice note.</li>
+    <li><strong>Read the findings.</strong> The 2 million claim is checked against the approved fact (1.2 million) and flagged with the fact cited; "Guaranteed results" is flagged as a promise that needs proof. Each issue is marked in place, with a confidence and a suggested fix.</li>
+    <li><strong>Fix or push back.</strong> Choose the fixes to use and press <em>Apply and re-check</em>. If a reading is wrong, dispute it with an explanation, or ask the brand team. Then send the piece for approval.</li>
+    <li><strong>Switch account to Arjun Mehta (brand team).</strong> The piece is in the review queue, ranked by what needs attention first. Walk through its issues one by one: ask for the fix, keep it with a reason, or escalate.</li>
+    <li><strong>Decide.</strong> Approve, or send it back with the fixes asked for. Every override needs a written reason, and every step goes into the audit log.</li>
+  </ol>
+
+  <figure class="shot"><img src="../assets/review.png" alt="The review screen"><figcaption><b>Figure 1.</b> A piece open on the review screen: the caption with each issue marked in place, the issues listed beside it with the rule, the approved fact and the suggested fix, and a bar at the bottom that walks through them one at a time.</figcaption></figure>
+
+</section>
+
+<!-- ============================== 3. FEATURES ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 3</div>
+  <h2><span class="n">03</span>Completed features</h2>
+  <p class="lead">Everything below is finished and works on the live link. Items that are designed or only partly built are listed in Section 11, not here.</p>
+
+  <div class="cols">
+    <div>
+      <h4>Reads everything in a post</h4>
+      <ul>
+        <li>Caption and text inside images (OCR)</li>
+        <li>Every page of a PDF or Word file (up to 40), including text drawn as shapes and scanned pages</li>
+        <li>Every slide of a deck (up to 60), with speaker notes and hidden slides; every sheet of a workbook</li>
+        <li>HTML pages and emails: title, share text, alt text; nothing linked is fetched</li>
+        <li>Video: on-screen text, subtitles and speech, each placed in time</li>
+        <li>Speech in English, Hindi and Hinglish, transcribed on our server</li>
+      </ul>
+      <h4>Checks against the brand's own sources</h4>
+      <ul>
+        <li>Claims against approved facts with validity dates: contradicted, unsupported or outdated, with the fact cited</li>
+        <li>Promotional and legal claims that need proof: guarantees, "#1", superlatives</li>
+        <li>Banned and preferred words, and confidential terms, including look-alike spellings and codenames said aloud</li>
+        <li>Tone, messaging and topic drift, judged against the brand's rules and examples</li>
+        <li>Official artwork: stretched, squashed, skewed, mirrored, recoloured or redrawn, boxed on the image</li>
+        <li>Redrawn mascots, naming what changed (a wrong colour, an extra eye, a missing tail)</li>
+        <li>Faces against the brand's approved people (the list is kept through the API for now)</li>
+        <li>Accessibility: contrast over images, alt text, readability, hashtag casing</li>
+        <li>Cross-checks: caption, image text, voice-over and on-screen text must agree</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Explains, fixes and keeps people in charge</h4>
+      <ul>
+        <li>Every issue marked in place, with the rule or fact behind it and a confidence</li>
+        <li>Document preview with a box on each flagged phrase; sheets as tables with flagged cells tinted</li>
+        <li>Fixes that swap, rewrite or remove, checked so the offer and call to action survive; applied in one click</li>
+        <li>Disputes read on the re-check; escalation to the brand team, which can be withdrawn</li>
+        <li>Versions for every resubmission, comparable side by side</li>
+        <li>A check that could not run is shown as "not checked", never as passed</li>
+      </ul>
+      <h4>Brand Console</h4>
+      <ul>
+        <li>Dashboard, risk-ranked review queue, escalations inbox; walk through issues one by one, then approve or send back, with a written reason for every override</li>
+        <li>Library of rules, dated facts, terms, confidential terms, artwork and public contacts (an unlisted phone number in a post is flagged)</li>
+        <li>Brand events (a launch, sale or crisis) whose guidance applies while they run</li>
+        <li>Sign up as a manager for your own workspace, with a join code for creators</li>
+        <li>Intake: brand books, price sheets, decks and logos become draft rules and facts that a person approves</li>
+        <li>Guideline health (rules people keep overriding), creator drift profiles</li>
+        <li>Confidence calibrated from reviewer decisions; warning thresholds learned from them</li>
+      </ul>
+      <h4>Easy to pick up, safe by default</h4>
+      <ul>
+        <li>Guided tour per side, plain-word summaries, every status and score explained where it appears</li>
+        <li>Ask Verytas, a chat over the brand's own data; a page on how Verytas uses AI</li>
+        <li>Redaction before any model call; signed findings; hash-chained audit log; role checks on every request; light and dark mode</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== 4. ARCHITECTURE ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 4</div>
+  <h2><span class="n">04</span>Architecture and key decisions</h2>
+  <p class="lead">Two web apps share one codebase and one API. Prism, the review engine, splits each submission into parts and runs a check agent on each. Rules run in code first; models only judge meaning, and only after confidential terms are removed.</p>
+
+  <figure>
+    <svg viewBox="0 0 680 330" role="img" aria-label="Architecture as built">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
+      </defs>
+      <!-- people -->
+      <rect x="10" y="20" width="120" height="44" rx="8" fill="#e0f2fe" stroke="#0284c7"/>
+      <text x="70" y="39" font-size="11" font-weight="600" text-anchor="middle" fill="#0c4a6e">Studio</text>
+      <text x="70" y="54" font-size="9" text-anchor="middle" fill="#0c4a6e">creators</text>
+      <rect x="10" y="76" width="120" height="44" rx="8" fill="#e0f2fe" stroke="#0284c7"/>
+      <text x="70" y="95" font-size="11" font-weight="600" text-anchor="middle" fill="#0c4a6e">Brand Console</text>
+      <text x="70" y="110" font-size="9" text-anchor="middle" fill="#0c4a6e">brand team</text>
+      <!-- web -->
+      <rect x="160" y="20" width="140" height="100" rx="8" fill="#dbeafe" stroke="#2563eb"/>
+      <text x="230" y="44" font-size="11" font-weight="600" text-anchor="middle" fill="#1e3a8a">Next.js server</text>
+      <text x="230" y="62" font-size="9" text-anchor="middle" fill="#1e3a8a">holds the session token</text>
+      <text x="230" y="76" font-size="9" text-anchor="middle" fill="#1e3a8a">forwards an allowlist</text>
+      <text x="230" y="90" font-size="9" text-anchor="middle" fill="#1e3a8a">of routes; no keys</text>
+      <text x="230" y="104" font-size="9" text-anchor="middle" fill="#1e3a8a">in the browser</text>
+      <line x1="130" y1="42" x2="158" y2="55" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
+      <line x1="130" y1="98" x2="158" y2="85" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
+      <!-- api -->
+      <rect x="330" y="20" width="150" height="100" rx="8" fill="#e0e7ff" stroke="#3b5bdb"/>
+      <text x="405" y="44" font-size="11" font-weight="600" text-anchor="middle" fill="#1e2a78">FastAPI</text>
+      <text x="405" y="62" font-size="9" text-anchor="middle" fill="#1e2a78">role and clearance on</text>
+      <text x="405" y="76" font-size="9" text-anchor="middle" fill="#1e2a78">every call; workflow,</text>
+      <text x="405" y="90" font-size="9" text-anchor="middle" fill="#1e2a78">library, insights,</text>
+      <text x="405" y="104" font-size="9" text-anchor="middle" fill="#1e2a78">Ask Verytas</text>
+      <line x1="300" y1="70" x2="328" y2="70" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
+      <!-- db -->
+      <rect x="510" y="20" width="160" height="100" rx="8" fill="#fef3c7" stroke="#d97706"/>
+      <text x="590" y="44" font-size="11" font-weight="600" text-anchor="middle" fill="#78350f">Database</text>
+      <text x="590" y="62" font-size="9" text-anchor="middle" fill="#78350f">rules, dated facts, artwork,</text>
+      <text x="590" y="76" font-size="9" text-anchor="middle" fill="#78350f">reviews, versions, decisions</text>
+      <text x="590" y="90" font-size="9" text-anchor="middle" fill="#78350f">signed findings,</text>
+      <text x="590" y="104" font-size="9" text-anchor="middle" fill="#78350f">hash-chained audit log</text>
+      <line x1="480" y1="70" x2="508" y2="70" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
+      <!-- prism -->
+      <rect x="160" y="150" width="510" height="110" rx="10" fill="#f8fafc" stroke="#94a3b8"/>
+      <text x="175" y="170" font-size="10" font-weight="700" fill="#14532d" letter-spacing="1">PRISM  ·  ONE AGENT PER PART OF THE POST</text>
+      <line x1="405" y1="120" x2="405" y2="148" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
+      <rect x="175" y="180" width="110" height="66" rx="7" fill="#f1f5f9" stroke="#64748b"/>
+      <text x="230" y="198" font-size="10" font-weight="600" text-anchor="middle" fill="#1e293b">Split and read</text>
+      <text x="230" y="213" font-size="8.5" text-anchor="middle" fill="#334155">pages, slides, frames</text>
+      <text x="230" y="226" font-size="8.5" text-anchor="middle" fill="#334155">OCR, speech to text</text>
+      <text x="230" y="239" font-size="8.5" text-anchor="middle" fill="#334155">(local, on CPU)</text>
+      <rect x="297" y="180" width="110" height="66" rx="7" fill="#dcfce7" stroke="#16a34a"/>
+      <text x="352" y="198" font-size="10" font-weight="600" text-anchor="middle" fill="#14532d">Rule checks</text>
+      <text x="352" y="213" font-size="8.5" text-anchor="middle" fill="#14532d">facts, words, secrets,</text>
+      <text x="352" y="226" font-size="8.5" text-anchor="middle" fill="#14532d">artwork, contrast,</text>
+      <text x="352" y="239" font-size="8.5" text-anchor="middle" fill="#14532d">cross-checks (code)</text>
+      <rect x="419" y="180" width="110" height="66" rx="7" fill="#fee2e2" stroke="#dc2626"/>
+      <text x="474" y="198" font-size="10" font-weight="600" text-anchor="middle" fill="#7f1d1d">Redaction</text>
+      <text x="474" y="213" font-size="8.5" text-anchor="middle" fill="#7f1d1d">secret terms out of</text>
+      <text x="474" y="226" font-size="8.5" text-anchor="middle" fill="#7f1d1d">text and pixels;</text>
+      <text x="474" y="239" font-size="8.5" text-anchor="middle" fill="#7f1d1d">content is data only</text>
+      <rect x="541" y="180" width="118" height="66" rx="7" fill="#dcfce7" stroke="#16a34a"/>
+      <text x="600" y="198" font-size="10" font-weight="600" text-anchor="middle" fill="#14532d">Judge and fixes</text>
+      <text x="600" y="213" font-size="8.5" text-anchor="middle" fill="#14532d">confirm each issue,</text>
+      <text x="600" y="226" font-size="8.5" text-anchor="middle" fill="#14532d">fix checked per rule,</text>
+      <text x="600" y="239" font-size="8.5" text-anchor="middle" fill="#14532d">finding signed</text>
+      <line x1="285" y1="213" x2="295" y2="213" stroke="#64748b" stroke-width="1.2" marker-end="url(#ar)"/>
+      <line x1="407" y1="213" x2="417" y2="213" stroke="#64748b" stroke-width="1.2" marker-end="url(#ar)"/>
+      <line x1="529" y1="213" x2="539" y2="213" stroke="#64748b" stroke-width="1.2" marker-end="url(#ar)"/>
+      <!-- outside -->
+      <rect x="10" y="150" width="120" height="110" rx="8" fill="#fff" stroke="#94a3b8" stroke-dasharray="4 3"/>
+      <text x="70" y="172" font-size="10.5" font-weight="600" text-anchor="middle" fill="#1e293b">Vision worker</text>
+      <text x="70" y="190" font-size="8.5" text-anchor="middle" fill="#334155">Grounding DINO,</text>
+      <text x="70" y="203" font-size="8.5" text-anchor="middle" fill="#334155">SAM 2.1, DINOv2</text>
+      <text x="70" y="221" font-size="8.5" text-anchor="middle" fill="#334155">wakes on demand,</text>
+      <text x="70" y="234" font-size="8.5" text-anchor="middle" fill="#334155">sleeps after 20 min</text>
+      <line x1="158" y1="205" x2="132" y2="205" stroke="#64748b" stroke-width="1.2" marker-end="url(#ar)"/>
+      <rect x="419" y="282" width="251" height="40" rx="8" fill="#f3f4f6" stroke="#6b7280" stroke-dasharray="4 3"/>
+      <text x="544" y="299" font-size="10.5" font-weight="600" text-anchor="middle" fill="#111827">Ollama Cloud</text>
+      <text x="544" y="314" font-size="8.5" text-anchor="middle" fill="#374151">gpt-oss 120b and 20b, gemma4 31b vision, web search</text>
+      <line x1="474" y1="246" x2="474" y2="280" stroke="#dc2626" stroke-width="1.3" marker-end="url(#ar)"/>
+      <text x="482" y="268" font-size="8.5" fill="#7f1d1d">redacted only</text>
+      <text x="10" y="300" font-size="8.5" fill="#64748b">Solid boxes run on our AWS server in Mumbai.</text>
+      <text x="10" y="314" font-size="8.5" fill="#64748b">Dashed boxes are on demand or external.</text>
+    </svg>
+    <figcaption><b>Figure 2.</b> Architecture as built. Text found inside an image, on a slide or in a video's speech goes back through the same checks as a caption, and each finding points to where it was found: image region, page, slide, sheet or video time.</figcaption>
+  </figure>
+
+  <h3>Main technical decisions</h3>
+  <table>
+    <thead><tr><th style="width:26%">Decision</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Rules before models</td><td>Facts, words, confidential terms, artwork and contrast are checked in code: free, instant and fully explainable. Models judge only meaning (tone, implied claims, sarcasm), and a finding from a model alone can never block a post.</td></tr>
+      <tr><td class="k">Never silently pass</td><td>Every check reports its status. A timeout, an unreadable language or a model outage shows as "not checked" or "degraded" on the review, never as clean.</td></tr>
+      <tr><td class="k">Heavy media stays local</td><td>OCR, speech to text, PDF rendering and artwork matching run on our server's CPU, so raw images and audio never leave it. Only redacted text and pixels reach a model.</td></tr>
+      <tr><td class="k">Vision on a worker that sleeps</td><td>Finding redrawn mascots needs three image models, too heavy for the always-on server. They run on a second instance that the API starts when needed and that stops itself after 20 idle minutes, so it costs nothing most of the time.</td></tr>
+      <tr><td class="k">Pull-based deploys</td><td>CI moves a <code>live</code> branch only when every check passes; the server pulls it with a read-only key, builds beside the running version, health-checks it and rolls back on failure. Nothing needs inbound access from CI.</td></tr>
+      <tr><td class="k">Untrusted files in a sealed room</td><td>Word and PowerPoint previews need LibreOffice, a large program reading files strangers upload. It runs one file at a time, as a throwaway user, with no network and no view of the app's files, under memory and time limits.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================== 5. TECHNOLOGY ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 5</div>
+  <h2><span class="n">05</span>Technology, models and services</h2>
+  <p class="lead">Everything the product depends on, as the brief asks: APIs, AI models, datasets, libraries, templates and external services.</p>
+
+  <table>
+    <thead><tr><th style="width:20%">Layer</th><th>What we use</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Frontend</td><td>Next.js 16 (App Router, React 19), Tailwind CSS 4, Zod; OpenUI to render generated answers in Ask Verytas</td></tr>
+      <tr><td class="k">Backend</td><td>Python 3.12, FastAPI, SQLAlchemy 2 (async), SQLite with a Postgres-ready schema, Pydantic, httpx</td></tr>
+      <tr><td class="k">Language models</td><td><code>gpt-oss:120b</code> (claims, fixes, second look on must-fix rules) and <code>gpt-oss:20b</code> (typed judge questions) on Ollama Cloud, behind a provider interface that also supports TypeSafe Jev and Anthropic Claude</td></tr>
+      <tr><td class="k">Vision models</td><td><code>gemma4:31b</code> on Ollama Cloud for scene reading; Grounding DINO (tiny), SAM 2.1 (tiny) and DINOv2 (small) on PyTorch CPU for mascots; OpenCV SIFT, RANSAC and ECC for official artwork; YuNet and SFace for faces</td></tr>
+      <tr><td class="k">Media, local</td><td>RapidOCR (PP-OCR on ONNX Runtime), faster-whisper, pdfium, pypdf, python-docx, PyAV, Pillow, NumPy, LibreOffice (sandboxed)</td></tr>
+      <tr><td class="k">External services</td><td>Ollama Cloud (models and web search for claim research), Wikidata and Wikimedia Commons (a public portrait, only when a brief names someone and the content is not confidential), AWS EC2 in Mumbai, Cloudflare Pages, GitHub Actions, Let's Encrypt via Caddy</td></tr>
+      <tr><td class="k">Security</td><td>Ed25519-signed findings, SHA-256 hash-chained audit log, text and pixel redaction, input guardrails, a content security policy, gitleaks, pip-audit, pnpm audit, hashed lock files, SHA-pinned model files where the source allows</td></tr>
+      <tr><td class="k">Datasets</td><td>No third-party dataset. Every benchmark set is generated by our own seeded scripts or hand-labelled, and lives in the repository with its generator: 1,200 artwork scenes, 425 mascot scenes, 240 OCR images, 104 speech clips, 36 videos, 28 cross-check posts, 32 judgement sentences, 73 findings for fixes</td></tr>
+      <tr><td class="k">Templates</td><td>None. The interface, the sample brands (Kitepath and three others) and their eight weeks of history were written for this project.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>How the pieces talk</h3>
+  <div class="cols">
+    <div class="card soft"><h4>Prism to models</h4><p>Every model call goes through the redactor and a governor with retries, a shared pool of model slots, per-step deadlines and a circuit breaker per model, so a burst of uploads queues instead of failing. Two Ollama keys are held; a refused or exhausted key hands over to the second for ten minutes.</p></div>
+    <div class="card soft"><h4>Decisions back to learning</h4><p>Each reviewer decision updates the rule's precision, the calibration curve and the warning floor. Every change to a learned value is written to the audit log with its before and after.</p></div>
+  </div>
+</section>
+
+<!-- ============================== 6. HARD PARTS ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 6</div>
+  <h2><span class="n">06</span>What was hard, and how we solved it</h2>
+  <p class="lead">Five problems took most of the engineering. Each solution was measured before we kept it.</p>
+
+  <h3>1. Claims we can trust</h3>
+  <p>Text is split into single claims, and each is matched to approved facts that are valid on the publish date. Numbers, units and dates are compared in code; a model only decides whether a claim and a fact are about the same thing. A claim backed only by an expired fact is <em>outdated</em>, so "500+ teams" is caught after the approved figure became "800+ teams". Each verdict cites the fact it used.</p>
+
+  <h3>2. Fixes that keep what the creator meant</h3>
+  <p>Our first gate asked one question: is the message, call to action and audience the same? It blocked the very fixes some rules exist for, such as removing a dig at a competitor. We built an evaluation (73 findings, two graders that never grade their own output) and rebuilt the step: the model now picks an operation per finding (replace the words, rewrite the sentence, or delete a sentence that only mocks or pressures), sees the brand's own good and bad examples, and the gate asks narrow questions about the rule. A figure the creator never wrote is dropped by code. <strong>Useful fixes went from 45% to 82%, with no invented numbers.</strong></p>
+
+  <h3>3. Seeing redrawn artwork</h3>
+  <p>Official logos are found by keypoints or template matching, then their placement is refined and read as stretch, skew or flip. Our first comparison checked the image against the artwork; comparing in the other direction, after warping the artwork into the image's pixels, cut false alarms from 12.6% to 4.7%. AI-redrawn mascots need open-vocabulary detection, segmentation and image embeddings, so they run on the sleeping worker, and Verytas names what changed rather than just "does not match".</p>
+
+  <h3>4. Hindi and Hinglish speech</h3>
+  <p>The general speech model mishears much spoken Hindi. Rather than trust the transcript, confidential codenames are also matched by how they sound, and spoken numbers ("chalis pratishat") are read as figures, so a voice-over that says a price different from the caption is still caught.</p>
+
+  <h3>5. Confidence that means something</h3>
+  <p>Self-reported model confidence runs high. Our judge answers with a certainty band; borderline answers are asked twice more and averaged, and once enough decisions exist, confidence is mapped to how often reviewers actually agree (isotonic regression). We also tested a cascade that re-asked the large model only on close calls; it never fired, because the small model's mistakes came back at full certainty. Asking both models on must-fix rules was right on 30 of 32 sentences against 27.</p>
+
+  <div class="callout"><p><strong>Also hard: keeping the assistants' instructions private.</strong> Asking Ask Verytas for its prompt gets a fixed answer, and a reply that starts reciting its instructions is cut off before any of it is sent. Seven live attacks were refused on the deployed site.</p></div>
+</section>
+
+<!-- ============================== 7. QUALITY ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 7</div>
+  <h2><span class="n">07</span>How well it works</h2>
+  <p class="lead">Each engine is measured on its own benchmark through the production code. The sets are generated or hand-labelled rather than live traffic, so real-world figures will run somewhat lower. Full methods and results are in <code>backend/evals/results</code>.</p>
+
+  <table>
+    <thead><tr><th style="width:22%">Engine</th><th style="width:18%">Tested on</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Official artwork</td><td>1,200 scenes</td><td><strong>93%</strong> of misuse caught, <strong>4.7%</strong> false alarms; recoloured icons still weak (33%)</td></tr>
+      <tr><td class="k">Mascots</td><td>425 scenes</td><td>Every character found; what changed named in 73% to 100% of cases for most changes, but a stretched body in only 23%</td></tr>
+      <tr><td class="k">Text in images</td><td>240 images</td><td><strong>88%</strong> of prices, codes and names read exactly; 0.5 s per image</td></tr>
+      <tr><td class="k">Speech</td><td>104 clips</td><td>About <strong>10%</strong> word error in English on clips under three minutes (longer audio uses a faster model, about 17%); Hindi much weaker, so codenames are also matched by sound. Test voices are synthetic</td></tr>
+      <tr><td class="k">Video</td><td>36 videos</td><td>On-screen claims <strong>11/11</strong>, spoken claims <strong>8/10</strong>, artwork misuse 32/45, each at the right moment</td></tr>
+      <tr><td class="k">Parts that disagree</td><td>28 posts</td><td><strong>14/14</strong> caught, <strong>0</strong> false alarms on the controls</td></tr>
+      <tr><td class="k">Judgement rules</td><td>32 sentences</td><td><strong>30/32</strong> right with the second look, against 27/32 for the small model alone</td></tr>
+      <tr><td class="k">Suggested fixes</td><td>73 findings</td><td><strong>82%</strong> useful (45% before the rebuild), <strong>0</strong> invented numbers</td></tr>
+      <tr><td class="k">Black-box simulator</td><td>216 cases</td><td><strong>96%</strong> recall, <strong>0%</strong> false alarms on clean posts</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Testing and reliability</h3>
+  <div class="cols">
+    <div>
+      <ul>
+        <li><strong>Over 630 backend tests</strong> run offline with no keys on every push, alongside web type checks, lint and a production build.</li>
+        <li><strong>A black-box simulator</strong> (<code>blackbox/</code>) knows Verytas only through its public API. It invents brands and posts with planted violations, scores what comes back, and steers each round toward what Verytas misses.</li>
+      </ul>
+    </div>
+    <div>
+      <ul>
+        <li><strong>Every release is health-checked</strong> before it takes traffic, and rolled back automatically if it fails.</li>
+        <li><strong>A first security review</strong> ran on the codebase and on the live site; confirmed findings are fixed, each with a regression test. Six areas it did not cover are listed for the next pass in <code>docs/security/README.md</code>.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== 8. USER TESTING ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 8</div>
+  <h2><span class="n">08</span>User testing</h2>
+  <p class="lead">Three people outside the team (P1 to P3) used the deployed demo on their own and wrote up what worked and what did not. None works in brand governance, so this tests first-use clarity, not domain fit. All three know someone on the team, so we weigh their criticism more than their praise.</p>
+
+  <table>
+    <thead><tr><th style="width:30%">What they hit</th><th style="width:10%">Who</th><th>What we changed</th></tr></thead>
+    <tbody>
+      <tr><td>Could not tell what the product does or where to start</td><td>P1, P2</td><td>The sign-in page explains Verytas with a real finding before the person picker; a guided tour on the first visit to each side, with Back, Next and Skip, replayable from Settings</td></tr>
+      <tr><td>"Draft", "100% Clean", "Escalation" unexplained</td><td>P2</td><td>Every status, score and level explains itself on hover; the tour covers them; summaries use plain words</td></tr>
+      <tr><td>A clean result does not say what was checked</td><td>P1, P2, P3</td><td>A clean result lists each check that ran, and which ran only in a simpler form or not at all</td></tr>
+      <tr><td>No sign that a review is running</td><td>P2</td><td>A running review says what is being checked and how long it takes, beside the elapsed time; a review cut off by a restart now runs again</td></tr>
+      <tr><td>Empty pages with no next step</td><td>P2</td><td>Each empty tab says why it is empty and what fills it</td></tr>
+      <tr><td>The review form asks for a lot at once</td><td>P3</td><td>Only title, channel, text and files up front; the rest under More options</td></tr>
+      <tr><td>Cut-off text</td><td>P3</td><td>Truncated names show in full on hover; titles wrap to two lines</td></tr>
+      <tr><td>"AI can make mistakes" lowers trust without context</td><td>P3</td><td>Kept, and now says which checks are plain code, that every finding names its source, that a person decides, and the measured accuracy</td></tr>
+      <tr><td>Accuracy must be shown, not claimed</td><td>P1</td><td>Measured per engine and published (Section 7); confidence shown on every finding</td></tr>
+    </tbody>
+  </table>
+  <p>What they liked: the interface and first impression, the separate creator and brand-team workspaces, and findings that say exactly which claim or figure is wrong and why. A teammate's pass over the creator side after that found a cramped review screen, buttons that read as plain text and a fix button that only worked at the end; all three are fixed. The reviews are in full in <code>docs/research/user-testing.md</code>.</p>
+  <div class="cols">
+    <figure class="shot" style="margin:1mm 0 0"><img src="../assets/signin.png" alt="Sign-in page"><figcaption><b>Figure 3.</b> Sign-in now says what Verytas does, with a real finding, before asking who you are.</figcaption></figure>
+    <figure class="shot" style="margin:1mm 0 0"><img src="../assets/tour.png" alt="Guided tour"><figcaption><b>Figure 4.</b> The guided tour on a first visit: one section lit at a time, with Skip, Back and Next.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============================== 9. RESPONSIBLE ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 9</div>
+  <h2><span class="n">09</span>Security, privacy and responsible AI</h2>
+  <p class="lead">A tool that reads a brand's unreleased plans and judges people's work has to be safe with both.</p>
+
+  <div class="cols">
+    <div class="card soft"><h4>Confidential terms never reach a model</h4><p>They are replaced by placeholders in text and blacked out in image pixels first, including a codename written without its "Project". Confidential-tier content is never sent as pixels at all.</p></div>
+    <div class="card soft"><h4>Tamper-evident record</h4><p>Every finding is signed with Ed25519 when it is made, and every action is written to a SHA-256 hash-chained audit log that anyone with audit access can verify.</p></div>
+    <div class="card soft"><h4>People decide</h4><p>Fixes are never applied without a person choosing them. A model-only finding cannot block a post. Overrides need a written reason. Creators can dispute any reading.</p></div>
+    <div class="card soft"><h4>Hostile input expected</h4><p>File types are read from the bytes; archives and images are read within budgets; content under review is treated as data, never as instructions; bribes and "WhatsApp me" style contact swaps are refused before they are stored.</p></div>
+    <div class="card soft"><h4>Faces follow the brand's records</h4><p>A face is identified only against the brand's approved people. A public portrait is looked up only when the brief names someone and the content is not confidential.</p></div>
+    <div class="card soft"><h4>Open about AI</h4><p>A page in the app lists which models run, what each one does, and their measured accuracy, including the weak spots. Each review lists the checks that ran and the models used.</p></div>
+  </div>
+
+  <h3>Before the repository went public</h3>
+  <p>The whole git history was scanned for secrets with gitleaks (none found). Keys live only in server files readable by the service. Dependencies install from hashed lock files, most model files are pinned by SHA-256 (the speech model by revision only, for now), and CI actions are pinned to commit SHAs.</p>
+
+  <h3>Use of AI tools in building Verytas</h3>
+  <p>We used Claude Code (Anthropic) as a coding assistant throughout development, for writing and reviewing code, tests and documentation. The team set the design, made every product and technical decision, reviewed what was produced, and tested the result. Inside the product, the models listed in Section 5 do the checking, and the app says so.</p>
+</section>
+
+<!-- ============================== 10. CHANGES ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 10</div>
+  <h2><span class="n">10</span>Changes from the Round 1 plan</h2>
+  <p class="lead">The direction is the same: a review gate before publishing, with cited findings and people in charge. What changed is the order of work and a few methods we replaced after measuring them.</p>
+
+  <table class="wrap">
+    <thead><tr><th style="width:24%">Change</th><th style="width:12%">Type</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Round 1's three improvements built now</td><td><span class="pill r2">Pulled in</span></td><td>Dated facts and leak checks turned out to be the core of claim checking, so they came first. Guideline health and calibrated confidence followed once reviewer decisions existed to learn from. All three work today, so Round 3 has three new improvements (Section 12).</td></tr>
+      <tr><td class="k">Video, Hindi and Hinglish speech, cross-checks, mascots, decks and sheets</td><td><span class="pill r2">Pulled in</span></td><td>The brief's examples are social posts, video and Indian languages. A reviewer cannot trust a post whose video was not checked, so these moved from Round 3 to Round 2.</td></tr>
+      <tr><td class="k">Guided tour and plain words</td><td><span class="pill r3">Added</span></td><td>Two of the three testers could not tell where to start, and one asked what the labels meant. We had planned interviews and task tests with a usability score; we ran written reviews by three first-time users instead, because they fit the time we had, and acted on every point.</td></tr>
+      <tr><td class="k">Judge on free models</td><td><span class="pill">Replaced</span></td><td>We planned TypeSafe Jev. It is still supported behind the same interface, but the live demo uses gpt-oss on Ollama Cloud so it can stay up at no cost.</td></tr>
+      <tr><td class="k">Second look instead of a cascade</td><td><span class="pill">Replaced</span></td><td>Re-asking the large model only on close calls never fired in testing. Asking both on must-fix rules was right on 30 of 32 against 27.</td></tr>
+      <tr><td class="k">Fix check per rule</td><td><span class="pill">Replaced</span></td><td>The planned "same message, call to action and audience" check blocked fixes a rule exists to make. Checking against the rule took useful fixes from 45% to 82%.</td></tr>
+      <tr><td class="k">Keyword fact lookup only</td><td><span class="pill later">Simplified</span></td><td>Keyword search with tier and date filters was accurate enough for brand-sized fact lists, so vector search was not built.</td></tr>
+      <tr><td class="k">SQLite on one server</td><td><span class="pill later">Simplified</span></td><td>Keeps the demo running on credits. The schema is ready for Postgres.</td></tr>
+      <tr><td class="k">MCP server, Slack, CMS hook, performance feedback</td><td><span class="pill later">Deferred</span></td><td>Integrations matter less than a review people can trust. These stay on the roadmap after the three Round 3 improvements.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================== 11. NOT YET ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 11</div>
+  <h2><span class="n">11</span>What does not work yet</h2>
+  <p class="lead">Things a judge may run into, stated plainly.</p>
+
+  <table>
+    <thead><tr><th style="width:28%">Area</th><th>What to expect</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Recoloured app icons</td><td>An icon redrawn in other colours is caught about a third of the time. Stretched, mirrored, skewed and redrawn artwork is caught far more reliably.</td></tr>
+      <tr><td class="k">Hindi speech</td><td>The speech model mishears much spoken Hindi. Codenames are still caught by sound and spoken figures are read, but a long Hindi voice-over is transcribed roughly.</td></tr>
+      <tr><td class="k">Mascots on busy backgrounds</td><td>The cut-out takes in some background, so on busy backgrounds a correct mascot is wrongly flagged in about half of test scenes (53% to 63%, against 13% on plain ones). The vision model's opinion alone never blocks a post.</td></tr>
+      <tr><td class="k">First mascot check after a quiet spell</td><td>The vision worker sleeps after 20 idle minutes, so the next review that needs it waits while it starts (up to about four minutes). If it does not start in time, that check is shown as not run.</td></tr>
+      <tr><td class="k">Speed</td><td>Models run on a remote service without our own GPU. Text takes a few seconds; images, documents and video take longer. If the service is down or out of quota, those checks show as degraded, not passed.</td></tr>
+      <tr><td class="k">Size limits</td><td>Documents are read up to 40 pages and decks up to 60 slides; the review says when the rest was not checked. Uploads are capped (images 6 MB, documents 20 MB, video 150 MB and 15 minutes).</td></tr>
+      <tr><td class="k">One-on-one meetings</td><td>Shown in both apps and marked "Planned, not in this demo". Designed, not built.</td></tr>
+      <tr><td class="k">Console screens</td><td>Approved people, marking moments in a video and findings on a video timeline are supported by the API but have no screens yet.</td></tr>
+      <tr><td class="k">Shared demo accounts</td><td>Every judge signs in as the same sample people, so you may see pieces other visitors submitted. The demo data resets every two weeks.</td></tr>
+      <tr><td class="k">Your own workspace starts empty</td><td>Signing up as a manager creates a new company with no rules, facts or artwork, so reviews find little until some are added (or a brand book is handed to Intake). Sign-ups and reviews per new workspace are capped per day to protect the model budget. The sample companies show everything working.</td></tr>
+      <tr><td class="k">Integrations</td><td>The MCP server, Slack notifications, CMS hook and performance feedback from the original plan are not built. Brand events change rules but not yet facts, so a price change is still entered as a new fact.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================== 12. ROUND 3 ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 12</div>
+  <h2><span class="n">12</span>Three improvements for Round 3</h2>
+  <p class="lead">Each is new capability, sized for what two people can ship and measure in Round 3.</p>
+
+  <div class="imp">
+    <div class="num">1</div>
+    <div>
+      <h3>One-on-one meetings between a creator and their manager</h3>
+      <p><strong>What it is.</strong> A creator asks the manager who looks after them for a meeting by chat, voice or video, from a review or from their profile. The manager accepts, or proposes another time or way. Voice calls go through temporary masked numbers, the way delivery apps connect a rider and a customer, so neither side sees the other's real number. Only the time, the way and an outcome note go on the record, linked to the pieces discussed.</p>
+      <p><strong>What it changes.</strong> A disagreement that today goes back and forth in comments ("is this claim allowed?") is settled in one conversation, with the decision recorded against the review. Creators get a person, not only a queue, and phone numbers stay private.</p>
+    </div>
+  </div>
+
+  <div class="imp">
+    <div class="num">2</div>
+    <div>
+      <h3>Sharper vision and speech, on our own GPU</h3>
+      <p><strong>What it is.</strong> Upgrades to the engines that are weakest today. Recoloured icons: a comparison that separates an icon's shape from its colours, so a correct icon in the wrong colours is caught. Hindi speech: a model trained for Hindi and Hinglish in place of the general one. A GPU server that wakes on demand to run the language and vision models ourselves, with the remote service as a fallback.</p>
+      <p><strong>What it changes.</strong> Fewer missed issues and fewer false alarms on images and Hindi video, faster reviews, and brand content that no longer has to leave our servers to be checked. Each change is measured on the same benchmarks as today, and we publish the before and after.</p>
+    </div>
+  </div>
+
+  <div class="imp">
+    <div class="num">3</div>
+    <div>
+      <h3>Managing it all from the Brand Console</h3>
+      <p><strong>What it is.</strong> Screens for work that today needs the API. An approved-people tab in the Library, where the brand team adds the people allowed to appear in content, with their agreement dates. A video player that shows every finding as a mark on its timeline and jumps to it. Tools for managers to mark a moment in a video or an area of an image and comment on it, which the creator sees in place.</p>
+      <p><strong>What it changes.</strong> The brand team runs governance end to end without technical help. Reviewing a video becomes as direct as reviewing a caption, and feedback points at the exact second or region instead of describing it in words.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== 13. TEAM ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 13</div>
+  <h2><span class="n">13</span>Team and contributions</h2>
+  <p class="lead">Both members committed from their own accounts, so contributions are visible in the repository history.</p>
+
+  <table>
+    <thead><tr><th style="width:26%">Member</th><th>Contribution</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Prajyot Malesh Kotekar<br><span class="note">Team leader</span></td><td>Led the team. Built parts of the agentic layer: Prism's parallel context layers, fixes judged together, and learned fix hints. Built parts of the web app: the brand team's console (dashboard, creator profiles and drift, brand library and brand-book import), the sign-in design, and web hardening (content security policy, cookies, read-only auditors).</td></tr>
+      <tr><td class="k">Varadaraj J Borkar</td><td>Built all of the AI and the engines: the review engine and its checkers, the judge, fixes, claim verification, official artwork, mascots and vision, OCR, speech, video, cross-checks, redaction and the prompt guard, the choice of models and how they run, the benchmarks and the black-box simulator. Built the infrastructure: the AWS servers, the vision worker that wakes on demand, the sealed document converter, deploys and CI. Also the review screen, the guided tour, and the Verytas logo.</td></tr>
+      <tr><td class="k">Together</td><td>The review workflow, the API, tests and documentation.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Links</h3>
+  <table>
+    <tbody>
+      <tr><td class="k" style="width:26%">Live demo</td><td>https://verytas.pages.dev</td></tr>
+      <tr><td class="k">Source code</td><td>https://github.com/varadarajjborkar/verytas</td></tr>
+      <tr><td class="k">Architecture</td><td>docs/architecture.md</td></tr>
+      <tr><td class="k">Benchmarks</td><td>backend/evals/results</td></tr>
+      <tr><td class="k">User testing</td><td>docs/research/user-testing.md</td></tr>
+      <tr><td class="k">Security review</td><td>docs/security/README.md</td></tr>
+      <tr><td class="k">Round 1 plan</td><td>docs/round1/Verytas-Round1-Plan.pdf</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</body>
+</html>
