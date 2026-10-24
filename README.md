@@ -228,7 +228,7 @@ method and the full results.
 | Engine | Tested on | Result |
 | --- | --- | --- |
 | [Artwork](backend/evals/results/assets.md) | 1,200 scenes | **93%** of misuse caught, **4.7%** false alarms (recoloured icons still weak, 33%) |
-| [Mascots](backend/evals/mascots) | 425 scenes | every character found; what changed named in 73 to 100% of cases |
+| [Mascots](backend/evals/mascots) | 425 scenes | every character found; what changed named in 73 to 100% of cases (a stretched body in 23%) |
 | [Text in images](backend/evals/results/ocr.md) | 240 images | **88%** of prices, codes and names read exactly |
 | [Speech](backend/evals/results/speech.md) | 104 clips | about **10%** word error in English; Hindi much weaker, so codenames are also matched by sound |
 | [Video](backend/evals/results/video.md) | 36 videos | on-screen claims **11/11**, spoken claims **8/10**, artwork misuse 32/45, each at the right moment |
