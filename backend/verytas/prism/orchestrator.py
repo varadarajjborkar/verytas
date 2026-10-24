@@ -158,21 +158,29 @@ class Prism:
         self._second_breaker = CircuitBreaker()
         # Claim research: one search client and one daily allowance shared by every review.
         self._web = build_web_search(settings)
-        self._research_cap = research.DailyCap(settings.research_per_day)
+        self._research_cap = research.DailyCap(settings.research_per_day, settings.research_per_workspace_day)
         # One pool of provider slots shared by every review, so a long document
         # (one Jev call per paragraph) or a burst of reviews can't flood a provider.
         self._provider_slots = asyncio.Semaphore(settings.max_concurrent_tasks)
         self._admission = asyncio.Semaphore(settings.max_concurrent_reviews)
         self._background: set[asyncio.Task[None]] = set()
 
-    async def _research(self, raw: list[RawFinding], judge, redactor: Redactor, brand: str | None) -> dict:
-        """Web results for unsupported claims (prism/research.py). Bounded in time; a failure is recorded."""
+    async def _research(self, raw: list[RawFinding], judge, redactor: Redactor, brand: str | None,
+                        workspace_id: int) -> dict:
+        """Web results for unsupported claims (prism/research.py). Bounded in time; whatever goes wrong is
+        recorded and never fails the review. The log is shared with the search so that a timeout still lists
+        the searches that were made, matching the results already on the findings."""
+        log: dict = {"provider": self._web.name, "searched": [], "skipped": 0}
         try:
-            return await asyncio.wait_for(
+            await asyncio.wait_for(
                 research.research(raw, self._web, judge, redactor.mask, brand, self._research_cap,
-                                  self.settings.research_per_review), timeout=self.settings.task_timeout_s)
+                                  self.settings.research_per_review, workspace=workspace_id, log=log),
+                timeout=self.settings.task_timeout_s)
         except TimeoutError:
-            return {"provider": self._web.name, "searched": [], "skipped": 0, "note": "timed out"}
+            log["note"] = "timed out"
+        except Exception as exc:  # noqa: BLE001, research is evidence only; nothing it does may fail a review
+            log["note"] = f"failed: {type(exc).__name__}"
+        return log
 
     def schedule(self, review_id: int) -> None:
         task = asyncio.create_task(self.run(review_id))
@@ -336,34 +344,39 @@ class Prism:
         raw = run.findings
         with_precedent = book.attach(raw, {s.id: s.text for s in run.sources})
         # Searched while the fixes are written: it needs only the claims, and adds no wait of its own.
-        researching = (asyncio.create_task(self._research(raw, judge, redactor, brand))
-                       if self._web is not None and content.tier is not Tier.confidential else None)
-        _apply_cleared(raw, cleared, {r.code: r.id for r in ctx.rules})
-        rule_problems = run.rule_problems
-        worker_of = run.worker_of
-
-        suggest_note = None
+        researching = (asyncio.create_task(self._research(raw, judge, redactor, brand, content.workspace_id))
+                       if self._web is not None and content.tier is Tier.public else None)
         try:
-            for t in early:
-                await t
-            # Whatever is still unexplained: the context layers' findings, mostly.
-            await asyncio.wait_for(explain_and_fix(raw, rules, llm, judge, terms, style=style),
-                                   timeout=self.settings.task_timeout_s)
-        except (ProviderError, TimeoutError) as exc:
-            suggest_note = f"explanations and fixes skipped: {exc or 'timed out'}"
-        else:
-            lap("explain_and_fix")
+            _apply_cleared(raw, cleared, {r.code: r.id for r in ctx.rules})
+            rule_problems = run.rule_problems
+            worker_of = run.worker_of
+
+            suggest_note = None
             try:
-                await asyncio.wait_for(drop_fixes_that_keep_claims(raw, ctx, llm, judge),
+                for t in early:
+                    await t
+                # Whatever is still unexplained: the context layers' findings, mostly.
+                await asyncio.wait_for(explain_and_fix(raw, rules, llm, judge, terms, style=style),
                                        timeout=self.settings.task_timeout_s)
             except (ProviderError, TimeoutError) as exc:
-                # A claim fix nobody could re-check may just restate the claim: withhold it.
-                for f in raw:
-                    if f.category == "claims" and f.suggestion and f.suggestion.model:
-                        f.suggestion = None
-                suggest_note = f"AI-written claim fixes withheld (could not re-check them): {exc or 'timed out'}"
+                suggest_note = f"explanations and fixes skipped: {exc or 'timed out'}"
+            else:
+                lap("explain_and_fix")
+                try:
+                    await asyncio.wait_for(drop_fixes_that_keep_claims(raw, ctx, llm, judge),
+                                           timeout=self.settings.task_timeout_s)
+                except (ProviderError, TimeoutError) as exc:
+                    # A claim fix nobody could re-check may just restate the claim: withhold it.
+                    for f in raw:
+                        if f.category == "claims" and f.suggestion and f.suggestion.model:
+                            f.suggestion = None
+                    suggest_note = f"AI-written claim fixes withheld (could not re-check them): {exc or 'timed out'}"
 
-        research_log = await researching if researching is not None else None
+            research_log = await researching if researching is not None else None
+        finally:
+            # An early exit (an error, a cancelled review) must not leave the search running and spending the cap.
+            if researching is not None and not researching.done():
+                researching.cancel()
 
         # Coverage must never be claimed when it didn't happen. A category is
         # "checked" only if a rule for it exists, every worker that covers it

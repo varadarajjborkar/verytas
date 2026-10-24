@@ -61,9 +61,11 @@ class Settings(BaseSettings):
     # giving the nearest ones to the semantic judge as examples waits on a live measurement.
     precedent_examples: bool = False
     # Claim research (prism/research.py): web searches for claims no approved fact backs. Evidence for the
-    # reviewer only; never for confidential content. 0 turns it off.
+    # reviewer only; only for public-tier content. 0 turns it off. The daily total is the ceiling for everyone,
+    # and each workspace has its own share of it (0 for no share).
     research_per_review: int = Field(default=3, ge=0, le=10)
     research_per_day: int = Field(default=300, ge=0)
+    research_per_workspace_day: int = Field(default=60, ge=0)
 
     # Image understanding. gemma4:31b is the free-plan vision model on Ollama
     # Cloud (verified 2026-10-20: exact transcription of a test image in ~1 s).
