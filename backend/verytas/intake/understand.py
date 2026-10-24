@@ -184,8 +184,10 @@ def _table_prompt(t: Table) -> str:
 
 # --- offline -----------------------------------------------------------------------------------------------
 
-_CODENAME = re.compile(r"\b(?:codename|code name|project|internal name|under nda|confidential)\b[:\s-]+"
-                       r"([A-Z][\w-]+(?:\s[A-Z][\w-]+)?)", re.IGNORECASE)
+# The keyword in any case, the name itself capitalised: "project Falcon is" gives "Falcon", and "the project
+# timeline" gives nothing.
+_CODENAME = re.compile(r"\b(?i:codename|code name|project|internal name|under nda|confidential)\b[:\s-]+"
+                       r"([A-Z][\w-]+(?:\s[A-Z][\w-]+)?)")
 
 
 def heuristic(name: str, note: str, reading: Reading, pictures: list[Picture]) -> Understanding:

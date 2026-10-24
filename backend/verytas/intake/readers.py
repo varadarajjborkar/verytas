@@ -23,13 +23,19 @@ from lxml import etree
 from PIL import Image
 
 from verytas.media import documents
-from verytas.media.files import MediaError
+from verytas.media.files import MediaError, open_image
 
 MAX_TEXT = 60_000
 MAX_ROWS = 2_000
 MAX_COLS = 60
 MAX_IMAGES = 12
 MAX_XML = 20 * 1024 * 1024  # an XML part larger than this, uncompressed, is not read (zip bombs)
+# What one file may make us parse in all: a workbook can list hundreds of sheets that point at one big part.
+MAX_XML_TOTAL = 60 * 1024 * 1024
+MAX_SHEETS = 20
+# A cell longer than this is cut. Shared strings let one 2 MB string fill every cell of a sheet for a few
+# bytes each, and every copy is joined into the text and the stored preview.
+MAX_CELL = 500
 _PARSER = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=False, recover=True)
 _NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
@@ -47,13 +53,17 @@ class Table:
     header: list[str]
     rows: list[list[str]]
     header_row: int = 1  # 1-based row number of the header in the source, for cell addresses
+    # 1-based source row of each entry in rows, when blank rows were skipped; None means contiguous.
+    lines: list[int] | None = None
 
     def cell(self, row: int, col: int) -> str:
         """The source address of rows[row][col], spreadsheet style ("Pricing!C4")."""
-        return f"{self.name}!{_letters(col)}{self.header_row + 1 + row}"
+        line = self.lines[row] if self.lines is not None and row < len(self.lines) else self.header_row + 1 + row
+        return f"{self.name}!{_letters(col)}{line}"
 
     def preview(self, n: int = 8) -> dict[str, Any]:
-        return {"name": self.name, "header": self.header, "rows": self.rows[:n], "total_rows": len(self.rows)}
+        return {"name": self.name, "header": [h[:120] for h in self.header],
+                "rows": [[c[:120] for c in r] for r in self.rows[:n]], "total_rows": len(self.rows)}
 
 
 @dataclass
@@ -93,7 +103,10 @@ def sniff_text(raw: bytes) -> str | None:
     if "\x00" in text:
         return None
     stripped = text.lstrip()
-    if stripped[:1] in "[{":
+    # "[Draft] Always write..." starts with a bracket too: only text that parses (or, cut at the sniffing
+    # window, starts like a JSON value) is data. _json falls back to text when it does not parse anyway.
+    cut = len(raw) > 65536 and re.match(r'[\[{]\s*["{\[\d-]', stripped)
+    if stripped and stripped[0] in "[{" and (cut or _parses(text)):
         return "application/json"
     lines = [ln for ln in text.splitlines()[:20] if ln.strip()]
     if len(lines) >= 2 and len({ln.count(",") for ln in lines}) == 1 and lines[0].count(",") >= 1:
@@ -101,6 +114,14 @@ def sniff_text(raw: bytes) -> str | None:
     if len(lines) >= 2 and len({ln.count("\t") for ln in lines}) == 1 and lines[0].count("\t") >= 1:
         return "text/tab-separated-values"
     return "text/plain"
+
+
+def _parses(text: str) -> bool:
+    try:
+        json.loads(text)
+    except ValueError:
+        return False
+    return True
 
 
 def office_kind(raw: bytes) -> str | None:
@@ -173,31 +194,50 @@ def _docx(raw: bytes) -> Reading:
     return Reading("document", "\n\n".join(pages)[:MAX_TEXT], pages)
 
 
-def _xml(zf: zipfile.ZipFile, name: str):
-    info = zf.getinfo(name)
-    if info.file_size > MAX_XML:
-        raise MediaError(f"{name} is too large to read")
-    return etree.fromstring(zf.read(name), _PARSER)
+class _Budget:
+    """Uncompressed XML bytes one file may still make us parse."""
+
+    def __init__(self, total: int = MAX_XML_TOTAL):
+        self.left = total
+
+    def xml(self, zf: zipfile.ZipFile, name: str):
+        size = zf.getinfo(name).file_size
+        if size > MAX_XML:
+            raise MediaError(f"{name} is too large to read")
+        if size > self.left:
+            raise MediaError("the file has more to read than one item may take; split it")
+        self.left -= size
+        return etree.fromstring(zf.read(name), _PARSER)
 
 
 def _xlsx(raw: bytes) -> Reading:
     out = Reading("sheet")
+    budget = _Budget()
     try:
         zf = zipfile.ZipFile(io.BytesIO(raw))
+        names = set(zf.namelist())
         shared = []
-        if "xl/sharedStrings.xml" in zf.namelist():
-            for si in _xml(zf, "xl/sharedStrings.xml").iterfind("m:si", _NS):
-                shared.append("".join(si.itertext()))
-        book = _xml(zf, "xl/workbook.xml")
-        links = _xml(zf, "xl/_rels/workbook.xml.rels").iterfind("rel:Relationship", _NS)
+        if "xl/sharedStrings.xml" in names:
+            for si in budget.xml(zf, "xl/sharedStrings.xml").iterfind("m:si", _NS):
+                shared.append("".join(si.itertext())[:MAX_CELL])
+        dates = _date_styles(budget.xml(zf, "xl/styles.xml")) if "xl/styles.xml" in names else None
+        book = budget.xml(zf, "xl/workbook.xml")
+        links = budget.xml(zf, "xl/_rels/workbook.xml.rels").iterfind("rel:Relationship", _NS)
         rels = {r.get("Id"): r.get("Target") for r in links}
+        seen: set[str] = set()
         for sheet in book.iterfind("m:sheets/m:sheet", _NS):
             target = rels.get(sheet.get(f"{{{_NS['r']}}}id"), "")
             path = "xl/" + target.lstrip("/").removeprefix("xl/")
-            if path not in zf.namelist():
+            if path not in names or path in seen:
                 continue
-            grid = _sheet_grid(_xml(zf, path), shared)
-            table = _table_from_grid(sheet.get("name") or "Sheet", grid)
+            seen.add(path)
+            if len(seen) > MAX_SHEETS:
+                out.notes.append(f"Only the first {MAX_SHEETS} sheets were read.")
+                break
+            grid = _sheet_grid(budget.xml(zf, path), shared, dates)
+            # A workbook without a styles part (written by a script, not Excel) says nothing about which
+            # numbers are dates; then a column headed plainly as a date is the only hint left.
+            table = _table_from_grid(sheet.get("name") or "Sheet", grid, header_dates=dates is None)
             if table:
                 out.tables.append(table)
     except (zipfile.BadZipFile, KeyError, MediaError, etree.XMLSyntaxError) as exc:
@@ -208,9 +248,36 @@ def _xlsx(raw: bytes) -> Reading:
     return out
 
 
-def _sheet_grid(xml, shared: list[str]) -> list[list[str]]:
+# Excel's built-in number formats that show a date or time.
+_DATE_FORMATS = {14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47}
+
+
+def _date_styles(xml) -> set[int]:
+    """Indexes of the cell styles (the `s` attribute) whose number format shows a date."""
+    custom = set()
+    for f in xml.iterfind("m:numFmts/m:numFmt", _NS):
+        # Quoted text and [colour] tags aside, a format that writes days, months or years is a date.
+        code = re.sub(r'"[^"]*"|\[[^\]]*\]|\\.', "", f.get("formatCode") or "").lower()
+        if re.search(r"[dy]|m{3,}|\bm\b|mm[/.-]", code) and (n := f.get("numFmtId") or "").isdigit():
+            custom.add(int(n))
+    out = set()
+    for i, xf in enumerate(xml.iterfind("m:cellXfs/m:xf", _NS)):
+        n = xf.get("numFmtId") or ""
+        if n.isdigit() and (int(n) in _DATE_FORMATS or int(n) in custom):
+            out.add(i)
+    return out
+
+
+def _sheet_grid(xml, shared: list[str], dates: set[int] | None = None) -> list[list[str]]:
+    """The sheet as rows of cell text, row i being sheet row i + 1, so cell addresses stay true."""
     rows: list[list[str]] = []
     for r in xml.iterfind("m:sheetData/m:row", _NS):
+        number = r.get("r")
+        if number and number.isdigit():
+            # Rows Excel leaves out (blank ones) still count for addresses; a jump past the cap ends the read.
+            if int(number) > MAX_ROWS + 10:
+                break
+            rows.extend([] for _ in range(int(number) - 1 - len(rows)))
         if len(rows) > MAX_ROWS:
             break
         line: dict[int, str] = {}
@@ -227,7 +294,11 @@ def _sheet_grid(xml, shared: list[str]) -> list[list[str]]:
                 value = "TRUE" if (v is not None and v.text == "1") else "FALSE"
             else:
                 value = (v.text or "") if v is not None else ""  # numbers, and a formula's cached value
-            line[col] = value.strip()
+                style = c.get("s") or ""
+                if dates and kind in (None, "n") and style.isdigit() and int(style) in dates \
+                        and (d := excel_date(value)) is not None:
+                    value = d.isoformat()
+            line[col] = value.strip()[:MAX_CELL]
         width = max(line) + 1 if line else 0
         rows.append([line.get(i, "") for i in range(width)])
     return rows
@@ -243,8 +314,11 @@ def _col_index(ref: str) -> int | None:
     return n - 1
 
 
-def _table_from_grid(name: str, grid: list[list[str]]) -> Table | None:
-    """The first row that looks like a header (mostly filled, mostly words), and the rows under it."""
+def _table_from_grid(name: str, grid: list[list[str]], *, header_dates: bool = False) -> Table | None:
+    """The first row that looks like a header (mostly filled, mostly words), and the rows under it.
+
+    grid[i] is source row i + 1; blank rows are dropped from the table but keep their place in the
+    addresses."""
     filled = [(i, row) for i, row in enumerate(grid) if sum(bool(c) for c in row) >= 2]
     if not filled:
         return None
@@ -255,19 +329,24 @@ def _table_from_grid(name: str, grid: list[list[str]]) -> Table | None:
             start, header = i, row
             break
     width = len(header)
-    rows = [(r + [""] * width)[:width] for r in grid[start + 1:] if any(c for c in r)]
+    kept = [(i + 1, (r + [""] * width)[:width]) for i, r in enumerate(grid) if i > start and any(c for c in r)]
+    kept = kept[:MAX_ROWS]
+    rows = [r for _, r in kept]
     header = [h or f"Column {_letters(i)}" for i, h in enumerate(header)]
-    # Excel keeps dates as day numbers (46296 is 2026-10-01); in a column whose header says it holds dates,
-    # show them as dates, so nobody, model or person, has to ask what the number means.
-    for i, h in enumerate(header):
-        if _DATE_HEADER.search(h):
-            for r in rows:
-                if (d := excel_date(r[i])) is not None:
-                    r[i] = d.isoformat()
-    return Table(name[:60], header, rows[:MAX_ROWS], header_row=start + 1)
+    if header_dates:
+        # Excel keeps dates as day numbers (46296 is 2026-10-01). Without styles to say which cells are
+        # dates, a column headed only as a date ("Valid from", "Launch date") is shown as dates, so nobody,
+        # model or person, has to ask what the number means. "Price from" is not a date column.
+        for i, h in enumerate(header):
+            if _DATE_HEADER.fullmatch(h.strip()):
+                for r in rows:
+                    if (d := excel_date(r[i])) is not None:
+                        r[i] = d.isoformat()
+    return Table(name[:60], header, rows, header_row=start + 1, lines=[n for n, _ in kept])
 
 
-_DATE_HEADER = re.compile(r"\b(?:date|from|to|until|valid|start|end|since|expires?|launch(?:es|ed)?)\b", re.I)
+_DATE_HEADER = re.compile(r"(?:(?:valid|start|end|launch|expiry|effective|release)\s*)?(?:date|from|to|until|on|"
+                          r"since|expires?|starts?|ends?|launch(?:es|ed)?)(?:\s+date)?", re.I)
 
 
 def _numeric(v: str) -> bool:
@@ -284,18 +363,25 @@ def excel_date(v: str) -> date | None:
 
 
 def _table_text(t: Table) -> str:
-    lines = [" | ".join(t.header)] + [" | ".join(r) for r in t.rows[:200]]
-    return f"[{t.name}]\n" + "\n".join(lines)
+    out, size = [f"[{t.name}]", " | ".join(t.header)], 0
+    for r in t.rows[:200]:
+        line = " | ".join(r)
+        size += len(line) + 1
+        if size > MAX_TEXT:
+            break
+        out.append(line)
+    return "\n".join(out)
 
 
 def _pptx(raw: bytes) -> Reading:
     out = Reading("slides")
+    budget = _Budget()
     try:
         zf = zipfile.ZipFile(io.BytesIO(raw))
         slides = sorted((n for n in zf.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)),
                         key=lambda n: int(re.findall(r"\d+", n)[-1]))
         for n in slides[:200]:
-            xml = _xml(zf, n)
+            xml = budget.xml(zf, n)
             paras = ["".join(p.itertext()).strip() for p in xml.iter(f"{{{_NS['a']}}}p")]
             out.pages.append("\n".join(p for p in paras if p))
         for n in sorted(x for x in zf.namelist() if x.startswith("ppt/media/"))[:MAX_IMAGES]:
@@ -316,7 +402,7 @@ def _csv(raw: bytes, name: str) -> Reading:
     except csv.Error:
         dialect = csv.excel
     grid = [row for _, row in zip(range(MAX_ROWS + 10), csv.reader(io.StringIO(text), dialect), strict=False)]
-    grid = [[c.strip() for c in row[:MAX_COLS]] for row in grid]
+    grid = [[c.strip()[:MAX_CELL] for c in row[:MAX_COLS]] for row in grid]
     table = _table_from_grid(re.sub(r"\.\w+$", "", name)[:60] or "table", grid)
     out = Reading("sheet", tables=[table] if table else [])
     out.text = _table_text(table)[:MAX_TEXT] if table else ""
@@ -328,8 +414,11 @@ def _csv(raw: bytes, name: str) -> Reading:
 def _json(raw: bytes, name: str) -> Reading:
     try:
         data = json.loads(_decode(raw))
-    except ValueError as exc:
-        return Reading("data", notes=[f"not valid JSON: {exc}"])
+    except ValueError:
+        # Called JSON by its name or type but not JSON: read it as the text it is rather than drop it.
+        text = _decode(raw)[:MAX_TEXT]
+        return Reading("text", text, [p for p in re.split(r"\n\s*\n", text) if p.strip()],
+                       notes=["Not valid JSON; read as text."])
     rows = data
     if isinstance(data, dict):
         # An API envelope ({"data": [...]}, {"results": [...]}): the first list of records inside it.
@@ -351,9 +440,9 @@ def _cell(v: Any) -> str:
 
 def _as_png(raw: bytes) -> bytes | None:
     try:
-        img = Image.open(io.BytesIO(raw))
-        img.load()
-    except Exception:  # noqa: BLE001, a picture that won't open is skipped, not fatal
+        # The shared guard: the declared size is checked against the pixel budget before decoding.
+        img = open_image(raw)
+    except Exception:  # noqa: BLE001, a picture that won't open (or is too large) is skipped, not fatal
         return None
     img.thumbnail((2000, 2000))
     buf = io.BytesIO()

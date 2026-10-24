@@ -126,7 +126,8 @@ def apply(t: Table, ops: list) -> tuple[Table, list[int], list[str]]:
             continue
         rows = [r for r, k in zip(rows, keep, strict=True) if k]
         origin = [o for o, k in zip(origin, keep, strict=True) if k]
-    return Table(t.name, header, rows, t.header_row), origin, skipped
+    # origin indexes the source rows, so the source's row numbers come along unfiltered.
+    return Table(t.name, header, rows, t.header_row, t.lines), origin, skipped
 
 
 _NUMBER = re.compile(r"[-+]?\d[\d,]*(?:\.\d+)?|[-+]?\.\d+")

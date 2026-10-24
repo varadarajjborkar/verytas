@@ -36,6 +36,10 @@ def check_url(url: str) -> tuple[str, str, int]:
     return url.strip(), u.hostname, u.port or 443
 
 
+_NOT_PUBLIC = (ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("64:ff9b:1::/48"),
+               ipaddress.ip_network("fec0::/10"))
+
+
 async def _public_address(host: str, port: int) -> str:
     try:
         infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
@@ -45,7 +49,10 @@ async def _public_address(host: str, port: int) -> str:
     for a in addresses:
         ip = ipaddress.ip_address(a.split("%")[0])
         mapped = getattr(ip, "ipv4_mapped", None)
-        if not ip.is_global or (mapped is not None and not mapped.is_global):
+        # NAT64 and site-local addresses count as global to ipaddress but can reach inside where a gateway
+        # translates them, so they are refused outright.
+        if not ip.is_global or (mapped is not None and not mapped.is_global) or any(
+                ip in net for net in _NOT_PUBLIC if net.version == ip.version):
             raise FetchRefused(f"{host} points inside a private network; only public sources can be read")
     if not addresses:
         raise FetchRefused(f"{host} could not be found")
@@ -59,9 +66,10 @@ async def fetch(url: str) -> tuple[bytes, str]:
     u = urlparse(url)
     netloc = f"[{ip}]" if ":" in ip else ip
     pinned = urlunparse(u._replace(netloc=f"{netloc}:{port}"))
+    host_header = host if port == 443 else f"{host}:{port}"
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT_S, follow_redirects=False) as client, client.stream(
-                "GET", pinned, headers={"Host": host, "Accept": "text/csv, application/json, */*;q=0.5"},
+                "GET", pinned, headers={"Host": host_header, "Accept": "text/csv, application/json, */*;q=0.5"},
                 extensions={"sni_hostname": host}) as res:
             if res.is_redirect:
                 raise FetchRefused("the link redirects; use the final address")
