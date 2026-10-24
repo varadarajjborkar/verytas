@@ -80,6 +80,16 @@ The rules work like Bell-LaPadula ("no read up"), simplified for us:
 
 **Pipeline:** upload → text extraction (PDF, DOCX, HTML) → chunking with page anchors → LLM extraction to the schemas above → dedup against existing records → **human approval queue** → versioned write. Nothing reaches the knowledge base without a human sign-off, which gives us the "human control" the brief asks for at the source.
 
+**As built: Prism Intake** (`backend/verytas/intake/`, `api/intake.py`, the Library's Intake tab). A brand admin hands over anything the brand lives in: PDF, Word, PowerPoint, Excel, CSV, JSON, text, images, video, audio, or a read-only HTTPS link to a CSV or JSON export (how a database, a DAM or SAP is connected without credentials). One agent per item, in parallel:
+
+- *Read* by code only (`readers.py`): Office files are opened as zip archives with entity expansion and network access off, every part, sheet and cell is capped, formulas are read as their cached values and never evaluated, a cell keeps its real address ("Pricing!C4") through blank rows and cleaning, and serial dates are converted only where the cell's own style says it is a date.
+- *See*: the vision model describes each picture, and a chart gets its values, title and period, or "unreadable".
+- *Understand*: the model says what the item is and proposes rules, facts, codenames, artwork and, for tables, a cleaning plan from a fixed menu of typed operations (trim, drop rows, rename, dedupe, keep rows where). Code applies the plan to every row, so each fact carries the cell it came from. No model-written code runs anywhere.
+- *Check*: every draft is validated against the library's own schemas and flagged when a person should look: a figure that disagrees with an approved fact or another row, a date already past, a figure with no unit, an open question. A rule, codename or figure the library already has is not drafted again.
+- *Ask*: a picture or chart nobody explained produces questions and nothing else until the admin answers.
+
+Nothing is saved until the admin approves a draft, and approval goes through the same endpoint as adding it by hand. Each approval claims its draft first, so a retry never creates a second copy; bulk approval skips anything flagged. Confidential material never reaches a hosted model: it gets the offline reading. A live link is fetched once per read with the address resolved and pinned (public addresses only, no redirects, 10 MB, data types only), and its query string is never shown or cited, since read-only links are often signed. Refreshing a link drafts only what changed.
+
 ---
 
 ## 5. Pre-processing (public plane, board: Pre-processing 🤖)
@@ -360,6 +370,9 @@ flowchart LR
 | Confidential terms | `GET/POST /confidential-terms` · `PATCH/DELETE /confidential-terms/{id}` | brand admin only; the audit log never stores a term |
 | Brand artwork | `GET/POST /brand-assets` · `GET /brand-assets/{id}/image` · `DELETE /brand-assets/{id}` (retires) | read: anyone, by clearance · write: brand admin |
 | Intake | `POST /media` · `POST /contents/precheck` | creator, reviewer, approver, brand admin |
+| Prism Intake | `POST /intake/files` · `POST /intake` · `GET /intake` · `GET /intake/{id}` · `POST /intake/items/{id}/answer` · `POST /intake/items/{id}/refresh` · `POST /intake/drafts/{id}` · `POST /intake/{id}/decide` | brand admin, by clearance |
+| Search | `GET /search?q=` (pieces, findings, escalations, creators, rules, facts, terms, artwork, events; suggestions when empty) | anyone; every hit scoped like the screen it opens |
+| First steps | `GET /onboarding` (steps per role, ticked from the workspace) · `POST /onboarding/sample-kit` (an empty library only) | read: anyone · sample kit: brand admin |
 | Content | `POST /contents` · `GET /contents?mine=&state=` · `GET /contents/{id}` · `POST /contents/{id}/resubmit` · `POST /contents/{id}/ai-edit` | writers; reads by clearance |
 | Reviews | `GET /reviews/{id}` (findings, scorecard, agent tree, coverage) | anyone who can read the content |
 | Decisions | `POST /findings/{id}/decision` (confirm, dismiss with reason code, edit, escalate) | creator, reviewer, approver; dismissing a blocker needs an approver |
@@ -452,6 +465,7 @@ How the architecture handles it:
 | Insights | recurring issues | **Guideline health / ambiguity detector** |
 | Security | RBAC + RLS, tier labels, egress redaction, signed envelopes, hash-chained audit log | column encryption, MCP OAuth, anomaly alerts |
 | MCP | `check_content` tool | full tool set + resources |
+| Feedback | (none) | **performance feedback**: how published posts actually did, linked to their pre-publication findings |
 
 **Out of scope for the event** (future work): fine-tuned evaluator, bandit learning, video and audio, browser extension, multi-language.
 
@@ -459,6 +473,8 @@ How the architecture handles it:
 1. the ambiguity detector and Guideline health
 2. calibrated confidence learned from reviewer decisions
 3. the confidentiality-leak check plus time-aware (outdated) fact verification
+
+**Round 3 add-on: performance feedback.** The brief asks for consistency before publishing; brands also ask whether a flagged post would have done worse. After publishing, a post's metrics come in from the platform APIs where the brand grants read access (Meta Graph for Instagram and Facebook, YouTube Analytics, LinkedIn's community management API) or from a CSV export for anything else, keyed by the post's link. Each published piece is then joined to what its review found and what was decided. The output is deliberately bounded: per rule, how posts that shipped with an overridden finding performed against comparable posts that did not (same channel, format and week), with the sample size, and comment sentiment on posts where tone findings were overridden. It informs Guideline health and the brand team's judgement; it never changes a rule, a severity or a verdict on its own, since engagement is confounded by budget, timing and audience. None of this is built in Round 2.
 
 ---
 
@@ -572,7 +588,13 @@ Depth (8) and agent count (200) are capped per review. Every node records role, 
 
 Social content is short, so a 300-page PDF behind a caption, a 40 MP image or invisible characters in a caption are irregular and costly to scan (`media/profile.py`). Each channel has two thresholds, typical (irregular: a reason is required) and the platform limit (the post cannot be published as is), as of October 2026 and kept as data. With a reason the upload is accepted, scanned in full up to Verytas's processing caps, and scored with an irregular-input finding. The profile also flags data appended after an image's end, GPS location in EXIF, and active content in PDFs (JavaScript, launch actions, embedded files).
 
-## 26. Fit with Inkloom
+## 26. First steps and search
+
+**First steps** (`api/onboarding.py`, `components/home/GettingStarted.tsx`). On first sign-in each role sees one line on what its side of Verytas is for and a short checklist, ticked from what the workspace really holds, never stored: a brand admin hands over brand material, adds facts, codenames and artwork, invites a creator (with the join code) and sees a first review; a creator submits, fixes and asks; a reviewer or approver decides on a finding and asks. An empty company can load a sample brand kit (the fictional Kitepath library) through the library's own endpoints, only while its library has nothing of its own. A plain note says the demo companies are synthetic and that in production the library is filled from a brand's own systems through Intake.
+
+**Search** (`api/search.py`, `components/GlobalSearch.tsx`). One bar at the top of every page (Cmd or Ctrl+K, or /) searches pieces, findings (latest review only), escalations, creators, rules, facts, codenames, artwork, events and the console's own pages and settings. Each group applies the same scoping as the screen it links to, in the query itself: workspace, tier clearance, creators only their own pieces, codenames for brand admins only, and no library hits for creators. Before anything is typed it suggests what needs this person next: the review queue oldest first, open escalations, guidelines reviewers often override, recent pieces. Recent hits are remembered per account in the browser.
+
+## 27. Fit with Inkloom
 
 Inkloom builds specialised AI models for logo design (public site and repository; see `docs/research/inkloom.md`). The failure mode of generated brand marks is fidelity: lettering garbled, details changed, colours drifting. Sections 23 and 24 address exactly that: registered official artwork is ground truth, matched and compared at the pixel level, wordmarks are spell-checked, and look-alikes are surfaced. The same pipeline governs the social content those marks end up in.
 
