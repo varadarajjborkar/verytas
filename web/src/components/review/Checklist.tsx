@@ -3,9 +3,9 @@
 import { useEffect, useRef } from "react";
 import { PRIORITY, whereLabel } from "@/lib/review-client";
 import type { Dispute, EscalationRequest, Finding, Level, Person } from "@/lib/types";
-import { type DecideFn, DecisionControls, DecisionTag } from "./DecisionControls";
+import { CALL_LABEL, callOf, type CallState, type DecideFn, DecisionControls } from "./DecisionControls";
 import { type EscalateFn, EscalationBox } from "./EscalationBox";
-import { ChevronIcon } from "../Icons";
+import { CheckIcon, ChevronIcon } from "../Icons";
 
 export type RowState = { done: boolean; apply: boolean; dispute: string; language: string; disputing: boolean };
 export const emptyRow = (): RowState => ({ done: false, apply: false, dispute: "", language: "", disputing: false });
@@ -15,6 +15,11 @@ const PILL: Record<Level, string> = {
   blocker: "bg-[var(--vt-blocker-bg)] text-[var(--vt-blocker)] ring-[var(--vt-blocker)]/30",
   warning: "bg-[var(--vt-warning-bg)] text-[var(--vt-warning)] ring-[var(--vt-warning)]/30",
   advisory: "bg-[var(--vt-advisory-bg)] text-[var(--vt-advisory)] ring-[var(--vt-advisory)]/30",
+};
+const DOT: Record<Level, string> = {
+  blocker: "bg-[var(--vt-blocker)]",
+  warning: "bg-[var(--vt-warning)]",
+  advisory: "bg-[var(--vt-advisory)]",
 };
 const DISPUTE_TEXT: Record<Dispute["status"], string> = {
   queued: "Re-evaluation queued",
@@ -39,8 +44,22 @@ export function PriorityPill({ level }: { level: Level }) {
   );
 }
 
+/** Where a row stands. The brand team's call on their side; the creator's own choice (fix, done, dispute) on theirs. */
+export type RowCall = { state: CallState | "chosen" | "done" | "disputed"; label: string } | null;
+export function rowCall(f: Finding, row: RowState | undefined, creator: boolean): RowCall {
+  if (creator) {
+    if (row?.apply) return { state: "chosen", label: "Fix chosen" };
+    if (row?.done) return { state: "done", label: "Done" };
+    if ((row?.dispute ?? "").trim().length >= 10) return { state: "disputed", label: "Disputed" };
+    return null;
+  }
+  const c = callOf(f);
+  return c ? { state: c, label: CALL_LABEL[c] } : null;
+}
+
 export function Checklist({ findings, rows, onRow, disputes, active, onSelect, decide, canDismissBlockers = false,
-  people = new Map(), creator = true, escalations = {}, onEscalate, onEscalationChanged = () => {} }: {
+  people = new Map(), creator = true, escalations = {}, onEscalate, onEscalationChanged = () => {}, show = "all",
+  onBusy, onDecided, creatorCalls = creator }: {
   findings: Finding[];
   rows: Record<number, RowState>;
   onRow: (id: number, patch: Partial<RowState>) => void;
@@ -58,6 +77,12 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
   escalations?: Record<number, EscalationRequest>;
   onEscalate?: EscalateFn;
   onEscalationChanged?: () => void;
+  /** "open" hides rows already decided, except the one being looked at. */
+  show?: "all" | "open";
+  onBusy?: (id: number | null) => void;
+  onDecided?: (f: Finding) => void;
+  /** Whose calls mark a row as handled: the creator's own (fix, done, dispute), or the brand team's decisions. */
+  creatorCalls?: boolean;
 }) {
   const list = useRef<HTMLUListElement>(null);
   // A highlight picked in the text opens its row here; bring that row into view too.
@@ -65,77 +90,70 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
     if (active == null) return;
     list.current?.querySelector(`[data-finding="${active}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [active]);
-  const counts = LEVEL_ORDER.map((l) => findings.filter((f) => f.level === l).length);
-  const done = findings.filter((f) => rows[f.id]?.done).length;
   // Fixes that land in the text itself; a change inside an attachment has to be made by hand.
   const fixable = findings.filter((f) => f.suggestions[0] && (f.source ?? "body") === "body");
   const allApplied = fixable.length > 0 && fixable.every((f) => rows[f.id]?.apply);
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        {LEVEL_ORDER.map((l, i) => counts[i] > 0 && (
-          <span key={l} className="inline-flex items-center gap-1.5"><PriorityPill level={l} /><span className="tabular-nums text-muted">{counts[i]}</span></span>
-        ))}
-        {creator && (
-          <span className="ml-auto flex items-center gap-3">
-            {fixable.length > 1 && (
-              <button type="button" onClick={() => fixable.forEach((f) => onRow(f.id, { apply: !allApplied }))}
-                className="font-medium text-accent hover:underline">
-                {allApplied ? "Unselect fixes" : `Apply all ${fixable.length} fixes`}
-              </button>
-            )}
-            <span className="tabular-nums text-subtle">{done}/{findings.length} done</span>
-          </span>
-        )}
-      </div>
-      {/* Rows run edge to edge inside the parent card, split by hairlines: a card in a card adds depth, not meaning. */}
-      <ul ref={list} className="vt-stagger -mx-4 border-t border-line">
-          {findings.map((f) => {
+    <div className="flex flex-col gap-2">
+      {creator && fixable.length > 1 && (
+        <button type="button" onClick={() => fixable.forEach((f) => onRow(f.id, { apply: !allApplied }))}
+          className="self-end text-xs font-medium text-accent hover:underline">
+          {allApplied ? "Unselect fixes" : `Use all ${fixable.length} fixes`}
+        </button>
+      )}
+      <ul ref={list} className="vt-stagger flex flex-col gap-1.5">
+          {findings.map((f, i) => {
             const row = rows[f.id] ?? emptyRow();
             const isOpen = active === f.id;
+            const call = rowCall(f, rows[f.id], creatorCalls);
+            if (show === "open" && call && !isOpen) return null;
             const d = disputes[f.id];
             const s = f.suggestions[0];
             const fixable = Boolean(s) && (f.source ?? "body") === "body";
+            const quiet = call?.state === "kept" || call?.state === "done";
             return (
-              <li key={f.id} data-finding={f.id} className={`border-b border-line transition-colors last:border-0 ${isOpen ? "bg-accent/[0.05]" : "hover:bg-sunken/40"}`}>
-                <div className={`grid items-start gap-x-3 px-4 py-3 ${creator ? "grid-cols-[1.25rem_minmax(0,1fr)]" : "grid-cols-1"}`}>
-                  {creator && (
-                    <input type="checkbox" checked={row.done} onChange={(e) => onRow(f.id, { done: e.target.checked })}
-                      aria-label={`Mark "${f.title}" as done`} className="mt-1 h-4 w-4 accent-[var(--vt-accent)]" />
+              <li key={f.id} data-finding={f.id}
+                className={`rounded-2xl border transition-[border-color,box-shadow,background-color] duration-200 ${isOpen
+                  ? "border-accent bg-raised shadow-[0_0_0_3px_color-mix(in_srgb,var(--vt-accent)_16%,transparent)]"
+                  : "border-line bg-surface hover:border-line-strong"}`}>
+                <button type="button" onClick={() => onSelect(isOpen ? null : f.id)} aria-expanded={isOpen}
+                  aria-controls={`finding-${f.id}`} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left">
+                  <span aria-hidden className={`grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full text-[11px] font-bold transition-all duration-300 ${
+                    !call ? `${DOT[f.level]} text-white` : quiet ? "scale-90 bg-sunken text-muted ring-1 ring-inset ring-line-strong"
+                      : call.state === "escalated" ? "scale-90 bg-[var(--vt-warning)] text-white" : "scale-90 bg-[var(--vt-ok)] text-white"}`}>
+                    {!call ? i + 1 : quiet ? "•" : <CheckIcon size={12} strokeWidth={3} />}
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className={`truncate text-[13.5px] font-medium ${call ? "text-muted" : ""}`}>{f.title}</span>
+                    <span className="truncate text-[11.5px] text-subtle">
+                      <span className="capitalize">{f.category}</span> · {whereLabel(f)}
+                      {d && <span className="text-accent"> · {DISPUTE_TEXT[d.status]}</span>}
+                      {escalations[f.id]?.status === "open" && <span className="text-accent"> · With the brand team</span>}
+                    </span>
+                  </span>
+                  {call ? (
+                    <span className={`shrink-0 text-[11.5px] ${quiet ? "text-subtle" : call.state === "escalated" ? "text-[var(--vt-warning)]" : "text-[var(--vt-ok)]"}`}>{call.label}</span>
+                  ) : (
+                    <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${PILL[f.level]}`}>{PRIORITY[f.level].label}</span>
                   )}
-                  <button type="button" onClick={() => onSelect(isOpen ? null : f.id)} aria-expanded={isOpen}
-                    aria-controls={`finding-${f.id}`} className="group flex min-w-0 flex-col items-start gap-1.5 text-left">
-                    <span className="flex w-full items-center gap-2">
-                      <PriorityPill level={f.level} />
-                      <ChevronIcon size={14} className={`ml-auto shrink-0 text-subtle transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
-                    </span>
-                    <span className={`line-clamp-2 text-sm font-medium group-hover:text-accent ${row.done ? "text-muted line-through" : ""}`}>{f.title}</span>
-                    {/* The fix, readable without opening the row: most decisions need nothing more. */}
-                    {s && !isOpen && (
-                      <span className="flex w-full min-w-0 items-baseline gap-1.5 text-xs">
-                        <del className="truncate text-[var(--vt-blocker)] decoration-1">{s.original}</del>
-                        <span aria-hidden className="text-subtle">→</span>
-                        <ins className="truncate text-[var(--vt-ok)] no-underline">{s.proposed}</ins>
-                      </span>
-                    )}
-                    <span className="flex flex-wrap gap-x-2 text-xs text-muted">
-                      <span>{whereLabel(f)}</span>
-                      {row.apply && <span className="font-medium text-[var(--vt-ok)]">· Fix will be applied</span>}
-                      {d && <span className="text-accent">· {DISPUTE_TEXT[d.status]}</span>}
-                      {f.assessment?.outcome && <span>· {f.assessment.outcome}</span>}
-                      <DecisionTag f={f} />
-                      {escalations[f.id]?.status === "open" && <span className="font-medium text-accent">· With the brand team</span>}
-                    </span>
-                  </button>
-                </div>
+                  <ChevronIcon size={14} className={`shrink-0 text-subtle transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
+                </button>
                 <div id={`finding-${f.id}`} className="vt-expand" data-open={isOpen} inert={!isOpen}>
                   <div>
-                  <div className={`flex flex-col gap-3 pb-4 pr-4 ${creator ? "pl-12" : "pl-4"}`}>
-                    <p className="text-sm leading-6 text-ink/90">{f.explanation}</p>
+                  <div className="flex flex-col gap-3 pb-3 pl-[2.6rem] pr-3">
+                    <p className="text-[13px] leading-6 text-muted">{f.explanation}</p>
                     {/* A passage in the text is already highlighted there; only attachment quotes need repeating. */}
                     {f.quote && (f.source ?? "body") !== "body" && (
                       <p className="border-l-2 border-line-strong pl-3 text-sm text-muted">“{f.quote}”</p>
+                    )}
+                    {s && (
+                      <div className="rounded-xl bg-sunken px-3 py-2 text-[13px]">
+                        {!fixable && <p className="mb-0.5 text-[11px] font-medium text-subtle">Change in the attachment</p>}
+                        <del className="text-[var(--vt-blocker)] decoration-1 opacity-85">{s.original}</del>
+                        {s.proposed ? <> <span aria-hidden className="text-subtle">→</span> <ins className="font-medium text-[var(--vt-ok)] no-underline">{s.proposed}</ins></>
+                          : <span className="text-subtle"> remove</span>}
+                      </div>
                     )}
                     {/* A cross-source finding: the other places the same thing reads differently. */}
                     {(f.locator?.evidence?.length ?? 0) > 0 && (
@@ -178,19 +196,6 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                         </ul>
                       </div>
                     )}
-                    {s && (
-                      <div className="border-l-2 border-[var(--vt-ok)] pl-3 text-sm">
-                        <p className="text-xs font-medium text-muted">{fixable ? "Suggested fix" : "Suggested change (in the attachment)"}</p>
-                        <p className="mt-0.5"><del className="text-[var(--vt-blocker)] decoration-1">{s.original}</del> → <ins className="text-[var(--vt-ok)] no-underline">{s.proposed}</ins></p>
-                        {fixable && creator && (
-                          <label className="mt-2 flex items-center gap-2 text-xs">
-                            <input type="checkbox" checked={row.apply} onChange={(e) => onRow(f.id, { apply: e.target.checked })}
-                              className="h-4 w-4 accent-[var(--vt-accent)]" />
-                            Apply on resubmit
-                          </label>
-                        )}
-                      </div>
-                    )}
                     {f.assessment?.reader_reading && (
                       <p className="border-l-2 border-accent/40 pl-3 text-xs leading-5">
                         <span className="font-semibold">How a reader may take it:</span> {f.assessment.reader_reading}
@@ -198,39 +203,49 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                       </p>
                     )}
                     {/* Where the finding comes from: every one cites a rule or an approved fact. */}
-                    <ul className="flex flex-col gap-1 text-xs">
-                      {f.citations.map((c) => (
-                        <li key={`${c.kind}-${c.id}`} className="flex gap-1.5">
-                          <span className="shrink-0 rounded bg-sunken px-1.5 font-medium capitalize text-muted">{c.kind}</span>
-                          <span>{c.label}{c.source && <span className="text-muted"> · {c.source}</span>}</span>
-                        </li>
+                    <p className="text-[11.5px] leading-5 text-subtle">
+                      {f.citations.map((c, i) => (
+                        <span key={`${c.kind}-${c.id}`}>{i > 0 && " · "}<span className="capitalize">{c.kind}</span>: {c.label}{c.source && ` (${c.source})`}</span>
                       ))}
-                      <li className="text-subtle">
-                        <span className="capitalize">{f.category}</span> · {Math.round(f.confidence * 100)}% sure
-                        {/* What that certainty has meant here: how often reviewers agreed with findings like it. */}
-                        {f.calibration?.agree != null && (
-                          <span title={f.calibration.n != null ? `From ${f.calibration.n} decision${f.calibration.n === 1 ? "" : "s"} on ${f.calibration.family === "all" ? "all" : f.calibration.family} findings in this workspace` : undefined}>
-                            {" "}(reviewers agreed with {Math.round(f.calibration.agree * 10)} in 10 like it)
-                          </span>
-                        )}
-                        {f.calibration?.held_back_below != null && (
-                          <span>{" "}· an advisory: reviewers here dismiss many warnings under {Math.round(f.calibration.held_back_below * 100)}% sure</span>
-                        )}
-                        {" "}· {f.model ? f.model : "rule-based"}
-                        {f.signature_valid && " · signed"}
-                      </li>
-                    </ul>
+                      {f.citations.length > 0 && <br />}
+                      {Math.round(f.confidence * 100)}% sure
+                      {/* What that certainty has meant here: how often reviewers agreed with findings like it. */}
+                      {f.calibration?.agree != null && (
+                        <span title={f.calibration.n != null ? `From ${f.calibration.n} decision${f.calibration.n === 1 ? "" : "s"} on ${f.calibration.family === "all" ? "all" : f.calibration.family} findings in this workspace` : undefined}>
+                          {" "}(reviewers agreed with {Math.round(f.calibration.agree * 10)} in 10 like it)
+                        </span>
+                      )}
+                      {f.calibration?.held_back_below != null && (
+                        <span>{" "}· an advisory: reviewers here dismiss many warnings under {Math.round(f.calibration.held_back_below * 100)}% sure</span>
+                      )}
+                      {" "}· {f.model ? f.model : "rule-based"}
+                      {f.signature_valid && " · signed"}
+                    </p>
                     {d?.verdict?.reason && (
                       <p className="rounded-lg border border-accent/30 bg-accent/5 p-2.5 text-xs">
                         <span className="font-semibold">{DISPUTE_TEXT[d.status]}.</span> {d.verdict.reason}
                         {d.verdict.safer_alternative && <><br /><span className="font-semibold">Safer wording:</span> {d.verdict.safer_alternative}</>}
                       </p>
                     )}
-                    <DecisionControls f={f} decide={decide} canDismissBlockers={canDismissBlockers} people={people} />
-                    <EscalationBox f={f} request={escalations[f.id]} side={creator ? "creator" : "manager"}
-                      onEscalate={creator && f.level !== "advisory" ? onEscalate : undefined} onChanged={onEscalationChanged} />
-                    {creator && !d && (row.disputing ? (
-                      <div className="flex flex-col gap-2">
+                    {creator && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {fixable && (
+                          <button type="button" onClick={() => onRow(f.id, { apply: !row.apply })}
+                            className={`vt-btn vt-btn-sm ${row.apply ? "" : "vt-btn-primary"}`}>
+                            {row.apply ? "Don't use this fix" : "Use this fix"}
+                          </button>
+                        )}
+                        <button type="button" onClick={() => onRow(f.id, { done: !row.done })}
+                          className={`vt-btn vt-btn-sm ${!fixable && !row.done ? "vt-btn-primary" : ""}`}>
+                          {row.done ? "Not done yet" : "Mark done"}
+                        </button>
+                        {!d && !row.disputing && (
+                          <button type="button" onClick={() => onRow(f.id, { disputing: true })} className="vt-btn vt-btn-quiet vt-btn-sm">Dispute</button>
+                        )}
+                      </div>
+                    )}
+                    {creator && !d && row.disputing && (
+                      <div className="vt-pop flex flex-col gap-2">
                         <label className="text-xs font-medium" htmlFor={`dispute-${f.id}`}>What does it actually mean, and why is this reading wrong?</label>
                         <textarea id={`dispute-${f.id}`} value={row.dispute} maxLength={2000}
                           onChange={(e) => onRow(f.id, { dispute: e.target.value })}
@@ -247,11 +262,11 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                           <button type="button" onClick={() => onRow(f.id, { disputing: false, dispute: "" })} className="ml-auto text-xs text-muted hover:text-ink">Cancel</button>
                         </div>
                       </div>
-                    ) : (
-                      <button type="button" onClick={() => onRow(f.id, { disputing: true })} className="vt-btn vt-btn-quiet self-start vt-btn-sm">
-                        Dispute
-                      </button>
-                    ))}
+                    )}
+                    <DecisionControls f={f} decide={decide} canDismissBlockers={canDismissBlockers} people={people}
+                      onBusy={onBusy} onDecided={onDecided} />
+                    <EscalationBox f={f} request={escalations[f.id]} side={creator ? "creator" : "manager"}
+                      onEscalate={creator && f.level !== "advisory" ? onEscalate : undefined} onChanged={onEscalationChanged} />
                   </div>
                   </div>
                 </div>

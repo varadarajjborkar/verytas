@@ -173,7 +173,8 @@ export function ReviewQueue() {
               aria-label="Next piece in the queue">Next <ArrowRightIcon size={14} /></button>
           </div>
         </div>
-        <ReviewView key={selected} contentId={selected} role={me?.role ?? "reviewer"} userId={me?.id ?? null} onChanged={refresh} />
+        <ReviewView key={selected} contentId={selected} role={me?.role ?? "reviewer"} userId={me?.id ?? null} onChanged={refresh}
+          onNext={next != null ? () => set({ id: next }) : undefined} />
       </div>
     );
   }

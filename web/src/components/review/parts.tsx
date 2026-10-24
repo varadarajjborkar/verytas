@@ -91,12 +91,19 @@ export function findingKey(f: Finding): string {
   return `${f.category}|${f.source ?? "body"}|${f.quote ?? f.title}`;
 }
 
-export function HighlightedBody({ body, findings, active, onSelect, innerRef }: {
+export function HighlightedBody({ body, findings, active, onSelect, innerRef, replaced = {}, kept, leaving = null }: {
   body: string;
   findings: Finding[];
   active: number | null;
   onSelect: (id: number) => void;
   innerRef: React.RefObject<HTMLElement | null>;
+  /** Fixes asked for or chosen, by finding id: the fix's own words are swapped inside the flagged span, as the
+   * backend will splice them, so the text reads as it will go out. */
+  replaced?: Record<number, { original: string; proposed: string }>;
+  /** Findings kept as they are or ticked off: still marked, quietly. */
+  kept?: Set<number>;
+  /** The finding whose decision is being saved; its words fade out before the new ones arrive. */
+  leaving?: number | null;
 }) {
   // The API counts characters in code points; JS strings index UTF-16 units,
   // so every emoji before a span would shift it by one. Convert first.
@@ -112,8 +119,28 @@ export function HighlightedBody({ body, findings, active, onSelect, innerRef }: 
   for (const f of spans) {
     if (f.span_start! < cursor) continue;
     if (f.span_start! > cursor) parts.push(body.slice(cursor, f.span_start!));
+    const swap = replaced[f.id];
+    const span = body.slice(f.span_start!, f.span_end!);
+    // A fix whose words are not in the span is one the backend would skip; show the words unchanged then.
+    const at = swap ? span.indexOf(swap.original) : -1;
+    if (swap && at >= 0 && leaving !== f.id) {
+      parts.push(
+        <span key={f.id}>
+          {span.slice(0, at)}
+          <ins data-id={f.id} data-active={active === f.id} className="vt-fix" title="Asked-for wording" tabIndex={0} role="button"
+            aria-label={`Fix for: ${f.title}`} onClick={() => onSelect(f.id)}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onSelect(f.id))}>
+            {swap.proposed || <span className="text-subtle">(removed)</span>}
+          </ins>
+          {span.slice(at + swap.original.length)}
+        </span>,
+      );
+      cursor = f.span_end!;
+      continue;
+    }
     parts.push(
       <mark key={f.id} data-id={f.id} data-level={f.level} data-active={active === f.id} tabIndex={0} role="button"
+        data-kept={kept?.has(f.id) || undefined} data-leaving={leaving === f.id || undefined}
         aria-label={`${f.level}: ${f.title}`} onClick={() => onSelect(f.id)}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onSelect(f.id))}>
         {body.slice(f.span_start!, f.span_end!)}

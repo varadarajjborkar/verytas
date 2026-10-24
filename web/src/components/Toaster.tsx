@@ -85,7 +85,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       {/* Every notice sits in the same grid cell, so an outgoing one fades in
           place instead of pushing the new one around. */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 grid justify-items-center px-4 pb-4 sm:pb-5">
+      <div className="vt-toasts pointer-events-none fixed inset-x-0 bottom-0 z-50 grid justify-items-center px-4 pb-4 sm:pb-5">
         {toasts.map((t) => (
           <ToastCard key={t.id} toast={t} onClose={() => dismiss(t.id)} onEnter={() => clock().pause(t.id)} onLeave={() => clock().resume(t.id)} />
         ))}

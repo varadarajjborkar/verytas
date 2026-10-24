@@ -13,7 +13,9 @@ export function useModalFocus(panel: RefObject<HTMLElement | null>, onClose: () 
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
-    panel.current?.querySelector<HTMLElement>("button, a[href], input, [tabindex]:not([tabindex='-1'])")?.focus();
+    // A panel that exists to take words (a note, a reason) marks its field, so typing lands there and not on a button.
+    (panel.current?.querySelector<HTMLElement>("[data-autofocus]")
+      ?? panel.current?.querySelector<HTMLElement>("button, a[href], input, [tabindex]:not([tabindex='-1'])"))?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close.current();
       if (e.key !== "Tab" || !panel.current) return;
@@ -37,7 +39,8 @@ export function useModalFocus(panel: RefObject<HTMLElement | null>, onClose: () 
       document.removeEventListener("keydown", onKey);
       others.forEach((c) => { c.inert = false; });
       if (others.length) document.body.style.overflow = overflow;
-      opener?.focus();
+      // The opener may be gone (a sent-back piece swaps its buttons); focus then stays where the browser puts it.
+      if (opener?.isConnected) opener.focus();
     };
   }, [panel]);
 }

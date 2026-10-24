@@ -262,6 +262,44 @@ mark[data-level="blocker"] { background: var(--vt-blocker-bg); box-shadow: inset
 mark[data-level="warning"] { background: var(--vt-warning-bg); box-shadow: inset 0 -2px 0 var(--vt-warning); }
 mark[data-level="advisory"] { background: var(--vt-advisory-bg); box-shadow: inset 0 -2px 0 var(--vt-advisory); }
 mark[data-active="true"] { outline: 2px solid var(--vt-accent); }
+/* A finding someone kept or ticked off stays findable, but stops shouting. */
+mark[data-kept="true"] { background: transparent; box-shadow: inset 0 -1px 0 var(--vt-line-strong); }
+/* Words on their way out while a decision is saved, then the asked-for wording grows in where they were. */
+mark[data-leaving="true"] { animation: vt-leave 320ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+@keyframes vt-leave { to { opacity: 0.25; filter: blur(1.5px); } }
+ins.vt-fix { text-decoration: none; border-radius: 3px; padding: 0 2px; cursor: pointer;
+  box-shadow: inset 0 -1.5px 0 color-mix(in srgb, var(--vt-ok) 75%, transparent); animation: vt-fix-in 550ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+ins.vt-fix[data-active="true"] { outline: 2px solid var(--vt-accent); }
+@keyframes vt-fix-in {
+  from { opacity: 0; transform: translateY(3px); background: color-mix(in srgb, var(--vt-ok) 30%, transparent); }
+  60% { opacity: 1; background: color-mix(in srgb, var(--vt-ok) 22%, transparent); }
+  to { background: transparent; }
+}
+
+/* The piece under review sits a step above the page, the one raised sheet on it, in whichever theme is on: a
+   faint ivory in light, a lifted grey in dark. Never the opposite theme, which would glare. */
+.vt-paper { color: var(--vt-ink); border-radius: 22px; border: 1px solid var(--vt-line);
+  background: linear-gradient(170deg, light-dark(#fffefb, #1f2430), light-dark(#fbf9f3, #191d26));
+  box-shadow: 0 1px 2px light-dark(rgba(18, 24, 40, 0.06), rgba(0, 0, 0, 0.3)),
+    0 24px 50px -24px light-dark(rgba(18, 24, 40, 0.22), rgba(0, 0, 0, 0.6)); }
+
+/* The review's one bar: progress and the next thing to do, floating over the bottom edge. */
+/* Centred by auto margins, not a transform: the entrance animation owns transform and would undo it. */
+.vt-dock { position: fixed; inset-inline: 0; margin-inline: auto; width: max-content; bottom: max(1.25rem, env(safe-area-inset-bottom)); z-index: 30;
+  display: flex; align-items: center; gap: 0.875rem; padding: 0.5rem 0.5rem 0.5rem 1rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--vt-raised) 84%, transparent); backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--vt-line-strong); box-shadow: var(--vt-shadow-pop), 0 20px 40px -18px rgba(0, 0, 0, 0.45);
+  animation: vt-pop 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; max-width: calc(100vw - 1.5rem); white-space: nowrap; }
+@media (max-width: 40rem) { .vt-dock { gap: 0.5rem; padding-left: 0.875rem; font-size: 12px; } }
+/* Notices rise above the review's bar instead of landing on it. */
+body:has(.vt-dock) .vt-toasts { padding-bottom: 5.25rem; }
+.vt-pip { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--vt-line-strong); transition: all 300ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.vt-pip[data-level="blocker"] { border-color: var(--vt-blocker); }
+.vt-pip[data-level="warning"] { border-color: var(--vt-warning); }
+.vt-pip[data-level="advisory"] { border-color: var(--vt-advisory); }
+.vt-pip[data-state="asked"] { background: var(--vt-ok); border-color: var(--vt-ok); transform: scale(0.85); }
+.vt-pip[data-state="kept"] { background: var(--vt-line-strong); border-color: var(--vt-line-strong); transform: scale(0.85); }
+.vt-pip[data-on="true"] { transform: scale(1.35); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vt-accent) 18%, transparent); }
 
 /* --- motion -------------------------------------------------------------- */
 /* Short and ease-out. Each page rises in once; groups reveal in order; overlays
