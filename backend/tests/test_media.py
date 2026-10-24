@@ -360,7 +360,8 @@ def test_pixel_redaction_catches_wrapped_terms_and_noise_lines():
                     noise=[OcrLine("Project Lumen", 0.2, (0, 140, 300, 180))])
     out, hidden = pixels.redact(img, ocr, [term_pattern("Project Lumen", loose=True)])
     px = out.load()
-    assert hidden == 2 and px[10, 30] == px[10, 90] == px[10, 160] == (0, 0, 0)
+    # The wrapped pair, the noise line, and "Lumen" alone on the second line (a codename without its lead word).
+    assert hidden == 3 and px[10, 30] == px[10, 90] == px[10, 160] == (0, 0, 0)
 
 
 # --- emoji -----------------------------------------------------------------------------------

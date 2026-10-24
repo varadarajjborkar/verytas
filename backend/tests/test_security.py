@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 
 import pytest
@@ -154,6 +155,25 @@ def test_confidential_variants_are_redacted(text):
     r = Redactor(["Project Lumen"])
     assert "lumen" not in r.redact(text).lower()
     assert r.restore(r.redact(text)) == text
+
+
+def test_a_codename_said_without_its_generic_lead_word_is_hidden_too():
+    # Seen in a real escalation: "Falcon was named in the CEO's interview" reached the model whole.
+    r = Redactor(["Project Falcon"])
+    text = "Project Falcon ships; Falcon was named on Monday, and falcons fly."
+    red = r.redact(text)
+    assert "Falcon" not in red and "FALCON" not in r.redact("FALCON in the deck")
+    assert "falcons fly" in red  # a capital is what marks the name; the bird stays
+    assert re.match(r"\[\[TERM_\d\]\] ships", red)  # the full term is one placeholder where it is written out
+    assert r.restore(red) == text
+    from verytas.security.terms import term_pattern
+
+    assert not term_pattern("Project Falcon").search("Falcon was named")  # CONF-LEAK stays exact
+    assert "Blue" in Redactor(["Project X"]).redact("Blue X")  # too short a name to hide on its own
+    # Common words used as names are hidden only as whole, capitalised words.
+    said = "We start the restart at Starbucks. What is next? Star is late."
+    red = Redactor(["Project Star", "Operation Next"]).redact(said)
+    assert red.startswith("We start the restart at Starbucks. What is next? [[TERM_")
 
 
 def test_leak_check_matches_variants_but_not_inside_other_words():

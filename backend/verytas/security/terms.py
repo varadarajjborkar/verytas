@@ -237,6 +237,8 @@ def sub_folded(pattern: re.Pattern[str], text: str, repl: Callable[[str], str]) 
 _SPLIT = re.compile(r"[\s_\-]+")
 _NEVER = re.compile(r"(?!)")
 _SEP = r"[\s_\-]*"
+# Words that only say what kind of name follows: "Project", "Codename", "Operation".
+_GENERIC_LEADS = frozenset({"project", "codename", "operation", "programme", "program", "initiative"})
 
 
 def term_pattern(term: str, *, loose: bool = False) -> re.Pattern[str]:
@@ -250,5 +252,16 @@ def term_pattern(term: str, *, loose: bool = False) -> re.Pattern[str]:
         return _NEVER
     core = _SEP.join(parts) + r"(?:e?s)?"  # tolerate simple plurals
     if loose:
-        return re.compile(core, re.IGNORECASE)
+        # "Project Falcon" is said as "Falcon" as often as in full, and the generic lead word is not what is
+        # secret. The guards that keep a term from leaving also hide the distinctive name on its own; the
+        # bounded pattern behind CONF-LEAK findings does not, since a blocker on every "falcon" is too much.
+        # On its own the name is matched as a whole word starting with a capital, as names are written:
+        # "Falcon was named" is hidden, "falcons fly", "what is next?" and "restart" are left alone.
+        lead = len(parts) > 1 and parts[0].lower() in _GENERIC_LEADS and sum(len(p) for p in parts[1:]) >= 4
+        if not lead:
+            return re.compile(core, re.IGNORECASE)
+        rest = parts[1:]
+        initial = f"(?-i:{re.escape(rest[0][0].upper())})"
+        name = initial + _SEP.join([rest[0][1:], *rest[1:]]) + r"(?:e?s)?"
+        return re.compile(rf"{core}|(?<![A-Za-z0-9]){name}(?![A-Za-z0-9])", re.IGNORECASE)
     return re.compile(rf"(?<![A-Za-z0-9]){core}(?![A-Za-z0-9])", re.IGNORECASE)
