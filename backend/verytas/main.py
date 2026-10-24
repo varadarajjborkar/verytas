@@ -21,6 +21,7 @@ from verytas.api import (
     intake,
     knowledge,
     media,
+    onboarding,
     people,
     search,
 )
@@ -95,7 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # media before content: /contents/precheck must not be read as a content id.
     routers = (admin, accounts, knowledge, people, media, intake, content, governance, insights, chats, assistant,
-               assist, search)
+               assist, search, onboarding)
     for module in routers:
         app.include_router(module.router)
     return app
