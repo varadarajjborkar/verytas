@@ -6,16 +6,16 @@ import type { ContentRow } from "./types";
 
 export type Queue = "waiting" | "escalated" | "creator" | "approved" | "all";
 
-export const QUEUES: Record<Queue, { label: string; title: string; lead: string; test: (r: ContentRow) => boolean }> = {
-  waiting: { label: "Waiting", title: "Waiting for a decision", lead: "Sent by creators.",
+export const QUEUES: Record<Queue, { label: string; title: string; test: (r: ContentRow) => boolean }> = {
+  waiting: { label: "Waiting", title: "Waiting for a decision",
     test: (r) => r.status === "in_review" },
-  escalated: { label: "Escalated", title: "Escalated to a person", lead: "A creator asked the brand team to look at a finding.",
+  escalated: { label: "Escalated", title: "Escalated to a person",
     test: (r) => (r.open_escalations ?? 0) > 0 },
-  creator: { label: "With creator", title: "With the creator", lead: "Drafts and pieces sent back. Nothing to do until they resend.",
+  creator: { label: "With creator", title: "With the creator",
     test: (r) => r.status === "draft" || r.status === "changes_requested" },
-  approved: { label: "Approved", title: "Approved and published", lead: "Cleared pieces. Approved ones can still be published or sent back.",
+  approved: { label: "Approved", title: "Approved and published",
     test: (r) => r.status === "approved" || r.status === "published" },
-  all: { label: "All", title: "Every piece", lead: "Everything you can see.", test: () => true },
+  all: { label: "All", title: "Every piece", test: () => true },
 };
 export const QUEUE_ORDER: Queue[] = ["waiting", "escalated", "creator", "approved", "all"];
 export const isQueue = (q: string | null): q is Queue => q != null && Object.hasOwn(QUEUES, q);

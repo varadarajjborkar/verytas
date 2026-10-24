@@ -26,14 +26,6 @@ type Column = "priority" | "piece" | "stage" | "check" | "signals" | "age";
 const COLUMNS: Column[] = ["priority", "piece", "stage", "check", "signals", "age"];
 const isColumn = (c: string | null): c is Column => c != null && (COLUMNS as string[]).includes(c);
 const SIGNAL_TAGS: Signal[] = ["mustfix", "escalated", "event", "failed"];
-const COLUMN_WORDS: Record<Column, { name: string; desc: string; asc: string }> = {
-  priority: { name: "priority", desc: "highest first", asc: "lowest first" },
-  piece: { name: "title", desc: "Z to A", asc: "A to Z" },
-  stage: { name: "stage", desc: "earliest first", asc: "furthest along first" },
-  check: { name: "latest check", desc: "best score first", asc: "lowest score first" },
-  signals: { name: "signals", desc: "most first", asc: "fewest first" },
-  age: { name: "time", desc: "oldest first", asc: "newest first" },
-};
 
 function columnValue(col: Column, r: ContentRow, ageOf: (r: ContentRow) => string): number | string {
   switch (col) {
@@ -155,9 +147,6 @@ export function ReviewQueue() {
     });
   }, [all, queue, creator, channel, event, signal, query, sort, nameOf, col, dir]);
 
-  const orderNote = col ? `Sorted by ${COLUMN_WORDS[col].name}, ${COLUMN_WORDS[col][dir]}.`
-    : sort === "priority" ? "Highest priority first." : "";
-
   // Highest first, then lowest first, then the queue's own order again.
   const sortBy = (c: Column) => col !== c ? set({ col: c, dir: "desc" })
     : dir === "desc" ? set({ col: c, dir: "asc" }) : set({ col: null, dir: null });
@@ -191,10 +180,8 @@ export function ReviewQueue() {
 
   const groups = groupRows(filtered, group, nameOf, eventName);
   const counts = Object.fromEntries(QUEUE_ORDER.map((q) => [q, all.filter((r) => QUEUES[q].test(r)).length])) as Record<Queue, number>;
-  const mustFix = filtered.reduce((n, r) => n + (r.latest_review?.blockers ?? 0), 0);
   // Previous and next walk the list as it was when the piece was opened.
   const openRow = (id: number) => { setOpened(groups.flatMap(([, xs]) => xs.map((x) => x.id))); set({ id }); };
-  const oldest = queue === "waiting" ? [...filtered].sort((a, b) => sinceOf(a).localeCompare(sinceOf(b)))[0] : undefined;
 
   return (
     <div className="flex flex-col gap-4">
@@ -256,13 +243,6 @@ export function ReviewQueue() {
       <section id="queue-panel" role="tabpanel" aria-labelledby={`queue-tab-${queue}`} className="vt-card min-w-0 overflow-hidden">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line px-4 py-3 md:px-5">
           <h2 className="text-sm font-semibold">{QUEUES[queue].title}</h2>
-          <p className="text-xs text-muted">{QUEUES[queue].lead}{orderNote ? ` ${orderNote}` : ""}</p>
-          {rows && (
-            <p className="text-xs tabular-nums text-subtle">
-              {filtered.length} piece{filtered.length === 1 ? "" : "s"}{mustFix ? ` · ${mustFix} must-fix` : ""}
-              {oldest ? ` · oldest sent ${relativeTime(sinceOf(oldest))}` : ""}
-            </p>
-          )}
           {/* Order and grouping shape the list itself, so they sit on it rather than among the filters. */}
           <div className="ml-auto flex items-center gap-1.5">
             <select value={sort} onChange={(e) => set({ sort: e.target.value, col: null, dir: null })} aria-label="Sort" className="vt-input w-auto py-1 text-xs">
