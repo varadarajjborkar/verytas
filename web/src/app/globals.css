@@ -234,8 +234,8 @@ table, .tabular-nums { font-variant-numeric: tabular-nums; }
 .vt-search-pill:focus-within::before { background: var(--vt-line-strong); }
 /* A document page shown as it looks stays the document's own white, dimmed a touch in dark mode so it does
    not glare against the dark console. */
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .vt-page { filter: brightness(0.86); } }
-:root[data-theme="dark"] .vt-page { filter: brightness(0.86); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .vt-doc-page { filter: brightness(0.86); } }
+:root[data-theme="dark"] .vt-doc-page { filter: brightness(0.86); }
 /* Unlayered, like the :focus-visible rule it overrides: search boxes show focus by their own neutral edge. */
 input.vt-search:focus-visible { outline: none; }
 /* What the search matched, inside a result. */

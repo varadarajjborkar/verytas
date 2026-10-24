@@ -41,7 +41,7 @@ export function DocumentPreviewPane({ contentId, versionId, docId, findings, act
         const here = marks.filter((m) => m.page === i + 1 && byId.has(m.finding_id));
         return (
           <li key={i} className="flex flex-col gap-1.5">
-            <div className="vt-page relative overflow-hidden rounded-lg border border-line bg-white" style={{ aspectRatio: `${size.width} / ${size.height}` }}>
+            <div className="vt-doc-page relative overflow-hidden rounded-lg border border-line bg-white" style={{ aspectRatio: `${size.width} / ${size.height}` }}>
               {/* eslint-disable-next-line @next/next/no-img-element -- rendered by the API behind the session */}
               <img src={documentPageUrl(contentId, versionId, docId, i + 1)} alt={`Page ${i + 1}`} loading="lazy"
                 className="absolute inset-0 h-full w-full" />
@@ -75,7 +75,7 @@ function WebPage({ html, findings }: { html: string; findings: Finding[] }) {
   return (
     <div className="flex flex-col gap-1.5">
       <iframe title="The web page as it looks" sandbox="" referrerPolicy="no-referrer" srcDoc={srcDoc}
-        className="vt-page h-[36rem] w-full resize-y rounded-lg border border-line bg-white" />
+        className="vt-doc-page h-[36rem] w-full resize-y rounded-lg border border-line bg-white" />
       <p className="text-xs text-subtle">Shown with its scripts off and nothing loaded from the internet. Marks show where
         each issue is; pick an issue from the list to work on it.</p>
     </div>
