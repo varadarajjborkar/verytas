@@ -381,3 +381,272 @@ def locate(phrase: str, transcript: str, *, scale: float = 1.0) -> tuple[int, in
             if (s := spot(phrase, transcript[a:b], scale=scale)) is not None:
                 return a, b, s
     return None
+
+
+# ----------------------------------------------------------------------------------- spoken figures to digits
+# Every price and percentage check reads digits ("40%", "₹499"). Hindi speech comes back as words, in either
+# script and spelt by ear: "चालिस प्रतिषवत", "charso ninyanwe rupe", "400 Ninjaanwe Rupé". `write_figures` is the
+# inverse text normalisation an ASR service would do, limited to the one thing the checks need: a number said
+# right before "percent" or "rupees". A number with no unit after it is left alone, because without the unit
+# "for", "this" and "on" read as Hindi or English numbers. The consonant key is too coarse here (25, 50 and 85
+# share one), so number words get a finer spelling that keeps the vowels after the schwa is dropped.
+
+_SPELL_MATRAS = {"ा": "a", "ि": "i", "ी": "i", "ु": "u", "ू": "u", "ृ": "ri", "े": "e", "ै": "e", "ो": "o",
+                 "ौ": "o", "ॉ": "o", "ॅ": "e"}
+_SPELL_VOWELS = {"अ": "a", "आ": "a", "इ": "i", "ई": "i", "उ": "u", "ऊ": "u", "ऋ": "ri", "ए": "e", "ऐ": "e",
+                 "ओ": "o", "औ": "o", "ऑ": "o"}
+# Romanisers spell one vowel many ways; fold the long and the diphthong forms first.
+_SPELL_LATIN_VOWELS = [("aa", "a"), ("ee", "i"), ("ii", "i"), ("oo", "u"), ("uu", "u"), ("ai", "e"), ("ay", "e"),
+                       ("ei", "e"), ("au", "o"), ("aw", "o"), ("ou", "o")]
+
+
+@lru_cache(maxsize=4096)
+def spelling(word: str) -> str:
+    """Consonant classes plus vowels, with the schwa between consonants and at the end dropped, as Hindi says
+    it: "chalice", "chalis", "चालीस" and "जालिस" all become JLiS, while 25 (PJiS) and 50 (PJS) stay apart."""
+    w = unicodedata.normalize("NFC", word)
+    for base, joined in _NUKTA_FORMS.items():
+        w = w.replace(base + "़", joined)
+    out: list[str] = []
+    deva = [c for c in w if "ऀ" <= c <= "ॿ"]
+    if deva:
+        for i, c in enumerate(deva):
+            nxt = deva[i + 1] if i + 1 < len(deva) else ""
+            if c in _DEVA_CONS:
+                out.append(_DEVA_CONS[c])
+                if nxt not in _SPELL_MATRAS and nxt != _VIRAMA:
+                    out.append("a")
+            elif c in _SPELL_MATRAS:
+                out.append(_SPELL_MATRAS[c])
+            elif c in _SPELL_VOWELS:
+                out.append(_SPELL_VOWELS[c])
+            elif c in "ंँ":
+                out.append("N")
+    else:
+        s = "".join(c for c in unicodedata.normalize("NFKD", w.lower()) if c.isascii() and c.isalpha())
+        for long, short in _SPELL_LATIN_VOWELS:
+            s = s.replace(long, short)
+        i = 0
+        while i < len(s):
+            for dg, cls in _LATIN_DIGRAPHS:
+                if s.startswith(dg, i):
+                    out.append(cls)
+                    i += len(dg)
+                    break
+            else:
+                ch = s[i]
+                if ch == "c":
+                    out.append("S" if s[i + 1:i + 2] in ("e", "i", "y") else "K")
+                elif ch in _LATIN_VOWELS:
+                    out.append(ch)
+                elif ch in _LATIN_SINGLE:
+                    out.append(_LATIN_SINGLE[ch])
+                i += 1
+    t = re.sub(r"([A-Za-z])\1+", r"\1", "".join(out))
+    t = t[:1] + t[1:].replace("H", "")  # aspiration is spelt or dropped at will after the first sound
+    t = re.sub(r"(?<=[A-Z])a(?=[A-Z])", "", t)
+    t = re.sub(r"(?<=[A-Z])[ae]$", "", t)  # the final schwa, and the final e romanisers add or drop
+    return re.sub(r"([A-Z])\1+", r"\1", t)
+
+
+_SPELT_NUMBERS: dict[str, set[int]] = {}
+_HINDI_SPELLINGS: set[str] = set()
+for _n in range(100):
+    _SPELT_NUMBERS.setdefault(spelling(_HINDI_0_99[_n]), set()).add(_n)
+    _HINDI_SPELLINGS.add(spelling(_HINDI_0_99[_n]))
+for _n in range(20):
+    _SPELT_NUMBERS.setdefault(spelling(_EN_ONES[_n]), set()).add(_n)
+for _n in range(2, 10):
+    _SPELT_NUMBERS.setdefault(spelling(_EN_TENS[_n]), set()).add(_n * 10)
+_DEVA_NUMBERS = {unicodedata.normalize("NFC", w): n for n, w in enumerate(_HINDI_0_99)}
+_SPELT_MULTIPLIERS = {spelling(w): m for w, m in (
+    ("सौ", 100), ("hundred", 100), ("हज़ार", 1000), ("हजार", 1000), ("thousand", 1000), ("लाख", 100000),
+    ("lakh", 100000))}
+_HINDI_SPELLINGS |= {spelling(w) for w in ("सौ", "हज़ार", "लाख")}
+# Everyday English words that spell like a Hindi or English number ("for" is char, "this" is tees). Speech is
+# Hinglish, so they are said all the time; they never start a figure.
+_NOT_NUMBERS = frozenset({
+    "for", "this", "to", "too", "the", "these", "those", "then", "than", "that", "there", "tea", "saw", "won",
+    "tin", "ate", "eat", "sat", "set", "say", "see", "sea", "shy", "she", "no", "know", "now", "new", "net"})
+# A number right after one of these is part of a figure this reader does not write: a range ("five to ten",
+# "paanch se das"), a sum ("one hundred and five", "do sau aur paanch") or a fraction ("साढ़े तीन सौ" is 350,
+# "one point five" is 1.5). Leaving it as words is safe; writing the tail alone would invent a smaller figure.
+_JOINERS = frozenset({"and", "aur", "और", "se", "से", "to", "or", "ya", "या"})
+_FRACTIONS = frozenset({"साढ़े", "साढे", "sadhe", "saadhe", "sade", "saade", "सवा", "sawa", "sava", "पौने",
+                        "paune", "डेढ़", "डेढ", "dedh", "ढाई", "dhai", "point", "दशमलव", "dashamlav", "half"})
+# Units in Latin script are taken only as spelt here: by sound, "reps", "roofs", "forest" and "present" are
+# rupees and percent. Devanagari units, and units after a number said in Hindi, may be matched by sound.
+_LATIN_UNITS = {
+    "%": frozenset({"percent", "per cent", "persent", "pratishat", "pratishath", "pratisat", "parsent"}),
+    "$": frozenset({"rupees", "rupee", "rupaye", "rupay", "rupe", "rupai", "rupaiya", "rupiya", "rupia", "rupis",
+                    "rupies", "rupaie", "rupye", "rupaee"}),
+}
+_FIGURE_UNITS = {c: sorted(set(_UNIT_SOUNDS[c]) | {k for f in _ALIASES[c] if len(k := word_key(f)) >= 2})
+                 for c in ("%", "$")}
+_PLAIN_UNITS = frozenset({"percent", "rupees", "rs"})  # already read by the checks; nothing to rewrite
+_MAX_DIGITS = 9  # a figure longer than this is a phone number or a transcription glitch, not a price
+
+
+def edit_distance(a: str, b: str) -> int:
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+@lru_cache(maxsize=4096)
+def _spelt_value(sp: str) -> tuple[str, int] | None:
+    """("n", value) for an exact number word, ("f", value) for a near one, ("m", factor) for a multiplier.
+    A near spelling counts only when it is long and one edit from exactly one number."""
+    if sp in _SPELT_MULTIPLIERS:
+        return "m", _SPELT_MULTIPLIERS[sp]
+    if sp in _SPELT_NUMBERS:
+        values = _SPELT_NUMBERS[sp]
+        return ("n", next(iter(values))) if len(values) == 1 else None  # 7 and 60 spell alike: refuse
+    if len(sp) >= 4:
+        near = {n for k, vs in _SPELT_NUMBERS.items() if abs(len(k) - len(sp)) <= 1 and edit_distance(sp, k) == 1
+                for n in vs}
+        if len(near) == 1:
+            return "f", near.pop()
+    return None
+
+
+@lru_cache(maxsize=4096)
+def _number_parts(token: str) -> tuple[tuple[str, int, bool], ...] | None:
+    """The number parts in one token, each (kind, value, said in Hindi): kind "d" digits, "n" a number word,
+    "f" a near one, "m" a multiplier."""
+    digits = unicodedata.normalize("NFKC", token).translate(_DEVA_DIGITS)
+    if digits.isdigit():
+        return (("d", int(digits), False),) if len(digits) <= _MAX_DIGITS else None
+    word = unicodedata.normalize("NFC", token)
+    if word in _DEVA_NUMBERS:  # written in Devanagari the 7/60 pair is distinct (सात, साठ)
+        return (("n", _DEVA_NUMBERS[word], True),)
+    if token.lower() in _NOT_NUMBERS or not (sp := spelling(token)):
+        return None
+    hindi = any("ऀ" <= c <= "ॿ" for c in token)
+    if (v := _spelt_value(sp)) is not None:
+        return ((v[0], v[1], hindi or sp in _HINDI_SPELLINGS),)
+    for i in range(2, len(sp) - 1):  # a number glued to its multiplier: "charso", "चार्सो"
+        head, tail = _spelt_value(sp[:i]), sp[i:]
+        if head and head[0] != "m" and tail in _SPELT_MULTIPLIERS:
+            return (head + (True,), ("m", _SPELT_MULTIPLIERS[tail], True))
+    return None
+
+
+def _figure_unit(tokens: list[str], hindi: bool) -> tuple[str, bool] | None:
+    """The unit `tokens` (one word, or two heard apart) name, and whether it matched exactly."""
+    latin = all(t.isascii() for t in tokens)
+    if latin:
+        said = " ".join(unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode().lower() for t in tokens)
+        for code, forms in _LATIN_UNITS.items():
+            if said in forms:
+                return code, True
+        if not hindi:
+            return None
+    keys = [word_key(t) for t in tokens]
+    if len(keys) == 2 and min(map(len, keys)) < 2:
+        return None
+    key = "".join(keys)
+    for code, unit_keys in _FIGURE_UNITS.items():
+        if key in unit_keys:
+            return code, True
+    # A near miss counts only as one long word that starts like the unit: "place and" is not "percent".
+    if len(tokens) == 1 and len(key) >= MIN_KEY:
+        for code, unit_keys in _FIGURE_UNITS.items():
+            if any(len(k) >= MIN_KEY and k[0] == key[0] and edit_distance(key, k) <= 1 for k in unit_keys):
+                return code, False
+    return None
+
+
+def _joined(text: str, spans: list[tuple[int, int]], j: int) -> bool:
+    """Whether word j touches the word before it with no space ("200.99", "5-25"): one written figure."""
+    return j > 0 and not any(c.isspace() for c in text[spans[j - 1][1]:spans[j][0]])
+
+
+def _may_start(text: str, spans: list[tuple[int, int]], tokens: list[str], i: int) -> bool:
+    if i == 0:
+        return True
+    prev = tokens[i - 1].lower()
+    if prev in _FRACTIONS or _number_parts(tokens[i - 1]) or _joined(text, spans, i):
+        return False
+    return not (prev in _JOINERS and i > 1 and _number_parts(tokens[i - 2]))
+
+
+def _read_number(text: str, spans: list[tuple[int, int]], tokens: list[str], i: int
+                 ) -> tuple[int, int, bool, bool, bool] | None:
+    """The number said from tokens[i]: (value, index after it, any word read, any word near-matched, said in
+    Hindi). None when no number starts there; value -1 when the words do not compose ("4100 ninyanve" is a
+    mishearing)."""
+    total = cur = 0
+    seen = words = fuzzy = hindi = False
+    j = i
+    while j < len(tokens) and j - i < 6:
+        parts = _number_parts(tokens[j])
+        if not parts:
+            break
+        if j > i and _joined(text, spans, j):
+            return -1, j + 1, words, fuzzy, hindi
+        for kind, v, in_hindi in parts:
+            if kind == "m":
+                if not seen or (v == 100 and not 0 < cur < 100):
+                    return -1, j + 1, words, fuzzy, hindi
+                if v == 100:
+                    cur *= 100
+                else:
+                    total, cur = total + max(cur, 1) * v, 0
+            # The first number, one after a thousand, one after a round hundred ("char sau ninyanve",
+            # "400 Ninyanwe"), or a unit after a tens word ("(one hundred) twenty five").
+            elif (not seen or (cur == 0 and total) or (cur % 100 == 0 and cur < 1000 and v < 100)
+                  or (cur % 100 >= 20 and cur % 10 == 0 and v < 10 and kind != "d")):
+                cur += v
+            else:
+                return -1, j + 1, words, fuzzy, hindi
+            seen = True
+            words |= kind != "d"
+            fuzzy |= kind == "f"
+            hindi |= in_hindi
+        j += 1
+    return (total + cur, j, words, fuzzy, hindi) if seen else None
+
+
+def write_figures(text: str) -> str:
+    """`text` with each spoken price or percentage written the way the claim checks read it: "चालिस प्रतिषवत" ->
+    "40%", "charso ninyanwe rupe" -> "₹499". Everything else is left exactly as transcribed."""
+    spans = _word_spans(text)
+    tokens = [text[a:b] for a, b in spans]
+    out: list[str] = []
+    i = cursor = 0
+    while i < len(tokens):
+        read = _read_number(text, spans, tokens, i) if _may_start(text, spans, tokens, i) else None
+        if read is None:
+            i += 1
+            continue
+        value, j, words, fuzzy, hindi = read
+        if value < 0:
+            i = j
+            continue
+        unit = None
+        for width in (1, 2):  # a unit heard as two words: "पर संथ" is "per cent"
+            if j + width <= len(tokens) and (u := _figure_unit(tokens[j:j + width], hindi)) is not None:
+                unit, exact, k = u[0], u[1], j + width
+                break
+        # A near number and a near unit together are too much guessing.
+        if unit is None or (fuzzy and not exact):
+            i = j
+            continue
+        plain = not words and " ".join(tokens[j:k]).lower() in _PLAIN_UNITS
+        if plain or value <= 0 or (unit == "%" and value > 100):
+            i = k
+            continue
+        before = text[cursor:spans[i][0]]
+        out.append(before)
+        # "₹ 1 lakh rupees" names the currency twice; the sign is already there.
+        signed = unit == "$" and re.search(r"(?:₹|\brs\.?)\s*$", before, re.IGNORECASE)
+        out.append(f"{value}%" if unit == "%" else str(value) if signed else f"₹{value}")
+        cursor = spans[k - 1][1]
+        i = k
+    out.append(text[cursor:])
+    return "".join(out)

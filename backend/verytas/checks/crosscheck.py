@@ -19,6 +19,8 @@ import itertools
 import re
 from dataclasses import dataclass
 
+from verytas.checks.phonetic import edit_distance, spelling
+
 _NUM = r"\d{1,2}(?:,\d{2})+,\d{3}(?:\.\d+)?|\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
 _MULT = {"k": 1e3, "thousand": 1e3, "lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "crore": 1e7, "crores": 1e7,
          "cr": 1e7, "million": 1e6, "mn": 1e6}
@@ -40,7 +42,8 @@ _PERCENT = re.compile(rf"(?<![\w.,])(?P<num>{_NUM})\s?(?:%|percent\b|per cent\b)
 _COUNT = re.compile(rf"(?<![\w.,@#₹$€£/])(?P<num>{_NUM})(?:\s?(?P<mult>{_MULT_RE})\b)?(?P<plus>\+)?"
                     r"(?:\s|-)(?P<noun>[a-z]{2,})", re.IGNORECASE)
 # Dotted abbreviations ("p.a.") are one word, but a full stop is not part of the word before it ("off.").
-_WORD = re.compile(r"[a-z]+(?:\.[a-z]+)*", re.IGNORECASE)
+# Devanagari words too (not the danda), but only the topics listed below count; others are passed over.
+_WORD = re.compile(r"[a-z]+(?:\.[a-z]+)*|[\u0900-\u0963\u0966-\u097f]+", re.IGNORECASE)
 # "20-30% off", "₹499-999", "3 to 5 days": both ends are one figure, a span of values.
 _RANGE = re.compile(rf"(?P<lo>{_NUM})\s?(?:-|–|to)\s?(?:₹|rs\.?\s?)?(?P<hi>{_NUM})", re.IGNORECASE)
 # What a price is for, from the words around it. A discount ("Rs 500 off"), a prize ("worth ₹10,000") or a
@@ -71,10 +74,14 @@ _FILLER = frozenset({
     "for", "in", "at", "and", "or", "with", "just", "only", "now", "today", "free", "full", "money",
     "back", "no", "new", "happy", "+", "is", "are", "was", "be", "will", "get", "you", "we", "this", "that",
     "it", "from", "by", "per", "over", "nearly", "almost", "about", "around",
+    # Hindi and Hinglish speech: "40% tak ki chhoot", "40% की बचत"
+    "ki", "ka", "ke", "tak", "की", "का", "के", "तक",
 })
 _PERCENT_TOPIC = {"discount": "off", "discounts": "off", "off": "off", "savings": "off", "save": "off",
                   "cashback": "cashback", "interest": "interest", "returns": "returns", "return": "returns",
-                  "apr": "interest", "p.a": "interest", "pa": "interest"}
+                  "apr": "interest", "p.a": "interest", "pa": "interest",
+                  "chhoot": "off", "chhut": "off", "chut": "off", "bachat": "off", "छूट": "off", "छुट": "off",
+                  "बचत": "off"}
 _TIME_UNITS = {"day", "days", "week", "weeks", "month", "months", "year", "years", "hour", "hours", "hr", "hrs",
                "minute", "minutes", "min", "mins"}
 # Nouns a count can't be compared by: clock times, ordinals, multiplication signs, months.
@@ -130,11 +137,29 @@ def _singular(word: str) -> str:
     return w
 
 
+_HINDI_PARTICLES = frozenset({"ki", "ka", "ke", "tak", "की", "का", "के", "तक"})
+# "chhoot" (discount) and "bachat" (saving), which Whisper writes "चुड", "बच्चत", "बाचवत", "Bachat".
+_OFF_SPELLINGS = frozenset(spelling(w) for w in ("chhoot", "chhut", "bachat", "छूट", "बचत"))
+
+
+def _heard_off(text: str, end: int) -> bool:
+    """Whether speech names a discount in Hindi that the recogniser misspelt: "40% की बच्चत", "40% ki chhoog".
+    Only right after a Hindi particle, so English "40% of the budget" is never read as a sale, and by the
+    vowel-keeping spelling, so "ke baad", "ki baat" and "ka bazaar" are not "bachat"."""
+    words = [w.group(0).lower() for w in itertools.islice(_WORD.finditer(text, end), 3)]
+    lead = list(itertools.takewhile(lambda w: w in _HINDI_PARTICLES, words))
+    if not lead or len(lead) == len(words):
+        return False
+    heard = spelling(words[len(lead)])
+    return any(heard == s or (len(heard) >= 4 and heard[0] == s[0] and edit_distance(heard, s) <= 1)
+               for s in _OFF_SPELLINGS)
+
+
 def _topic_after(text: str, end: int, limit: int = 4) -> tuple[str, int] | tuple[None, None]:
     """The first word after a figure that says what it is, and where that word ends."""
     for m in itertools.islice(_WORD.finditer(text, end), limit):
         w = m.group(0).lower()
-        if w in _FILLER:
+        if w in _FILLER or (not w.isascii() and w not in _PERCENT_TOPIC):
             continue
         return w, m.end()
     return None, None
@@ -206,6 +231,8 @@ def figures(source_id: str, text: str, timeline: list[tuple[int, int, float, flo
             continue
         topic, topic_end = _topic_after(text, m.end())
         named = _PERCENT_TOPIC.get(topic or "")
+        if named is None and kind == "speech" and _heard_off(text, m.end()):
+            named, topic_end = "off", None
         if named is None and kind == "speech" and _SPOKEN_OFF.match(text, m.end()):
             named, topic_end = "off", None  # quoted as the bare figure: "40% of" would read as a typo
         # The quote reads "30% OFF" rather than "30%" when the word follows straight on.

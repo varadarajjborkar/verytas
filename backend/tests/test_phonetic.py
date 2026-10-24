@@ -77,3 +77,70 @@ def test_short_or_unit_like_terms_are_not_looked_for_by_sound():
     for term in ("Kite", "Nova", "Atlas", "Apex", "Titan", "Mint", "Dino"):
         assert not ph.soundable(term), term
     assert ph.soundable("Project Falcon") and ph.soundable("Zestora Prime")
+
+
+def test_spoken_figures_are_written_as_digits():
+    # Real Whisper output from evals/speech, Devanagari and romanised, misheard as it came back.
+    assert ph.write_figures("सभी उत्पादों पर चालिस प्रतिषवत की छूट") == "सभी उत्पादों पर 40% की छूट"
+    assert ph.write_figures("ki madh sirf charso ninyanwe rupe.") == "ki madh sirf ₹499."
+    assert ph.write_figures("कोफी सिर्फ चार्सो निन्यानवे रुपे.") == "कोफी सिर्फ ₹499."
+    assert ph.write_figures("Madhsir 400 Ninyanwe Rupe.") == "Madhsir ₹499."
+    assert ph.write_figures("Zestora par Chalice Pratishat ki chhoot") == "Zestora par 40% ki chhoot"
+    assert ph.write_figures("मान्सुन सेल में 25 प्रतिषत तक") == "मान्सुन सेल में 25% तक"
+    assert ph.write_figures("four thousand one hundred ninety nine rupees") == "₹4199"
+    assert ph.write_figures("₹ 1 lakh rupees") == "₹ 100000"
+
+
+def test_spoken_figures_leave_everything_else_alone():
+    # A number needs its unit right after it, and a guess on both sides is refused.
+    for text in ("buy two saris and get one free", "stay on brand at all times", "this offer without limits",
+                 "for Chharsha and Nyanve", "team approved the copy", "Flat 40% off", "499 rupees", "Rs 500"):
+        assert ph.write_figures(text) == text
+    # Words that do not compose are a mishearing: none of them is read ("4100 ninyanve" is not 4199 or 99).
+    assert ph.write_figures("madhsir 4100 ninyanve rupe") == "madhsir 4100 ninyanve rupe"
+    # Romanised "saat" is 7 or 60 by ear; only the Devanagari spelling tells them apart.
+    assert ph.write_figures("saat percent") == "saat percent"
+    assert ph.write_figures("सात प्रतिशत") == "7%" and ph.write_figures("साठ प्रतिशत") == "60%"
+    assert ph.write_figures("एक सौ पचास प्रतिशत") == "एक सौ पचास प्रतिशत"  # not a percentage
+
+
+def test_evidence_board_reads_a_figure_said_in_hindi():
+    from verytas.checks.crosscheck import figures
+
+    heard = "दिवाली सेल में चालिस परसेंट की बचत"
+    assert not figures("s", heard, kind="speech")
+    [fig] = figures("s", ph.write_figures(heard), kind="speech")
+    assert (fig.key.split(":")[0], fig.value) == ("percent", 40.0)
+
+
+def test_part_of_a_figure_is_never_written_as_a_smaller_one():
+    # Sums, ranges, fractions and decimals are left as said: writing only the tail invents a figure.
+    for text in ("nineteen ninety nine rupees", "one hundred and five rupees", "do sau aur paanch rupaye",
+                 "twenty twenty five percent", "साढ़े तीन सौ रुपये", "sawa do sau rupaye", "साढ़े सात प्रतिशत",
+                 "one point five percent", "200.99 रुपये", "100.5 रुपये", "five to ten percent",
+                 "paanch se das percent", "5-25 Pradeshak"):
+        assert ph.write_figures(text) == text
+    assert ph.write_figures("up to forty percent") == "up to 40%"
+    assert ph.write_figures("1" * 5000 + " percent") == "1" * 5000 + " percent"
+
+
+def test_english_words_that_sound_like_a_unit_are_not_one():
+    for text in ("ten reps", "50 reps", "four roofs", "ten ribs", "ten forest", "nine burst", "5 present",
+                 "20 percentile"):
+        assert ph.write_figures(text) == text
+    assert ph.write_figures("In just 99 Rupis") == "In just ₹99"
+
+
+def test_a_misheard_discount_is_read_only_after_a_hindi_particle():
+    from verytas.checks.crosscheck import figures
+
+    def keys(text, kind="speech"):
+        return [f.key for f in figures("s", text, kind=kind)]
+
+    for heard in ("40% की बच्चत", "40% की बाचवत", "40% की चुड", "40% tak ki chhoot"):
+        assert keys(heard) == ["percent:off"]
+    for other in ("30% ke baad", "20% ki baat", "15% ka pata", "40% ka bazaar", "40% ki chat", "40% of the budget"):
+        assert keys(other) != ["percent:off"]
+    # Devanagari words around a written figure do not hide the English topic after them.
+    assert keys("20% पर discount on shoes", "ocr") == ["percent:off"]
+    assert keys("40% की छूट।", "ocr") == ["percent:off"]

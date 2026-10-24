@@ -40,6 +40,7 @@ from typing import Any
 
 from PIL import Image
 
+from verytas.checks import phonetic
 from verytas.checks.base import CheckContext, RawFinding, RuleView, Source
 from verytas.checks.claims import check_claims
 from verytas.checks.crosscheck import figures
@@ -1210,6 +1211,9 @@ async def video_agent(run: ReviewRun, node: AgentNode, vid: dict[str, Any]) -> N
             n.note = "no speech: music or ambient sound only" if level > -45 else "silent"
             return
         signals["speech"] = True
+        # Prices and percentages said in Hindi come back as words; write them as digits so the claim checks
+        # and the evidence board can read them. Per cue, so the time map stays exact.
+        cues = await run.blocking(lambda: [dataclasses.replace(c, text=phonetic.write_figures(c.text)) for c in cues])
         text, timeline = video.cue_text(cues)
         conf = sum(c.confidence for c in cues) / len(cues)
         src = Source(f"{video_id}:speech", "speech", text, f"asr:whisper-{model}", conf,
