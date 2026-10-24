@@ -24,13 +24,20 @@ export function BackButton({ label, href, onClick }: { label: string; href?: str
   useEffect(() => {
     const anchor = slot ?? inline.current;
     if (!anchor) return;
-    const seen = new IntersectionObserver(([e]) => {
-      // The header's chevron hangs in the margin; the floating pill lines up with the title it sat beside.
-      const edge = (slot ? anchor.nextElementSibling ?? anchor : anchor).getBoundingClientRect().left;
-      setFloating(e.isIntersecting ? null : Math.max(12, edge));
+    // The header's chevron hangs in the margin; the floating pill lines up with the title it sat beside.
+    const edge = () => Math.max(12, (slot ? anchor.nextElementSibling ?? anchor : anchor).getBoundingClientRect().left);
+    let away = false;
+    const seen = new IntersectionObserver((entries) => {
+      away = !entries[entries.length - 1].isIntersecting;
+      setFloating(away ? edge() : null);
     });
+    // The column moves when the window is resized or the sidebar folds; keep the pill over it.
+    const follow = () => { if (away) setFloating(edge()); };
+    const column = new ResizeObserver(follow);
+    column.observe(anchor.closest("main") ?? document.body);
+    window.addEventListener("resize", follow);
     seen.observe(anchor);
-    return () => seen.disconnect();
+    return () => { seen.disconnect(); column.disconnect(); window.removeEventListener("resize", follow); };
   }, [slot]);
 
   if (slot === undefined) return null;
@@ -44,7 +51,7 @@ export function BackButton({ label, href, onClick }: { label: string; href?: str
     : <button ref={ref} type="button" onClick={onClick} className={className} aria-label={name} title={name}>{content}</button>;
   const button = make(cls, body, slot ? undefined : (el) => { inline.current = el; });
   const pill = floating != null && createPortal(
-    <div className="vt-pop fixed top-3 z-30" style={{ left: floating }}>
+    <div className="vt-pop fixed top-3 z-[45]" style={{ left: floating }}>
       {make("vt-btn h-9 rounded-full border-line-strong bg-[color-mix(in_srgb,var(--vt-raised)_88%,transparent)] pl-2.5 pr-3.5 shadow-[var(--vt-shadow-pop)] backdrop-blur",
         <><ArrowLeftIcon size={16} /><span className="max-w-[40vw] truncate">{label}</span></>)}
     </div>,
