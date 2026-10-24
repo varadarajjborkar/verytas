@@ -48,7 +48,8 @@ def seeded(tmp_path_factory):
     engine.load = lambda only=None: [*real(only), _stub()]
     try:
         accounts = tmp / "accounts.json"
-        counts = seed(tmp / "show.db", tmp / "keys", None, accounts, limit=PIECES_PER_COMPANY)
+        # One real company and the stub are enough to prove isolation; seeding all four was most of the run.
+        counts = seed(tmp / "show.db", tmp / "keys", None, accounts, companies=["kitepath"], limit=PIECES_PER_COMPANY)
     finally:
         engine.load = real
     settings = Settings(database_url=f"sqlite+aiosqlite:///{tmp / 'show.db'}", llm_mode="offline", keys_dir=tmp / "keys",
