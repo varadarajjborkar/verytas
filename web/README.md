@@ -3,19 +3,32 @@
 Next.js 16 (App Router) frontend for Verytas. UI components and generative UI come from
 [OpenUI](https://github.com/thesysdev/openui) (`@openuidev/react-ui`, `@openuidev/react-lang`).
 
+Two apps from one codebase, one per side: the **Brand Console** for the brand team (`pnpm dev:manager`,
+port 3000) and **Studio** for creators (`pnpm dev:creator`, port 3001). The API decides what each side may
+see; the apps only lay it out.
+
 | Route | What it does |
 |---|---|
-| `/` | Governance dashboard: findings trend, pipeline, top rules, recurring problems, unclear guidelines |
-| `/review` | Paste a draft, run a review, see highlighted findings with citations and minimal-edit fixes, accept or dismiss |
-| `/guidelines` | Guideline health: which rules reviewers override or disagree about, with advice |
-| `/ask` | "Ask Verytas": questions answered as live OpenUI charts and tables from the insights data |
+| `/` | Home: for the brand team, the dashboard (what is waiting, findings over time, recurring problems); for a creator, their work. First steps for a new account |
+| `/review` | The review queue (brand team) or my reviews (creator). A piece opens on the review screen: the text with issues marked in place, the issue list beside it, a bar that walks through them, and attached documents page by page with *Preview* to see them as they look |
+| `/escalations` | Questions creators and Prism raised for a person |
+| `/creators` | Each creator's record (brand team) |
+| `/library` | Rules, facts, confidential terms, artwork and Intake, where brand material is handed over and drafted into the library |
+| `/guidelines` | Guideline health: which rules reviewers override or disagree about, with a clearer wording drafted on request |
+| `/ask` | Ask Verytas: questions answered as live charts and tables from the brand's own data |
+| `/ai` | How AI is used in Verytas, in plain words |
+| `/signin` | The demo's person picker, and `/signin/account` for own accounts |
+
+Every browser call goes through `/api/v/...`, a server-side proxy that holds the session token and
+forwards only an allowlist of API routes.
 
 ## Run
 
 ```bash
 pnpm install
 cp .env.example .env.local   # then fill in values
-pnpm dev                      # http://localhost:3000
+pnpm dev:manager              # Brand Console on http://localhost:3000
+pnpm dev:creator              # Studio on http://localhost:3001
 ```
 
 Without `VERYTAS_API_URL`/`VERYTAS_API_TOKEN`, every page uses clearly labelled demo data.

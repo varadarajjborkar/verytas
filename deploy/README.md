@@ -8,6 +8,7 @@ One small ARM server (AWS t4g.medium, Mumbai) runs everything judges touch:
 | HTTPS | Caddy (`Caddyfile`) | Let's Encrypt certificate for the server's sslip.io name; security headers |
 | Web | `verytas-web.service` | `next start` on 127.0.0.1:3000; sign-in on, with the demo's account picker |
 | API | `verytas-api.service` | uvicorn on 127.0.0.1:8000; SQLite in `/srv/verytas/data` |
+| Document previews | `verytas-convert.socket` | LibreOffice in a sealed per-file service; see below |
 | Deploys | `verytas-deploy.timer` | every 3 minutes: if `live` (main after CI) moved, build it, switch, health-check, roll back on failure |
 | Demo reset | `verytas-reset.timer` | daily check; reseeds when the data is 14 days old (`reset-demo.sh --force` to do it now) |
 
@@ -61,3 +62,29 @@ carry. They run on a second instance (c7g.large, same subnet) that is stopped mo
 
 Without those three settings the API runs as before and every review with mascot artwork says redrawn
 mascots were not looked for.
+
+## Document previews (LibreOffice)
+
+Word and PowerPoint previews are converted to PDF by LibreOffice, which reads files strangers upload, so
+it never runs inside the API. It is a separate socket-started service:
+
+| Piece | Notes |
+|---|---|
+| Packages | `apt-get install --no-install-recommends libreoffice-writer-nogui libreoffice-impress-nogui fonts-dejavu-core fonts-liberation2` (about 500 MB) |
+| Converter | `convert.py`, installed root-owned as `/usr/local/lib/verytas/convert.py`; standard library only, run by the system Python |
+| Socket | `systemd/verytas-convert.socket`: `/run/verytas-convert.sock`, mode 600, owned by `verytas`, one connection at a time |
+| Service | `systemd/verytas-convert@.service`: one process per file, `DynamicUser`, `PrivateNetwork`, no view of `/srv/verytas`, no capabilities, 1.5 GB memory, 64 tasks, 150% CPU, 120 s |
+
+Install or update:
+
+```bash
+sudo install -D -o root -g root -m 0755 deploy/convert.py /usr/local/lib/verytas/convert.py
+sudo install -o root -g root -m 0644 deploy/systemd/verytas-convert.socket \
+  'deploy/systemd/verytas-convert@.service' /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now verytas-convert.socket
+```
+
+The API sends a file there when `/run/verytas-convert.sock` exists (`VERYTAS_CONVERT_SOCKET` to change
+the path), after cutting every reference to anything outside it. Without the socket it runs LibreOffice
+itself if installed (development), and otherwise answers that previews need LibreOffice; PDF previews
+need nothing extra.

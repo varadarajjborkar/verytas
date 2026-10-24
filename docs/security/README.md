@@ -90,6 +90,21 @@ The worker that finds redrawn mascots runs on its own instance and was reviewed 
 | Plain http | Refused unless the worker is on this machine or the private network |
 | Cost | It stops itself after 20 idle minutes, even if the worker never starts; the AWS budget's automatic stop covers it too |
 
+## Uploaded documents and their previews
+
+Review now reads PowerPoint, Excel and HTML as well as PDF and Word, and shows any attached document as it
+looks. Each step was checked by our own error-check passes (internal findings 466 to 503, all fixed, each
+with a test), with these results:
+
+| Concern | How it is handled |
+|---|---|
+| Zip and XML bombs | Office files are read within an unzipped-size budget (40 MB, 5,000 entries) checked before anything is read; XML is parsed with entities, DTDs and network access off; HTML is capped at 5 MB |
+| A file that pulls in something from elsewhere | Never fetched by the readers. For conversion, every reference to anything outside the file is cut from a parsed copy: relationships (any quoting, entities or attribute order, and any URL target), field codes that pull in pictures or text (read whole, however Word split them across runs), imported HTML chunks and embedded packages |
+| LibreOffice reading hostile files | Runs only in `verytas-convert@.service`, started per file from a socket only the API's user can open: a user created for that run, no network (`PrivateNetwork`), no view of `/srv/verytas`, `/root` or `/etc/ssh`, no capabilities or new privileges, memory, task, CPU and 120 s limits, a fresh profile with macros off and every internet setting pointed at a closed port. Checked on the server: a Word file asking for the API's secrets file and a URL converted with neither |
+| A web page shown to a reviewer | Never served as a page by the API (it comes back as text in JSON). The browser shows it in an `iframe` with an empty sandbox and a deny-all content policy (`default-src 'none'; img-src data:`), after scripts, frames, templates, SVG animation, every attribute that can carry an outside address and any style that could fetch are removed. A deliberately hostile page made no request outside the console |
+| Who can see a preview | The same check as the piece itself: one `404` for a missing piece, one above the reader's clearance and another creator's; files are looked up within the piece's workspace |
+| Slow or stuck conversions | One at a time, with their own threads apart from the rest of the API; a request waits at most a minute for its turn, and the converter's whole process group is killed at its deadline |
+
 ## Hardening notes
 
 The audit's hardening suggestions, and where each one stands.
@@ -107,7 +122,7 @@ The audit's hardening suggestions, and where each one stands.
 | No per-user rate or spend limit on Ask Verytas | Open |
 | `Redactor.restore` also restores placeholders a user typed | Open |
 | The audit chain's head is not anchored or signed; signing keys share an owner with the database | Open |
-| All server jobs share one user; the deploy and reset units are unconfined | Open |
+| All server jobs share one user; the deploy and reset units are unconfined | Partly: document conversion runs in its own sandboxed service as a per-run user (above). The API, web, deploy and reset jobs still share one user, and the deploy and reset units are still unconfined. |
 | The `live` branch can be pushed directly; pnpm, `pip-audit` and the Whisper model revision are not pinned by hash | Open |
 | Chat storage and some colour fields have no size ceiling | Open |
 | Uploads are scoped to the workspace, not to their owner or piece | Partly: quotas are per person, access is still per workspace |
@@ -132,9 +147,10 @@ The next run should use the `standard` profile in a sandbox, starting from these
 - **Credentials:** tokens are random, stored only as SHA-256 hashes and looked up by hash.
 - **Findings and audit log:** findings carry Ed25519 signatures; audit entries are hash-chained and
   appended one at a time.
-- **Uploads:** file types are sniffed from their bytes, images are size-checked before decoding, and Word
-  files are parsed with entities, DTDs and network access turned off.
-- **Rendering:** no raw HTML is rendered, and the only link a model answer can open is http(s).
+- **Uploads:** file types are sniffed from their bytes, images are size-checked before decoding, and Word,
+  PowerPoint and Excel files are parsed with entities, DTDs and network access turned off.
+- **Rendering:** no raw HTML from a model is rendered, and the only link a model answer can open is http(s).
+  An uploaded web page is shown only in the locked frame described above.
 - **Cross-site requests:** `SameSite=Strict` cookies, Origin checks and JSON-only sign-in.
 - **CI and deploy:** actions pinned to commit hashes, a read-only default token, a checksummed secret
   scanner, and a read-only deploy key with a pinned host key.

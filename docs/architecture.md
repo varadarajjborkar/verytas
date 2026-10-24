@@ -150,7 +150,8 @@ The runtime verifies `sig` before persisting anything. This is the board's "digi
 | Facts and claims | 1) split text into **atomic claims**; 2) retrieve candidate facts (hybrid BM25 + vector, tier-filtered, valid-at-date filter); 3) small **grounding checker** returns supported / contradicted / unsupported; 4) **outdated** when it only matches an expired fact | mostly no | FActScore (Min et al., 2023); MiniCheck (Tang et al., 2024); SAFE (Wei et al., 2024) |
 | Unsupported promotional claims | Legal pattern match + "is this claim backed by an approved fact?" | hybrid | ASCI and FTC claim guidance |
 | Visual: colours | k-means palette extraction, then **CIEDE2000 ΔE** distance to the brand palette (ΔE > ~10 counts as off-brand) | yes | colour science |
-| Visual: logo and imagery | Logo presence and placement via **SigLIP 2** embedding similarity against approved logo crops, plus template matching; a vision LLM for "on-brand imagery" against rubric and examples | hybrid | CLIP (Radford et al., 2021), SigLIP 2 |
+| Visual: logo and imagery | As built: official artwork found by keypoints (SIFT, RANSAC) or template matching, its placement refined by ECC and read as stretch, skew and flip (section 23); a vision LLM for "on-brand imagery" against rubric and examples | hybrid | Lowe (2004); Evangelidis and Psarakis (2008) |
+| Speech | Local Whisper transcription; codenames and spoken figures in Hindi and Hinglish found by sound (section 23) | yes | phonetic keys, inverse text normalisation |
 | Accessibility | WCAG 2.2: **contrast ratio** for text over images (computed), alt text present and meaningful, reading level (Flesch-Kincaid), CamelCase hashtags, emoji overuse, link text, all-caps | mostly yes | WCAG 2.2 |
 | Confidentiality | Confidential-term and embargo scan (section 3) | yes | labels |
 | Cross-modal | Caption ↔ image relevance; numbers in images ↔ numbers in text | no | vision LLM |
@@ -290,13 +291,15 @@ States: `draft → in_review → changes_requested → approved → published` (
 | Brand admin | manage rules, facts and assets; approve rule clarifications; see insights |
 | Auditor | read-only access to the audit log and insights |
 
-Human decisions always win and are always recorded, so the automation never overrides a person (from the brief). Comments are threaded on spans, and every resubmission creates a new `content_version` linked to its parent, which gives us **revision history for free**.
+Human decisions always win and are always recorded, so the automation never overrides a person (from the brief).
+
+**The review screen, as built** (`web/src/components/review/ReviewView.tsx`): the piece reads as it will go out, on a card that follows the theme, with every issue marked where it is (a fix the reviewer asked for is shown in place of the words it replaces) and the issues listed beside it. A floating bar walks the reviewer through them one at a time (J and K, or the numbers): ask for the fix, keep it as is with a one-tap reason, or escalate. The bar then offers the next step: approve when nothing blocking is left, or send back, which opens a sheet listing the fixes asked for. Attached documents are shown under the piece page by page with their issues marked in place, and as they look on request (section 23). Comments are threaded on spans, and every resubmission creates a new `content_version` linked to its parent, which gives us **revision history for free**.
 
 ---
 
 ## 14. APIs, as built
 
-The browser never holds an API token. Pages render on the Next.js server, and every browser call goes through one proxy (`/api/v/...`) that forwards only an allowlist of routes, refuses cross-site writes and caps upload size. The FastAPI service checks the caller's role and clearance on every route, so the two sides of the console are enforced by the API, not just hidden in the UI.
+The browser never holds an API token. Pages render on the Next.js server, and every browser call goes through one proxy (`/api/v/...`) that forwards only an allowlist of routes, refuses cross-site writes and caps upload size. The FastAPI service checks the caller's role and clearance on every route, so the two sides of the console are enforced by the API, not just hidden in the UI. Tokens are random and stored only as hashes; a password account's token lapses 7 days after sign-in and signing out revokes it at the API, while tokens an admin issues (and the shared demo picker's) do not lapse, since there is no password to get a new one with.
 
 ```mermaid
 flowchart LR
@@ -320,7 +323,7 @@ flowchart LR
         KNO["knowledge<br/>/rules /rules/extract /facts<br/>/confidential-terms /brand-assets"]:::data
         MED["media<br/>/media /contents/precheck"]:::check
         GOV["governance<br/>/escalations /events<br/>/public-contacts"]:::sec
-        CON["content<br/>/contents /reviews /findings<br/>transition, comments, timeline,<br/>resubmit, ai-edit, disputes"]:::core
+        CON["content<br/>/contents /reviews /findings<br/>transition, comments, timeline,<br/>resubmit, ai-edit, disputes,<br/>document preview and pages"]:::core
         INS["insights<br/>/insights/overview, recurring,<br/>guideline-health"]:::api
         AST["assistant · chats<br/>/assistant/context /chats"]:::api
     end
@@ -564,6 +567,14 @@ Depth (8) and agent count (200) are capped per review. Every node records role, 
 
 **Text drawn as shapes**: a PDF page that has a text layer but also draws vector shapes is rendered and read; words the layer lacks (text converted to outlines, lettering drawn as artwork) go through the text checks, with placed images painted out so a screenshot isn't read twice.
 
+**Decks, workbooks and web pages** (`media/documents.py`): a PowerPoint deck is read slide by slide in the deck's own order (the presentation's slide list, not file names), speaker notes and hidden slides included because they travel with the file, each slide with its pictures (each picture read once per deck). An Excel workbook is read sheet by sheet, every row the bounded reader returns, as a table. An HTML page or email is read as people see it: the title and link-preview text, the visible text only (scripts, hidden elements and `noscript` dropped), inline pictures, and every picture's alt text through the alt-text rule. Nothing linked is fetched. What a reader leaves unread (charts, SmartArt, comments, linked pictures, a sheet past its row cap) is named, and the review is marked as partly read. Office types are told apart from the zip's own parts, off the event loop.
+
+**Artwork geometry** (`media/assets.py`): a homography fitted to a dozen keypoints can bend around a stretched or skewed copy and read the distortion as camera perspective. So an affine fit is preferred when it explains nearly as many points (85%) and passes the same gates, and weak fits and template matches are refined by ECC (enhanced correlation coefficient, masked to the artwork, coarse to fine, never drifting out of its search window). A placement is then read as stretch (width over height scale), shear and flip. A poster really photographed at an angle keeps its homography: with 30 or more points, when the homography's mean error is under 0.75 of the affine's, the tilt is real and is not reported as a stretch. A match found only on the flipped artwork is called mirrored only when the flip looks like the artwork (15 inliers and 0.85 similarity, or clearly better than the plain match): symmetric icons used to match their own mirror image. Measured on 1,200 generated scenes (`backend/evals/assets`, results in `evals/results/assets.md`): misuse caught 92.9% (skewed icon 75%, squashed and stretched icon 88%, every mirrored logo), false alarms on correct use 12.6%. Recoloured icons stay weak (33%).
+
+**Speech in Hindi and Hinglish** (`checks/phonetic.py`): Whisper writes Hindi in Devanagari, Latin or Urdu script and spells English names by ear, and word error stays high (about 64% after normalising scripts), so exact search misses most mentions. Words are reduced to a script-blind consonant key and a watched phrase is looked for by weighted edit distance. A confidential term heard this way is a warning to listen, never a block, and the finding does not name the term. Spoken prices and percentages are written as figures (inverse text normalisation) with a finer spelling that keeps vowels, so 25, 50 and 85 stay apart: only a number followed by "percent" or "rupees" is read, a near number with a near unit is refused, and sums, ranges, fractions and decimals are left as said. On recorded speech this took readable Hindi prices from 2 of 48 to 12 and comparable percentages from 0 of 96 to 18, with no wrong figure and no false rewrite across 7,917 written strings.
+
+**Documents in the review, and as they look** (`components/review/DocumentPages.tsx`, `DocumentPreview.tsx`, `media/preview.py`): under a piece, each attached document is shown page by page from the review's own extracted text, issues about particular words marked in place and issues about the whole page listed above it. *Preview* builds the picture only when asked: a PDF page is drawn by pdfium, and Word and PowerPoint are first converted to PDF by LibreOffice; a box goes on each flagged phrase by searching the page's own text, mapped through its crop box and rotation. A sheet is shown as a table with the flagged cells tinted. A web page is shown in an `iframe` with an empty sandbox (no scripts, forms or navigation of the console) and a deny-all content policy, after every outside address and any style that could fetch has been cut from it, so not even a tracking pixel loads. LibreOffice reads files strangers upload, so it gets a separate service: the API checks the file against the unzipped-size budget, cuts every reference to anything outside it from a parsed copy (relationships, field codes however Word split them, imported HTML chunks, embedded packages), and sends it over a local socket to `verytas-convert@.service` (`deploy/convert.py`), which runs one file at a time as a user created for that run, with no network, no view of `/srv/verytas`, and memory, CPU and time limits. A crafted Word file asking for the API's secrets file and a URL converts with neither.
+
 ## 24. Context layers, the creator's note, disputes and learning
 
 **Context layers** (`prism/onion.py`) read for implication rather than wording: two or three paragraphs at a time, then the whole post with the first layer's candidates, then caption plus image text plus scene descriptions. A candidate must quote text that exists in the named source and pass an independent judge question; Hinglish and other language-dependent readings are explicit.
@@ -600,6 +611,8 @@ Inkloom builds specialised AI models for logo design (public site and repository
 
 ## References
 
+- Lowe (2004). *Distinctive Image Features from Scale-Invariant Keypoints.* IJCV.
+- Evangelidis and Psarakis (2008). *Parametric Image Alignment Using Enhanced Correlation Coefficient Maximization.* IEEE TPAMI.
 - Min et al. (2023). *FActScore: Fine-grained Atomic Evaluation of Factual Precision in Long Form Text Generation.* EMNLP.
 - Wei et al. (2024). *Long-form factuality in large language models* (SAFE). NeurIPS.
 - Tang, Laban, Durrett (2024). *MiniCheck: Efficient Fact-Checking of LLMs on Grounding Documents.* EMNLP.

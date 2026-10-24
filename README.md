@@ -20,7 +20,7 @@ Verytas checks every post, caption, image, document and video against a brand's 
 
 </div>
 
-<p align="center"><img src="docs/assets/review.png" alt="A piece open in the review queue: the caption with issues marked in place, and a checklist explaining each one with its rule and source" width="900"></p>
+<p align="center"><img src="docs/assets/review.png" alt="A piece open on the review screen: the caption with each issue marked in place, the issues listed beside it with the rule and source behind each and the call made on it, and a bar offering to send the piece back with the changes asked for" width="900"></p>
 
 ## The problem
 
@@ -31,11 +31,13 @@ A brand works with dozens of creators and agencies who post every day, in many l
 | Capability | What it means |
 | --- | --- |
 | **Reads everything in a post** | The caption, text inside images (OCR), every page of a PDF or Word file (including text drawn as shapes), every slide of a PowerPoint deck (speaker notes and hidden slides too), every sheet of an Excel workbook, an HTML page or email (title, share text, alt text; nothing linked is fetched), and video: on-screen text, subtitles and speech. |
-| **Sees what is in the pictures** | Finds the brand's mascots even when an AI has redrawn them and names what changed (a wrong colour, an extra eye, a missing tail), with the box and, in video, the time range. Identifies faces against the brand's approved people and flags anyone shown without an agreement. |
+| **Sees what is in the pictures** | Finds the brand's official artwork and says how it was misused: stretched, squashed, skewed, mirrored, recoloured or redrawn, with the box. Finds the brand's mascots even when an AI has redrawn them and names what changed (a wrong colour, an extra eye, a missing tail), with the box and, in video, the time range. Identifies faces against the brand's approved people and flags anyone shown without an agreement. |
+| **Hears what is said** | Speech in English, Hindi and Hinglish is transcribed on the server. A codename said aloud is caught by how it sounds, and a price or percentage spoken in Hindi ("chalis pratishat") is read as the figure, so it is checked against the caption and the approved facts like any written one. |
 | **Checks it against the brand's own sources** | Approved facts with validity dates, banned and preferred words, confidential terms, official artwork, tone, accessibility and AI-disclosure rules. |
 | **Explains every flag** | Each issue quotes the exact passage and cites the rule or fact behind it, with page numbers. No unexplained scores. |
+| **Shows where, in every file** | Issues are marked in place: in the caption, boxed on the image, and inside attached documents page by page (slide by slide, sheet by sheet). *Preview* shows a document as it looks, with a box on each flagged phrase; a sheet becomes a table with the flagged cells tinted. |
 | **Fixes, not just flags** | It swaps a phrase, rewrites a sentence or removes a dig, whichever the rule needs, and a judge that knows the rule checks the offer and call to action survive. One click applies it. |
-| **Keeps people in charge** | Creators can dispute a reading; the brand team approves, sends back or overrides, and every override needs a written reason. |
+| **Keeps people in charge** | Creators can dispute a reading; the brand team walks through the issues one by one (asking for a fix, keeping it as is with a reason, or escalating), then approves or sends the piece back with the fixes it asked for, and every override needs a written reason. |
 | **Learns from decisions** | Rules that reviewers keep overriding are surfaced as unclear, and model-judged rules tune how confident they must be before flagging. |
 
 ## Try it in 60 seconds
@@ -124,7 +126,7 @@ flowchart LR
 
 - **Two apps, one codebase.** Creators get *Studio*; the brand team gets the *Brand Console*. The API enforces the split on every call, so a creator can never open another creator's work.
 - **The browser never holds an API key.** The Next.js server keeps the session token and forwards only an allowlisted set of routes.
-- **Prism** splits a submission into its parts and spawns an agent for each one: a PDF gets an agent per page, every image inside it gets its own OCR and artwork agents, and every piece of text found goes through the same checks as typed text. Depth and agent counts are capped, and anything cut off is reported as *not checked* rather than silently passed.
+- **Prism** splits a submission into its parts and spawns an agent for each one: a PDF gets an agent per page (a deck per slide, a workbook per sheet), every image inside it gets its own OCR and artwork agents, and every piece of text found goes through the same checks as typed text. Depth and agent counts are capped, and anything cut off is reported as *not checked* rather than silently passed.
 - **Rules before models.** Facts, words, confidential terms and artwork are checked deterministically. Models only handle meaning (tone, implied claims, sarcasm), and a model-only finding can never block a post on its own.
 
 ## System design
@@ -142,8 +144,10 @@ flowchart LR
         SQ[("SQLite<br/>+ media blobs")]:::data
         TM["Deploy timer<br/>every 3 min"]:::ops
         VW["Vision worker<br/>stops itself when idle"]:::api
+        CV["Document converter<br/>LibreOffice, no network,<br/>throwaway user"]:::sec
         CAD --> NX --> FA --> SQ
         FA -- "starts it when needed" --> VW
+        FA -- "local socket" --> CV
     end
 
     OL["Ollama Cloud<br/>models over HTTPS"]:::ext
@@ -170,6 +174,7 @@ flowchart LR
     classDef data fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef ext fill:#f3f4f6,stroke:#6b7280,color:#111827
     classDef ops fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef sec fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
 ```
 
 | Decision | Why |
@@ -179,6 +184,7 @@ flowchart LR
 | **Bounded concurrency everywhere** | A shared pool of model slots, a cap on reviews running at once, and per-step deadlines. A burst of uploads queues instead of exhausting memory or hammering a provider. |
 | **Circuit breakers on every model** | If a provider is down, its checks are marked *degraded* on the review instead of failing the whole thing or pretending they passed. |
 | **Vision on a worker that sleeps** | Finding redrawn mascots needs three image models and torch, too heavy for the always-on server. They run on a second instance that the API starts on the first review needing it and that stops itself after 20 idle minutes, so it costs nothing most of the time. It installs from GitHub alone and holds no brand data. |
+| **Untrusted files in a sealed room** | Word and PowerPoint previews need LibreOffice, a large program reading files strangers upload. It runs in its own socket-started service, one file at a time, as a user created for that run, with no network and no view of the app's files or secrets, under memory, CPU and time limits; the file has every reference to anything outside it cut before it gets there. |
 | **One cheap server** | One small ARM instance behind a free edge, with an AWS budget that stops it at a hard cap. The demo runs on credits, at no cost to the team. |
 
 ## Tech stack
@@ -188,7 +194,7 @@ flowchart LR
 | **Frontend** | Next.js 16 (App Router, React 19), Tailwind CSS 4, OpenUI for generated answers in *Ask Verytas* |
 | **Backend** | Python 3.12, FastAPI, SQLAlchemy 2 (async), SQLite (Postgres-ready), Pydantic |
 | **AI models** | Ollama Cloud: `gpt-oss:120b` and `gpt-oss:20b` for language, `gemma4:31b` for vision. Swappable for TypeSafe Jev or Anthropic Claude |
-| **Media, all local** | RapidOCR (ONNX Runtime), faster-whisper, OpenCV (with YuNet and SFace for faces), pdfium, PyAV |
+| **Media, all local** | RapidOCR (ONNX Runtime), faster-whisper, OpenCV (with YuNet and SFace for faces), pdfium, PyAV, LibreOffice (sandboxed, for Word and PowerPoint previews) |
 | **Vision worker** | Grounding DINO (tiny), SAM 2.1 (tiny), DINOv2 (small) on PyTorch CPU, on an EC2 Graviton instance that wakes on demand |
 | **Security** | Ed25519-signed findings, SHA-256 hash-chained audit log, text and pixel redaction, input guardrails, CSP |
 | **Infra and delivery** | AWS EC2, Caddy, systemd, Cloudflare Pages, GitHub Actions (pinned to commit SHAs), gitleaks, pip-audit, pnpm audit |
@@ -200,6 +206,8 @@ flowchart LR
 - **Every action is logged** in a hash-chained audit log; changing or deleting an old entry breaks the chain, and anyone with audit access can verify it.
 - **Confidential terms never reach a model**: they are redacted from text and blacked out in image pixels first. Confidential-tier content is never sent as pixels at all.
 - **People's faces follow the brand's records.** A face is identified against the approved-people library; public portraits are looked up only when the brief names someone and the content isn't confidential.
+- **Uploaded files are handled as hostile.** Types are read from the bytes; zips, XML and pictures are read within size and pixel budgets; a web page is shown only in a frame with no scripts and a policy that loads nothing from outside, after every outside address is cut from it; Word and PowerPoint are converted in a sealed service (above).
+- **Signing out ends the session at the server.** A password account's token is revoked on sign-out and lapses after 7 days.
 - **What people type is screened too.** Bribes, "WhatsApp me" style contact swaps and instructions aimed at the AI are refused before they are stored.
 - **Access follows role and clearance**, checked on the server on every request, including in the audit log.
 - **Audited.** A security review with the Cloudflare security-audit method ran on this codebase; its confirmed findings and the leads it raised are fixed, each with a regression test. The [security report](docs/security/README.md) lists every item, the commit that fixed it, and what is still open.
@@ -208,8 +216,8 @@ flowchart LR
 
 ## Quality
 
-- **Over 550 backend tests** run fully offline in about a minute, plus type checks, lint and a production build for the web apps, all on every push.
-- **Measured, not guessed.** The [explain-and-fix eval](backend/evals/explain_and_fix.py) runs the production path on 73 findings with two independent graders: the rule-aware fix pipeline took useful fixes **from 45% to 82%** on the same model. The [mascot benchmark](backend/evals/mascots) runs 425 generated scenes through the vision chain: every character found, defects named in 73 to 100% of cases.
+- **Over 620 backend tests** run fully offline in a few minutes, plus type checks, lint and a production build for the web apps, all on every push.
+- **Measured, not guessed.** The [explain-and-fix eval](backend/evals/explain_and_fix.py) runs the production path on 73 findings with two independent graders: the rule-aware fix pipeline took useful fixes **from 45% to 82%** on the same model. The [mascot benchmark](backend/evals/mascots) runs 425 generated scenes through the vision chain: every character found, defects named in 73 to 100% of cases. On the [artwork benchmark](backend/evals/results/assets.md) (1,200 scenes of logos, icons, wordmarks and packs), misuse is caught in **93%** of scenes (up from 76%) with false alarms on correct use at **13%** (down from 25%); every mirrored logo is caught. On recorded Hindi and Hinglish speech, spoken prices went from 2 of 48 readable to 12, and spoken percentages the cross-check can compare from 0 of 96 to 18, with no wrong figure.
 - **Parts compared with each other.** A caption that says 50% off over a poster that says 30%, or a voice-over saying 499 rupees while the screen shows Rs 999, is one finding citing both. On the [cross-source benchmark](backend/evals/crossmodal) it caught 14 of 14 planted contradictions with 0 false alarms on 14 controls. Must rules also get a [second look](backend/evals/second_look) from the larger model, which was right on 30 of 32 hard cases against 27 for the small judge alone. A model-judged finding also shows what reviewers decided before on similar words (precedent memory), and every finding how often reviewers agreed with ones like it (calibration). Fixes learn which kind of edit reviewers take per rule, and a rule reviewers keep disagreeing about can get a clearer wording drafted from its own cases, applied only by an admin.
 - **Tested from the outside.** [`blackbox/`](blackbox/README.md) is a simulator that knows Verytas only through its API. It invents brands, writes posts, images, PDFs and video with planted violations, and steers each round toward what Verytas misses. Across a 216-case campaign, recall on core checks rose **from 78% to 96%**, false alarms on clean posts fell **from 7% to 0%**, and server errors fell **from 17 to 0**, even at 32 parallel submissions.
 
@@ -217,7 +225,7 @@ flowchart LR
 
 - **One-on-one meetings.** A creator asks the manager who looks after them for a meeting by chat, voice or video; the manager accepts or proposes another time or way. Calls go through temporary masked numbers, the way delivery apps connect a rider and a customer, and only the time, the way and an outcome note go on the record. It is designed and previewed in both apps (marked *Planned*), not built: in a demo one person plays both sides, and masked calling needs a paid telephony provider.
 - **Managing it all from the console:** an approved-people tab in the Library, a video player with findings on its timeline, and managers marking moments and areas with comments (the API supports all three today).
-- **Sharper visual checks on busy backgrounds**, where the cut-out still takes in some background and raises false alarms, and a GPU for the language and vision models once AWS grants the quota.
+- **Sharper visual checks on busy backgrounds**, where a mascot's cut-out still takes in some background and raises false alarms, and on recoloured app icons (caught in a third of cases); a better Hindi speech model, since the general one still mishears much of it; and a GPU for the language and vision models once AWS grants the quota.
 
 ## Run it locally
 
