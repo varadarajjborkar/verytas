@@ -102,7 +102,7 @@ export function GettingStarted() {
         <InfoIcon size={14} className="mt-0.5 shrink-0" />
         <span>
           About this demo: the companies, people and history here are synthetic, made to show how Verytas works.
-          {data.self_serve ? " Your own company starts empty, apart from the built-in checks." : ""} In production the
+          {data.self_serve && data.role === "brand_admin" ? " Your own company starts empty, apart from the built-in checks." : ""} In production the
           library is filled from a brand&apos;s own systems (DAM, Drive, CMS or SAP exports, or read-only links) through the
           same Intake step, and reviewed by the brand team before anything is used.
         </span>
