@@ -49,3 +49,24 @@ def test_steps_follow_the_role_and_only_an_admin_loads_the_kit(client):
                                                       "role": "reviewer"}).json()
     team = client.get("/onboarding", headers={"Authorization": f"Bearer {reviewer['token']}"}).json()
     assert [s["key"] for s in team["steps"]] == ["decide", "ask"]
+
+
+def test_a_kit_cut_off_half_way_is_finished_not_locked_out(client):
+    h = _admin(client)
+    # One rule of the kit already there, as after an interrupted load: still offered, and finished without
+    # touching it.
+    from verytas.showcase import kitepath
+
+    spec = next(r for r in kitepath.RULES if r["code"] == "TONE-URGENCY")
+    assert client.post("/rules", headers=h, json={"tier": "public", **spec}).status_code == 201
+    assert client.get("/onboarding", headers=h).json()["sample_kit"] is True
+    made = client.post("/onboarding/sample-kit", headers=h).json()
+    assert made["rules"] == len(kitepath.RULES) - 1
+    assert client.post("/onboarding/sample-kit", headers=h).json()["detail"] == "the sample kit is already loaded"
+
+
+def test_material_of_its_own_contacts_included_means_no_kit(client):
+    h = _admin(client)
+    assert client.post("/public-contacts", headers=h, json={"kind": "url", "value": "acme.example"}).status_code == 201
+    assert client.get("/onboarding", headers=h).json()["sample_kit"] is False
+    assert client.post("/onboarding/sample-kit", headers=h).status_code == 409
