@@ -5,8 +5,7 @@ import { createPortal } from "react-dom";
 import { type AssistKind, type Brief, NEXT_LABEL, plainText, readable, splitFollowUps } from "@/lib/assist";
 import { readStream } from "@/lib/sse";
 import { useModalFocus } from "../Drawer";
-import { ArrowUpIcon, CloseIcon, RefreshIcon, SparkIcon } from "../Icons";
-import { RuleCode } from "../ui";
+import { ArrowUpIcon, ChevronIcon, CloseIcon, RefreshIcon, SparkIcon } from "../Icons";
 
 type Phase = "loading" | "ready" | "error";
 type Turn = { role: "user" | "assistant"; content: string; failed?: boolean };
@@ -230,80 +229,77 @@ function Thinking() {
 function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
     <section>
-      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-subtle">{label}</h3>
+      <h3 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-subtle">{label}</h3>
       {children}
     </section>
   );
 }
 
+/** A short numbered list in ink and grey only: the words carry it, not colour. */
+function Points({ items }: { items: { text: string; note?: string }[] }) {
+  return (
+    <ol className="flex flex-col gap-2">
+      {items.map((p, i) => (
+        <li key={i} className="flex gap-2.5 text-[13px] leading-5">
+          <span aria-hidden className="w-3 shrink-0 text-right tabular-nums text-subtle">{i + 1}</span>
+          <span>{readable(p.text)}{p.note && <span className="block text-xs text-muted">{readable(p.note)}</span>}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
+ * The brief, read top to bottom in a few seconds: one sentence, the suggested step, what must change and what
+ * is worth a look. The rest (the creator's side, how it got here, the risk) is folded away, one click down.
+ */
 function BriefView({ brief }: { brief: Brief }) {
   const step = brief.suggested_next_step;
+  const more = Boolean(brief.creator_side || brief.history.length || brief.ask_creator.length || brief.risk_if_published);
   return (
     <div className="flex flex-col gap-5">
-      <p className="text-[15px] font-medium leading-6">{readable(brief.tldr)}</p>
+      <p className="text-[15px] leading-6">{readable(brief.tldr)}</p>
 
-      {/* Set apart on purpose: it is a suggestion to weigh, never an instruction or a decision. */}
+      {/* A suggestion to weigh, never a decision: worded and placed as one. */}
       {(step.action || step.reason) && (
-        <section aria-label="Suggested next step"
-          className="rounded-xl border border-[color-mix(in_srgb,var(--vt-accent)_35%,var(--vt-line))] bg-[color-mix(in_srgb,var(--vt-accent)_6%,var(--vt-raised))] p-3.5">
-          <p className="flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-wide text-accent">
-            <span>Suggested next step</span><span className="normal-case tracking-normal text-muted">A suggestion. You decide.</span>
-          </p>
-          {step.action && <p className="mt-1.5 text-sm font-semibold">{NEXT_LABEL[step.action]}</p>}
-          {step.reason && <p className="mt-1 text-[13px] leading-5 text-muted">{readable(step.reason)}</p>}
-        </section>
+        <Section label="Suggested next step">
+          {step.action && <p className="text-sm font-medium">{NEXT_LABEL[step.action]}</p>}
+          {step.reason && <p className="text-[13px] leading-5 text-muted">{readable(step.reason)}</p>}
+        </Section>
       )}
 
-      <Section label="Stopping approval">
-        {brief.blocking.length === 0 ? (
-          <p className="rounded-lg bg-[var(--vt-ok-bg)] px-3 py-2 text-[13px] font-medium text-[var(--vt-ok)]">Nothing here blocks approval.</p>
-        ) : (
-          <ul className="flex flex-col gap-2.5">
-            {brief.blocking.map((b, i) => (
-              <li key={i} className="rounded-lg border-l-2 border-[var(--vt-blocker)] bg-[var(--vt-blocker-bg)] px-3 py-2.5">
-                {b.rule && <RuleCode code={b.rule} />}
-                <p className="text-[13px] font-medium leading-5">{readable(b.issue)}</p>
-                {b.why && <p className="mt-0.5 text-xs leading-5 text-muted">{readable(b.why)}</p>}
-              </li>
-            ))}
-          </ul>
-        )}
+      <Section label="Must change">
+        {brief.blocking.length === 0
+          ? <p className="text-[13px] leading-5 text-muted">Nothing must change before approval.</p>
+          : <Points items={brief.blocking.map((b) => ({ text: b.issue, note: b.why }))} />}
       </Section>
 
       {brief.minor.length > 0 && (
-        <Section label="Smaller issues">
-          <ul className="flex flex-col gap-1.5">
-            {brief.minor.map((m, i) => (
-              <li key={i} className="flex items-baseline gap-2 text-[13px] leading-5">
-                <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--vt-warning)]" />
-                <span>{m.rule && <RuleCode code={m.rule} className="mr-1.5 inline" />}{readable(m.issue)}</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
+        <Section label="Worth a look"><Points items={brief.minor.map((m) => ({ text: m.issue }))} /></Section>
       )}
 
-      {brief.creator_side && <Section label="The creator's side"><p className="text-[13px] leading-6">{readable(brief.creator_side)}</p></Section>}
-
-      {brief.history.length > 0 && (
-        <Section label="How it got here">
-          <ol className="flex flex-col gap-1.5 border-l border-line pl-4">
-            {brief.history.map((h, i) => <li key={i} className="text-[13px] leading-5 text-muted">{readable(h)}</li>)}
-          </ol>
-        </Section>
+      {more && (
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted hover:text-ink [&::-webkit-details-marker]:hidden">
+            More detail<ChevronIcon size={13} className="transition-transform duration-200 group-open:rotate-180" />
+          </summary>
+          <dl className="mt-3 flex flex-col gap-3 text-[13px] leading-5">
+            {brief.creator_side && <Detail term="The creator says">{readable(brief.creator_side)}</Detail>}
+            {brief.history.length > 0 && <Detail term="So far">{brief.history.map((h, i) => <span key={i} className="block">{readable(h)}</span>)}</Detail>}
+            {brief.ask_creator.length > 0 && <Detail term="Ask the creator for">{brief.ask_creator.map((q, i) => <span key={i} className="block">{readable(q)}</span>)}</Detail>}
+            {brief.risk_if_published && <Detail term="If it goes out as it is">{readable(brief.risk_if_published)}</Detail>}
+          </dl>
+        </details>
       )}
+    </div>
+  );
+}
 
-      {brief.ask_creator.length > 0 && (
-        <Section label="Ask the creator for">
-          <ul className="flex list-disc flex-col gap-1 pl-4 text-[13px] leading-5">
-            {brief.ask_creator.map((q, i) => <li key={i}>{readable(q)}</li>)}
-          </ul>
-        </Section>
-      )}
-
-      {brief.risk_if_published && (
-        <Section label="If it goes out as it is"><p className="text-[13px] leading-6">{readable(brief.risk_if_published)}</p></Section>
-      )}
+function Detail({ term, children }: { term: string; children: ReactNode }) {
+  return (
+    <div>
+      <dt className="text-xs text-subtle">{term}</dt>
+      <dd>{children}</dd>
     </div>
   );
 }

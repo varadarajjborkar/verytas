@@ -52,33 +52,43 @@ case holds up against the rule text and the quote, and say which parts are facts
 your reading.
 `;
 
-const SUMMARY_PROMPT = `
+// Plain words matter more here than completeness: the record is one click away, and a summary that needs
+// reading twice has failed. Hence the word caps, the ban on codes and jargon, and the short lists.
+const PLAIN_WORDS = `
+## How to write
+Write for someone who is new to brand work and reads quickly. Use everyday words and short sentences.
+Never use rule codes (like VOICE-01), scores as decimals, or checker words, singular or plural (OCR, SSIM,
+transcript, semantic, advisory, finding, blocker, warning, compliance, flagged). Say "must change" or "worth a
+look" instead, and say what a person would see: "the price in the picture", "the word
+'guaranteed' in the caption", "the logo is stretched". One idea per line.
+`;
+
+const SUMMARY_PROMPT = `${PLAIN_WORDS}
 ## Task: write the brief
 Reply with ONE JSON object and nothing else (no code fence, no commentary), with exactly these keys:
 {
-  "tldr": "1 to 2 plain sentences: what this item is and where it stands",
-  "blocking": [{"rule": "rule code or null", "issue": "what is wrong, in plain words", "why": "why it stops approval"}],
-  "minor": [{"rule": "rule code or null", "issue": "a lesser issue"}],
-  "creator_side": "what the creator said, disputed or explained (their notes, disputes, escalation message), or an empty string",
-  "history": ["one short line per round: what happened and how the score or blockers moved"],
-  "suggested_next_step": {"action": "approve | send_back | escalate_to_legal | ask_creator", "reason": "why, in one or two sentences"},
-  "ask_creator": ["at most 3 things to ask the creator to change or explain, phrased as a request; empty if none"],
-  "follow_ups": ["exactly 3 questions under 60 characters the manager could ask you next about THIS item"],
-  "risk_if_published": "what could go wrong if it goes out as it is, grounded in the findings"
+  "tldr": "ONE sentence, at most 20 words: what this is and whether it can go out",
+  "must_change": [{"issue": "what must change, at most 12 words", "why": "why, at most 12 words, or empty"}],
+  "worth_a_look": [{"issue": "a smaller thing to look at, at most 10 words"}],
+  "creator_side": "one sentence on what the creator said or disputed, or an empty string",
+  "history": ["at most 3 lines, at most 12 words each: what happened so far"],
+  "suggested_next_step": {"action": "approve | send_back | escalate_to_legal | ask_creator", "reason": "one sentence, at most 15 words"},
+  "ask_creator": ["at most 2 short requests to the creator; empty if none"],
+  "follow_ups": ["exactly 3 questions under 50 characters the manager could ask you next about THIS item"],
+  "risk_if_published": "one sentence, at most 15 words: what could go wrong if it goes out as it is, or empty"
 }
-"blocking" lists only issues that stop approval (blockers and anything unresolved that must be fixed); put
-warnings and advisories in "minor". Skip findings the manager already accepted or dismissed unless the decision
-itself is worth knowing. Keep every string short. "suggested_next_step" is a suggestion for the manager to weigh.
-Each "follow_ups" question names something specific in the data (a rule code, a finding, a round, the creator's
-dispute, a figure), is answerable from the data, and differs from the others; never a generic question.
+"must_change" holds at most 3 things that must change before approval, the most important first; if more exist,
+merge alike ones ("three prices do not match the price list"). "worth_a_look" holds at most 3 smaller things. Skip
+anything the manager already accepted or dismissed. "suggested_next_step" is a suggestion for the manager to
+weigh. Each "follow_ups" question names something specific in this item and differs from the others.
 `;
 
-const CHAT_PROMPT = `
+const CHAT_PROMPT = `${PLAIN_WORDS}
 ## Task: talk it through
 Answer the manager's questions about this one item, for example why something was flagged, what the creator
-said, what changed since an earlier round, or whether a concern is real. Be direct and brief: a few short
-paragraphs or a short list at most. Plain text only: no markdown headings, tables or bold. Quote the rule code
-and the flagged passage when explaining a finding. If asked for a recommendation, give one as a suggestion with
+said, what changed since an earlier round, or whether a concern is real. Be direct and brief: at most three
+short sentences, or at most four short points starting with "- ". Plain text only: no headings, tables or bold.
+Quote the flagged words when explaining a problem; name a rule only if the manager asks which one. If asked for a recommendation, give one as a suggestion with
 your reasoning and what you are unsure of.
 Then end with one last line that starts with ">> " and lists two or three short follow-up questions (under 60
 characters each) the manager could ask next, separated by " | ". Each must be specific to this item's data,

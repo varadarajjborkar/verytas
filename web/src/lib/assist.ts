@@ -38,6 +38,7 @@ export function readable(s: string): string {
   return s.replace(/\[\[TERM_(\d+)\]\]/g, "[confidential term $1]");
 }
 
+const BRIEF_ITEMS = 3;
 const str = (v: unknown, max = 1200): string => (typeof v === "string" ? plainText(v).trim().slice(0, max) : "");
 const list = (v: unknown, max: number): unknown[] => (Array.isArray(v) ? v.slice(0, max) : []);
 
@@ -68,12 +69,15 @@ export function normalizeBrief(raw: unknown): Brief | null {
   const stepObj = typeof r.suggested_next_step === "string" ? { action: r.suggested_next_step, reason: "" } : step;
   return {
     tldr,
-    blocking: list(r.blocking, 12).map(entry).filter((e) => e.issue),
-    minor: list(r.minor, 12).map(entry).filter((e) => e.issue).map(({ rule, issue }) => ({ rule, issue })),
+    // The prompt asks for three of each; a model that writes more still gets a short brief. The keys are
+    // named the way the panel reads ("must change") so the model doesn't echo "blocking" into the text;
+    // the older names are still read.
+    blocking: list(r.must_change ?? r.blocking, BRIEF_ITEMS).map(entry).filter((e) => e.issue),
+    minor: list(r.worth_a_look ?? r.minor, BRIEF_ITEMS).map(entry).filter((e) => e.issue).map(({ rule, issue }) => ({ rule, issue })),
     creator_side: str(r.creator_side, 1200),
-    history: texts(r.history, 10),
+    history: texts(r.history, BRIEF_ITEMS),
     suggested_next_step: { action: actionOf(stepObj.action), reason: str(stepObj.reason ?? stepObj.why, 600) },
-    ask_creator: texts(r.ask_creator ?? r.questions_to_ask, 3),
+    ask_creator: texts(r.ask_creator ?? r.questions_to_ask, 2),
     follow_ups: texts(r.follow_ups, 4).map((q) => q.slice(0, 90)),
     risk_if_published: str(r.risk_if_published, 800),
   };
