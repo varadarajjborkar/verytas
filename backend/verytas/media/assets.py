@@ -53,6 +53,15 @@ CELL_SSIM_FLOOR = 0.45  # below this a cell's structure has changed
 # misalignment, which is thin and scattered, does not.
 CELL_DELTA_E_CEIL = 22.0
 MIN_CELL_COVERAGE = 0.2  # ignore cells that are mostly transparent background
+# The image's damage, given to the official artwork before comparing (see _compare).
+JPEG_QUALITIES = (95, 85, 75, 60, 40)
+REGISTER_SLACK = 1  # pixels of misregistration forgiven
+EDGE_STRENGTH = 60  # Sobel response of an edge whose anti-aliased rim is not compared for colour
+EDGE_RIM = 2  # pixels either side of such an edge
+OUT_OF_FRAME = 0.5  # a cell with under this share of its pixels inside the image is outside it
+# How far past the limits a flagged cell with no flagged neighbour must be to count.
+LONE_CELL_SSIM = 0.15
+LONE_CELL_DELTA = 1.5
 # Foreground connected to the match that lies outside the matched box, as a
 # share of what lies inside it. An exact copy sits near 0; a joined-on body
 # is usually above 0.5.
@@ -594,9 +603,7 @@ def _from_homography(asset: PreparedAsset, scene: np.ndarray, H: np.ndarray, inl
     box = (max(0, int(xs.min())), max(0, int(ys.min())), min(scene.shape[1], int(xs.max())),
            min(scene.shape[0], int(ys.max())))
 
-    aligned = cv2.warpPerspective(scene, np.linalg.inv(H), (w, h), flags=cv2.INTER_LINEAR,
-                                  borderMode=cv2.BORDER_REPLICATE)
-    cells, sims, deltas = _compare(asset, aligned, _as_seen(asset.rgb, box))
+    cells, sims, deltas = _connected(*_compare(asset, scene, H, box))
     if min(box[2] - box[0], box[3] - box[1]) < MIN_JUDGE_SIDE:
         cells = []  # too few pixels left to tell a change from resampling; the vision model judges
     attached = _attached_ratio(scene, box)
@@ -678,39 +685,128 @@ def _ssim_map(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return ((2 * mu_a * mu_b + c1) * (2 * cov + c2)) / ((mu_a**2 + mu_b**2 + c1) * (var_a + var_b + c2))
 
 
-def _as_seen(rgb: np.ndarray, box: tuple[int, int, int, int]) -> np.ndarray:
-    """The official artwork as it would look after being shrunk to the matched size and warped back.
+def _connected(cells: list[dict], sims: list[float],
+               deltas: list[float]) -> tuple[list[dict], list[float], list[float]]:
+    """A changed area spans neighbouring cells; one cell alone is a resampling or compression artefact more
+    often than an edit, so it is kept only when a flagged neighbour (8-connected) backs it or it is far past
+    the limits."""
+    at = {(c["row"], c["col"]) for c in cells}
+    keep = [c for c in cells
+            if any((c["row"] + dr, c["col"] + dc) in at for dr in (-1, 0, 1) for dc in (-1, 0, 1) if dr or dc)
+            or c["ssim"] < CELL_SSIM_FLOOR - LONE_CELL_SSIM or c["delta_e"] > CELL_DELTA_E_CEIL * LONE_CELL_DELTA]
+    return keep, sims, deltas
 
-    A small copy loses fine edges to resampling; comparing it with the crisp
-    original reads that blur as a change. Below full size, both sides go
-    through the same resampling.
+
+def _half_chroma(rgb: np.ndarray) -> np.ndarray:
+    """Colour at half resolution, as JPEG and 4:2:0 video store it, brightness untouched."""
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
+    h, w = lab.shape[:2]
+    for i in (1, 2):
+        half = cv2.resize(lab[..., i], (max(1, w // 2), max(1, h // 2)), interpolation=cv2.INTER_AREA)
+        lab[..., i] = cv2.resize(half, (w, h), interpolation=cv2.INTER_LINEAR)
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+
+
+def _jpeg(rgb: np.ndarray, quality: int) -> np.ndarray:
+    ok, buf = cv2.imencode(".jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return cv2.cvtColor(cv2.imdecode(buf, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+
+
+def _compare(asset: PreparedAsset, scene: np.ndarray, H: np.ndarray,
+             box: tuple[int, int, int, int]) -> tuple[list[dict], list[float], list[float]]:
+    """Per-cell structure and colour of the placed artwork against the official one, in the image's own pixels.
+
+    Warping the image back to the artwork's frame stretches its compression blocks and blurred edges over
+    the comparison and reads them as changes (half the false alarms on a JPEG). So the official artwork goes
+    the other way: warped forward onto the image, laid over the image's own background, put through the JPEG
+    quality that brings it closest to what is there, and both sides have their colour halved as JPEG does.
+    What is left to differ is what was changed. Within a pixel of misregistration and on the anti-aliased
+    rims of strong edges nothing is counted, because a fit is never exact there.
     """
-    h, w = rgb.shape[:2]
-    bw, bh = max(1, box[2] - box[0]), max(1, box[3] - box[1])
-    if bw >= 0.8 * w and bh >= 0.8 * h:
-        return rgb
-    small = cv2.resize(rgb, (bw, bh), interpolation=cv2.INTER_AREA)
-    return cv2.resize(small, (w, h), interpolation=cv2.INTER_LINEAR)
-
-
-def _compare(asset: PreparedAsset, aligned: np.ndarray,
-             reference: np.ndarray | None = None) -> tuple[list[dict], list[float], list[float]]:
-    ref = asset.rgb if reference is None else reference
-    ssim = _ssim_map(cv2.cvtColor(ref, cv2.COLOR_RGB2GRAY), cv2.cvtColor(aligned, cv2.COLOR_RGB2GRAY))
-    delta = cv2.GaussianBlur(np.linalg.norm(_lab(ref) - _lab(aligned), axis=2), (7, 7), 2.0)
     h, w = asset.gray.shape
-    # Score only the artwork's interior. Anti-aliased outlines blend with
-    # whatever background the scene has, which is not a change to the asset.
-    interior = cv2.erode(asset.mask.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)
+    sh, sw = scene.shape[:2]
+    # The window around the placement starts on the 16-pixel grid JPEG blocks sit on, so recompressing the
+    # artwork puts its blocks where the image's were.
+    x0, y0 = max(0, box[0] - 8), max(0, box[1] - 8)
+    x0, y0 = x0 - x0 % 16, y0 - y0 % 16
+    x1, y1 = min(sw, box[2] + 8), min(sh, box[3] + 8)
+    cw, ch = x1 - x0, y1 - y0
+    if cw < 8 or ch < 8:
+        return [], [], []
+    seen = np.ascontiguousarray(scene[y0:y1, x0:x1])
+    Hc = np.array([[1, 0, -x0], [0, 1, -y0], [0, 0, 1.0]]) @ H
+    # Shrunk first with area averaging, as the copy in the image was, so a small placement isn't aliased.
+    fx, fy = min(1.0, float(np.linalg.norm(H[:2, 0]))), min(1.0, float(np.linalg.norm(H[:2, 1])))
+    art, S = asset.rgb, np.eye(3)
+    if fx < 1 or fy < 1:
+        tw, th = max(1, round(w * fx)), max(1, round(h * fy))
+        art = cv2.resize(asset.rgb, (tw, th), interpolation=cv2.INTER_AREA)
+        S = np.diag([tw / w, th / h, 1.0])
+    warped = cv2.warpPerspective(art, Hc @ np.linalg.inv(S), (cw, ch),
+                                 flags=cv2.INTER_LINEAR if fx < 1 or fy < 1 else cv2.INTER_CUBIC,
+                                 borderMode=cv2.BORDER_REPLICATE)
+    # Score only the artwork's interior. Anti-aliased outlines blend with whatever background the scene
+    # has, which is not a change to the asset.
+    interior = cv2.erode(asset.mask.astype(np.uint8), np.ones((9, 9), np.uint8))
+    cell_id = np.full((h, w), -1, np.int16)
+    for r in range(GRID):
+        for c in range(GRID):
+            ys, xs = slice(r * h // GRID, (r + 1) * h // GRID), slice(c * w // GRID, (c + 1) * w // GRID)
+            cell_id[ys, xs] = np.where(interior[ys, xs] > 0, r * GRID + c, -1)
+    cells_at = cv2.warpPerspective(cell_id, Hc, (cw, ch), flags=cv2.INTER_NEAREST,
+                                   borderMode=cv2.BORDER_CONSTANT, borderValue=-1)
+    on = cells_at >= 0
+    if not on.any():
+        return [], [], []
+    alpha = cv2.warpPerspective(asset.mask.astype(np.uint8) * 255, Hc, (cw, ch), flags=cv2.INTER_LINEAR,
+                                borderMode=cv2.BORDER_CONSTANT).astype(np.float32)[..., None] / 255.0
+    ref = (warped * alpha + seen * (1 - alpha)).astype(np.uint8)
+    target = _lab(seen)[on]
+    best = float(np.linalg.norm(_lab(ref)[on] - target, axis=1).mean())
+    for quality in JPEG_QUALITIES:  # an image that was never a JPEG keeps the clean artwork
+        candidate = _jpeg(ref, quality)
+        d = float(np.linalg.norm(_lab(candidate)[on] - target, axis=1).mean())
+        if d < best:
+            ref, best = candidate, d
+    ref, img = _half_chroma(ref), _half_chroma(seen)
+
+    ref_gray, img_gray = cv2.cvtColor(ref, cv2.COLOR_RGB2GRAY), cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    ref_lab, img_lab = _lab(ref), _lab(img)
+    ssim = _ssim_map(ref_gray, img_gray)
+    delta = np.linalg.norm(ref_lab - img_lab, axis=2)
+    for dy in range(-REGISTER_SLACK, REGISTER_SLACK + 1):
+        for dx in range(-REGISTER_SLACK, REGISTER_SLACK + 1):
+            if dx or dy:
+                shift = np.float32([[1, 0, dx], [0, 1, dy]])
+                moved = cv2.warpAffine(ref_lab, shift, (cw, ch), borderMode=cv2.BORDER_REPLICATE)
+                delta = np.minimum(delta, np.linalg.norm(moved - img_lab, axis=2))
+                moved_gray = cv2.warpAffine(ref_gray, shift, (cw, ch), borderMode=cv2.BORDER_REPLICATE)
+                ssim = np.maximum(ssim, _ssim_map(moved_gray, img_gray))
+    edges = np.zeros((ch, cw), bool)
+    for g in (img_gray, ref_gray):
+        edges |= (np.abs(cv2.Sobel(g, cv2.CV_32F, 1, 0)) + np.abs(cv2.Sobel(g, cv2.CV_32F, 0, 1))) > EDGE_STRENGTH
+    rims = cv2.dilate(edges.astype(np.uint8), np.ones((2 * EDGE_RIM + 1,) * 2, np.uint8)) > 0
+    delta = cv2.GaussianBlur(np.where(rims, 0.0, delta), (7, 7), 2.0)
+
+    area_scale = abs(float(np.linalg.det(Hc[:2, :2]))) / float(Hc[2, 2]) ** 2
     cells, sims, deltas = [], [], []
     for r in range(GRID):
         for c in range(GRID):
             ys, xs = slice(r * h // GRID, (r + 1) * h // GRID), slice(c * w // GRID, (c + 1) * w // GRID)
-            m = interior[ys, xs]
-            if m.mean() < MIN_CELL_COVERAGE:
+            whole = interior[ys, xs].astype(bool)
+            if whole.mean() < MIN_CELL_COVERAGE:
                 continue
-            s = float(ssim[ys, xs][m].mean())
-            d = float(np.percentile(delta[ys, xs][m], 90))
+            m = cells_at == r * GRID + c
+            if m.sum() < OUT_OF_FRAME * whole.sum() * area_scale:
+                # Most of this part of the artwork would sit outside the image: nothing there looks like it.
+                # Counted against the likeness, so a logo cut down to its wordmark is not taken for a good
+                # copy of the logo, but not called a change: cropping is not editing.
+                sims.append(0.0)
+                continue
+            if m.sum() < 16:
+                continue
+            s = float(ssim[m].mean())
+            d = float(np.percentile(delta[m], 90))
             sims.append(s)
             deltas.append(d)
             if s < CELL_SSIM_FLOOR or d > CELL_DELTA_E_CEIL:
