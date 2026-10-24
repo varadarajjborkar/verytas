@@ -310,7 +310,7 @@ function Arrange({ layout, onSave, onDone }: { layout: Item[]; onSave: (items: I
     <div className="vt-page flex flex-col gap-4">
       <div className="flex items-center gap-3">
         <p className="mr-auto text-sm text-muted">Drag tiles to rearrange.</p>
-        <button type="button" onClick={reset} className="text-xs font-medium text-subtle hover:text-ink">
+        <button type="button" onClick={reset} className="vt-btn vt-btn-xs">
           Reset
         </button>
         <button type="button" onClick={onDone} className="vt-btn vt-btn-primary vt-btn-sm">Done</button>

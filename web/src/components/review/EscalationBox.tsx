@@ -36,7 +36,7 @@ export function EscalationBox({ f, request, onEscalate, onChanged, side }: {
     const state = { open: "With the brand team", cleared: "Cleared by the brand team", upheld: "The finding stands",
       withdrawn: "Withdrawn" }[request.status];
     return (
-      <div className="border-t border-line pt-3 text-xs">
+      <div className="w-full border-t border-line pt-3 text-xs">
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className={`font-semibold ${tone}`}>{state}</span>
           <span className="text-subtle">
@@ -52,7 +52,7 @@ export function EscalationBox({ f, request, onEscalate, onChanged, side }: {
           </p>
         )}
         {request.status === "open" && side === "creator" && (
-          <button type="button" disabled={busy} className="mt-1.5 text-[11px] font-medium text-subtle hover:text-ink"
+          <button type="button" disabled={busy} className="vt-btn vt-btn-xs mt-1.5"
             onClick={async () => {
               setBusy(true);
               setRefusal(null);
@@ -82,7 +82,8 @@ export function EscalationBox({ f, request, onEscalate, onChanged, side }: {
   if (!onEscalate) return null;
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="vt-btn vt-btn-quiet self-start vt-btn-sm">
+      // A quiet link beside "Dispute it": disagreeing is the second thing on a card, not the first.
+      <button type="button" onClick={() => setOpen(true)} className="font-medium text-accent hover:underline">
         Ask the brand team
       </button>
     );
@@ -104,7 +105,7 @@ export function EscalationBox({ f, request, onEscalate, onChanged, side }: {
   };
   const left = MIN - text.trim().length;
   return (
-    <div className="vt-pop flex flex-col gap-2 border-t border-line pt-3">
+    <div className="vt-pop flex w-full flex-col gap-2 border-t border-line pt-3">
       <label htmlFor={`esc-${f.id}`} className="text-xs font-medium">What should the brand team look at, and why?</label>
       <textarea id={`esc-${f.id}`} value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} autoFocus
         placeholder="e.g. The client's brief asks for this line. Is it allowed for their campaign?"

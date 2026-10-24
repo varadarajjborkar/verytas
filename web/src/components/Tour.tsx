@@ -194,7 +194,7 @@ function TourStep({ steps, index, onGo, onEnd }: {
         <h2 id={titleId} className="text-base font-semibold leading-snug">{step.title}</h2>
         <p className="text-sm leading-6 text-muted">{step.body}</p>
         <div className="mt-1 flex items-center gap-2">
-          <button type="button" onClick={() => onEnd(true)} className="mr-auto text-sm text-muted underline-offset-2 hover:text-ink hover:underline">
+          <button type="button" onClick={() => onEnd(true)} className="vt-btn h-9 mr-auto rounded-full px-4">
             Skip
           </button>
           {index > 0 && (

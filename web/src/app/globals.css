@@ -148,13 +148,20 @@ table, .tabular-nums { font-variant-numeric: tabular-nums; }
     font-weight: 550;
     line-height: 1.25rem;
     white-space: nowrap;
+    /* Every button has an edge: one without a variant used to render as bare text and was not seen as a
+       button. Variants and utilities override this. */
+    border: 1px solid var(--vt-line);
+    background: var(--vt-raised);
+    color: var(--vt-ink);
     transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out, transform 90ms ease-out;
   }
+  .vt-btn:hover:not(:disabled) { border-color: var(--vt-line-strong); }
   .vt-btn-sm { height: 2rem; padding: 0 0.75rem; font-size: 0.75rem; }
   .vt-btn-xs { height: 1.75rem; padding: 0 0.6rem; font-size: 0.75rem; border-radius: 7px; }
   .vt-btn:active:not(:disabled) { transform: scale(0.98); }
   .vt-btn:disabled { cursor: not-allowed; opacity: 0.5; }
-  .vt-btn-primary { background: var(--vt-accent); color: var(--vt-accent-ink); }
+  .vt-btn-primary { border-color: transparent; background: var(--vt-accent); color: var(--vt-accent-ink); }
+  .vt-btn-primary:hover:not(:disabled) { border-color: transparent; }
   .vt-btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--vt-accent) 88%, var(--vt-ink)); }
   .vt-btn-quiet { border: 1px solid var(--vt-line); background: var(--vt-raised); color: var(--vt-ink); }
   .vt-btn-quiet:hover:not(:disabled) { border-color: var(--vt-line-strong); background: var(--vt-surface); }

@@ -109,7 +109,7 @@ export function DecisionControls({ f, decide, canDismissBlockers, people, onBusy
       <div className="flex flex-col gap-2 border-t border-line pt-3">
         {history}
         {decide && (
-          <button type="button" onClick={() => setChanging(true)} className="self-start text-xs font-medium text-muted hover:text-ink">
+          <button type="button" onClick={() => setChanging(true)} className="vt-btn vt-btn-xs self-start">
             Change this call
           </button>
         )}
@@ -142,7 +142,7 @@ export function DecisionControls({ f, decide, canDismissBlockers, people, onBusy
                 className="vt-btn vt-btn-primary vt-btn-sm self-start">Keep it</button>
             </div>
           )}
-          <button type="button" onClick={() => { setKeeping(false); setOther(false); }} className="self-start text-xs text-muted hover:text-ink">Back</button>
+          <button type="button" onClick={() => { setKeeping(false); setOther(false); }} className="vt-btn vt-btn-xs self-start">Back</button>
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -156,7 +156,7 @@ export function DecisionControls({ f, decide, canDismissBlockers, people, onBusy
           </button>
           <button type="button" disabled={busy} onClick={() => run("escalated")} className="vt-btn vt-btn-quiet vt-btn-sm"
             title="Hand it to an approver">Escalate</button>
-          {changing && <button type="button" onClick={() => setChanging(false)} className="text-xs text-muted hover:text-ink">Cancel</button>}
+          {changing && <button type="button" onClick={() => setChanging(false)} className="vt-btn vt-btn-xs">Cancel</button>}
           {blockedDismiss && <span className="w-full text-[11px] text-subtle">Approvers clear must-fix issues</span>}
         </div>
       )}

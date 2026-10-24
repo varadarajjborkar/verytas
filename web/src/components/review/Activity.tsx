@@ -105,7 +105,7 @@ export function Activity({ timeline, contentId, versionId, onPosted }: {
         {replyTo && (
           <p className="mb-1.5 flex items-center gap-2 text-[11px] text-muted">
             Replying to {replyTo.actor?.name ?? "comment"}
-            <button type="button" onClick={() => setReplyTo(null)} className="text-subtle hover:text-ink">Cancel</button>
+            <button type="button" onClick={() => setReplyTo(null)} className="vt-btn vt-btn-xs">Cancel</button>
           </p>
         )}
         <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={5000} aria-label="Add a comment"
@@ -170,7 +170,7 @@ function CommentItem({ c, replies, onReply }: { c: Comment; replies: Comment[]; 
           ))}
         </ul>
       )}
-      <button type="button" onClick={() => onReply(c)} className="mt-1.5 text-[11px] font-medium text-muted hover:text-accent">Reply</button>
+      <button type="button" onClick={() => onReply(c)} className="vt-btn vt-btn-xs mt-1.5">Reply</button>
     </div>
   );
 }
