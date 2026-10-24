@@ -44,7 +44,8 @@ export function SignInShell({ children }: { children: ReactNode }) {
           ))}
         </ul>
       </aside>
-      <section className="flex flex-col gap-5 bg-surface md:min-h-0 p-6 md:overflow-y-auto md:px-12 md:py-10 [@media(min-width:768px)_and_(max-height:760px)]:gap-4 [@media(min-width:768px)_and_(max-height:760px)]:py-7">
+      {/* Safe centring: the choice sits mid-screen, and a window too short for it scrolls from the top. */}
+      <section className="flex flex-col gap-5 bg-surface [justify-content:safe_center] md:min-h-0 p-6 md:overflow-y-auto md:px-12 md:py-10 [@media(min-width:768px)_and_(max-height:760px)]:gap-4 [@media(min-width:768px)_and_(max-height:760px)]:py-7">
         {children}
       </section>
     </div>

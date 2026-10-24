@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useStored, writeStored } from "@/lib/stored";
-import { ArrowRightIcon, CalendarIcon, InfoIcon, RefreshIcon, UsersIcon } from "./Icons";
+import { ArrowRightIcon, InfoIcon, RefreshIcon, UsersIcon } from "./Icons";
 import { SignInShell } from "./SignInShell";
 
 type Person = { key: string; name: string; side: "manager" | "creator"; title: string; blurb: string };
@@ -12,8 +12,8 @@ type Company = { slug: string; brand: string; industry: string; people: Person[]
 const PICKED = "vt_demo_company";
 
 const SIDES = [
-  { side: "manager" as const, label: "Brand team", lead: "Decide on what creators send, keep the brand library, read the dashboards." },
-  { side: "creator" as const, label: "Creators", lead: "Write a post, see what Verytas flags and why, fix it and send it for approval." },
+  { side: "manager" as const, label: "Brand team", lead: "Review what creators send, and approve it" },
+  { side: "creator" as const, label: "Creators", lead: "Write a post, see what to fix, and send it" },
 ];
 
 /**
@@ -63,10 +63,10 @@ export function DemoSignIn({ companies, resetsOn, next, selfSignup }:
             </Link>
           )}
         </div>
-        <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Pick someone at {brand} to be</h1>
-        <p className="max-w-xl text-sm leading-6 text-muted">
-          A made-up brand with eight weeks of work already in it. Each person is a real account with their own
-          role, so you see exactly what they would.
+        <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight [@media(min-width:768px)_and_(max-height:800px)]:text-2xl">Pick someone at {brand} to be</h1>
+        <p className="max-w-xl text-sm leading-6 text-muted [@media(min-width:768px)_and_(max-height:800px)]:leading-5">
+          A made-up brand with eight weeks of work already in it. Each person is a real account, so you see
+          exactly what they would.
         </p>
       </header>
 
@@ -74,7 +74,6 @@ export function DemoSignIn({ companies, resetsOn, next, selfSignup }:
         <section aria-labelledby="pick-company" className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between gap-3">
             <h2 id="pick-company" className="text-sm font-semibold">Company</h2>
-            {company.industry && <p className="hidden truncate text-xs text-subtle sm:block">{company.industry}</p>}
           </div>
           <div role="radiogroup" aria-labelledby="pick-company" className="flex flex-wrap gap-2">
             {companies.map((c) => (
@@ -93,13 +92,14 @@ export function DemoSignIn({ companies, resetsOn, next, selfSignup }:
         <section key={side} aria-labelledby={`side-${side}`} className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between gap-3">
             <h2 id={`side-${side}`} className="text-sm font-semibold">{label}</h2>
-            <p className="hidden text-xs text-subtle sm:block">{lead}</p>
+            <p className="text-xs text-subtle">{lead}</p>
           </div>
-          <ul className="vt-stagger grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="vt-stagger grid gap-2.5 sm:grid-cols-2">
             {people.filter((p) => p.side === side).map((p) => (
               <li key={p.key}>
-                <button type="button" onClick={() => enter(p.key)} disabled={busy !== null}
-                  className="vt-lift group flex h-full w-full items-start gap-3 rounded-[14px] border border-line bg-raised p-3.5 text-left shadow-[var(--vt-shadow)] hover:border-accent/60 disabled:opacity-60">
+                {/* Name, job and what they do: enough to choose by, short enough to scan. */}
+                <button type="button" onClick={() => enter(p.key)} disabled={busy !== null} title={p.blurb}
+                  className="vt-lift group flex h-full w-full items-start gap-3 rounded-[14px] border border-line bg-raised p-3.5 text-left shadow-[var(--vt-shadow)] hover:border-accent/60 disabled:opacity-60 [@media(min-width:768px)_and_(max-height:800px)]:p-2.5">
                   <span aria-hidden className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-semibold ${
                     side === "manager" ? "bg-accent/12 text-accent" : "bg-[var(--vt-ok-bg)] text-[var(--vt-ok)]"}`}>
                     {p.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
@@ -107,7 +107,8 @@ export function DemoSignIn({ companies, resetsOn, next, selfSignup }:
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{p.name}</span>
                     <span className="block truncate text-xs text-subtle">{p.title}</span>
-                    <span className="mt-1 line-clamp-2 text-xs leading-5 text-muted [@media(min-height:820px)]:line-clamp-none" title={p.blurb}>{p.blurb}</span>
+                    {/* What they do, in two lines at most; the whole description is on hover. */}
+                    <span className="mt-1 line-clamp-2 text-xs leading-[1.125rem] text-muted">{p.blurb}</span>
                   </span>
                   {busy === p.key ? (
                     <span role="img" aria-label="Signing in" className="mt-1 h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
@@ -123,19 +124,14 @@ export function DemoSignIn({ companies, resetsOn, next, selfSignup }:
 
       {error && <p role="alert" className="rounded-xl bg-[var(--vt-blocker-bg)] px-4 py-3 text-sm text-[var(--vt-blocker)]">{error}</p>}
 
-      <section aria-labelledby="demo-notes" className="mt-auto rounded-2xl bg-sunken/70 px-4 py-3">
-        <h2 id="demo-notes" className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-subtle">Good to know</h2>
-        <ul className="grid gap-x-5 gap-y-2 text-xs leading-[1.125rem] text-muted sm:grid-cols-2">
-          <li className="flex gap-2.5"><UsersIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
-            <span>Everyone here is made up. The demo is shared: what you change, other visitors see too.</span></li>
-          <li className="flex gap-2.5"><RefreshIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
-            <span>Be someone else any time with <span className="font-medium text-ink">Switch account</span> in the sidebar. Your work stays.</span></li>
-          <li className="flex gap-2.5"><CalendarIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
-            <span>Everything resets every 14 days. Next reset: <span className="font-medium text-ink">{reset}</span>.</span></li>
-          <li className="flex gap-2.5"><InfoIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
-            <span>Please upload nothing private. Confidential terms are redacted before any AI call.</span></li>
-        </ul>
-      </section>
+      <ul aria-label="Good to know" className="mt-3 flex flex-col gap-1.5 [@media(min-width:768px)_and_(max-height:800px)]:mt-0 [@media(min-width:768px)_and_(max-height:800px)]:gap-1 text-xs text-muted">
+        <li className="flex items-center gap-2"><UsersIcon size={14} className="shrink-0 text-subtle" />
+          Everyone is made up, and the demo is shared with other visitors.</li>
+        <li className="flex items-center gap-2"><RefreshIcon size={14} className="shrink-0 text-subtle" />
+          Switch account any time from the sidebar. Resets on {reset}.</li>
+        <li className="flex items-center gap-2"><InfoIcon size={14} className="shrink-0 text-subtle" />
+          Please don&apos;t upload anything private.</li>
+      </ul>
     </SignInShell>
   );
 }
