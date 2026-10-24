@@ -1,10 +1,11 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePersistedFlag } from "@/lib/persisted-flag";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useStored, writeStored } from "@/lib/stored";
 import { ApiError, listContents, submit } from "@/lib/review-client";
 import type { ContentRow, Review } from "@/lib/types";
+import { BackButton } from "./BackButton";
 import { Drawer } from "./Drawer";
 import { HistoryIcon, PanelIcon, PlusIcon } from "./Icons";
 import { Checklist, emptyRow, type RowState, sortFindings } from "./review/Checklist";
@@ -26,6 +27,14 @@ import { useViewer } from "./Viewer";
  * This is the creator's workspace. The brand team gets the review queue
  * instead (review/ReviewQueue.tsx): a different page for a different job.
  */
+const RAIL_KEY = "vt-review-rail";
+const NARROW = "(max-width: 1599px)";
+function onWidth(cb: () => void) {
+  const q = window.matchMedia(NARROW);
+  q.addEventListener("change", cb);
+  return () => q.removeEventListener("change", cb);
+}
+
 export function ReviewWorkspace({ initialBody }: { initialBody: string }) {
   const { side, loading, demo } = useViewer();
   if (loading) return <div aria-busy="true" aria-label="Loading" className="h-96 animate-pulse rounded-[14px] bg-sunken" />;
@@ -44,7 +53,12 @@ function CreatorWorkspace({ initialBody }: { initialBody: string }) {
   const [loading, setLoading] = useState(true);
   const [demo, setDemo] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
-  const [collapsed, setCollapsed] = usePersistedFlag("vt-review-rail-collapsed", false);
+  // Four columns (sidebar, this list, the piece, its issues) squeeze the piece on a laptop screen, so with a
+  // piece open below 1600px the list starts folded. Opening or folding it by hand is remembered and wins.
+  const railChoice = useStored(RAIL_KEY);
+  const narrow = useSyncExternalStore(onWidth, () => window.matchMedia(NARROW).matches, () => false);
+  const collapsed = railChoice ? railChoice === "closed" : selected != null && narrow;
+  const setCollapsed = (fold: boolean) => writeStored(RAIL_KEY, fold ? "closed" : "open");
   // Only the newest request may write the list, so a slow reply can't overwrite a newer one.
   const seq = useRef(0);
 
@@ -108,7 +122,13 @@ function CreatorWorkspace({ initialBody }: { initialBody: string }) {
 
       <div className="min-w-0">
         {/* Held until the viewer is known: mounting as a guessed role would offer the wrong tools. */}
-        {showing && !viewerLoading && <ReviewView key={selected} contentId={selected} role={me?.role ?? "creator"} userId={me?.id ?? null} onChanged={refresh} />}
+        {/* The same way out as the brand team's queue has, floating along once the page scrolls past it. */}
+        {showing && !viewerLoading && (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center"><BackButton onClick={() => go(null)} label="My reviews" /></div>
+            <ReviewView key={selected} contentId={selected} role={me?.role ?? "creator"} userId={me?.id ?? null} onChanged={refresh} />
+          </div>
+        )}
         <div hidden={showing}>
           <NewReview initialBody={initialBody} demo={demo} onCreated={(id) => { void refresh(); go(id); }} />
         </div>
