@@ -278,7 +278,14 @@ export function GlobalSearch() {
         onBlur={(e) => { if (open && e.relatedTarget instanceof Node && !wrapper.current?.contains(e.relatedTarget)) close(false); }}
         className={`pointer-events-auto relative z-50 w-full max-w-[34rem] ${open
           ? "max-md:fixed max-md:inset-x-3 max-md:top-3 max-md:w-auto max-md:max-w-none" : "max-md:hidden"}`}>
-        <div className="vt-glass flex h-11 items-center gap-2.5 rounded-full pl-4 pr-2 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent md:h-10">
+        {/* The whole pill is the field: a press on the icon, the padding or the shortcut hint focuses the input
+            (its own buttons keep their clicks), and preventDefault keeps that press from blurring it first. */}
+        <div onMouseDown={(e) => {
+          if (e.target === input.current || (e.target as HTMLElement).closest("button")) return;
+          e.preventDefault();
+          input.current?.focus();
+        }}
+          className="vt-glass flex h-11 cursor-text items-center gap-2.5 rounded-full pl-4 pr-2 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent md:h-10">
           <SearchIcon size={17} className="shrink-0 text-muted" />
           <input ref={input} type="text" role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list"
             aria-activedescendant={open && flat.length ? optionId(idx) : undefined} aria-label="Search everything"
