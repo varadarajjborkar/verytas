@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { answerIntake, decideDraft, decideDrafts, getIntake, intakeUpload, listIntake, refreshIntake, startIntake } from "@/lib/review-client";
 import type { IntakeBatch, IntakeBatchDetail, IntakeDraft, IntakeItem, IntakeItemIn } from "@/lib/types";
 import { UploadIcon } from "../Icons";
@@ -20,6 +20,10 @@ const ISSUE: Record<string, string> = {
   conflict: "conflicts", no_unit: "no unit", expired: "expired", open_question: "open question",
   rejected_by_library: "library refused it",
 };
+
+/** The payload field an admin may correct before approving, per kind of draft. */
+const fieldOf = (t: IntakeDraft["target"]) => (t === "fact" ? "statement" : t === "rule" ? "text" : t === "term" ? "term" : "name");
+const originalText = (d: IntakeDraft) => String((d.payload as Record<string, unknown>)[fieldOf(d.target)] ?? "");
 
 type Pick = { file?: File; url?: string; text?: string; name: string; context: string };
 
@@ -67,6 +71,8 @@ function HandOver({ onStarted }: { onStarted: (id: number) => void }) {
   const [tier, setTier] = useState("internal");
   const [busy, setBusy] = useState(false);
   const [over, setOver] = useState(false);
+  // A file that already went up is not sent again when a later one fails and the hand-over is retried.
+  const uploaded = useRef(new WeakMap<File, string>());
   const toast = useToast();
 
   const addFiles = (files: FileList | File[]) =>
@@ -79,8 +85,12 @@ function HandOver({ onStarted }: { onStarted: (id: number) => void }) {
       const items: IntakeItemIn[] = [];
       for (const p of picks) {
         if (p.file) {
-          const up = await intakeUpload(p.file);
-          items.push({ blob_id: up.id, name: p.name, context: p.context.trim() || undefined });
+          let blob = uploaded.current.get(p.file);
+          if (!blob) {
+            blob = (await intakeUpload(p.file)).id;
+            uploaded.current.set(p.file, blob);
+          }
+          items.push({ blob_id: blob, name: p.name, context: p.context.trim() || undefined });
         } else if (p.url) items.push({ url: p.url, name: p.name, context: p.context.trim() || undefined });
         else if (p.text) items.push({ text: p.text, name: p.name, context: p.context.trim() || undefined });
       }
@@ -165,13 +175,27 @@ function BatchView({ id, onAdded, onClose }: { id: number; onAdded: () => void; 
   const [batch, setBatch] = useState<IntakeBatchDetail | null>(null);
   const [chosen, setChosen] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
+  // Corrections typed into draft rows, kept here so a bulk approval carries them too.
+  const [edits, setEdits] = useState<Record<number, string>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Answers can arrive out of order; one older than what is already shown would put an approved draft back to pending.
+  const asked = useRef(0);
+  const applied = useRef(0);
   const toast = useToast();
 
-  const load = useCallback(() => getIntake(id).then(setBatch).catch(() => undefined), [id]);
+  const load = useCallback(() => {
+    const n = ++asked.current;
+    return getIntake(id).then((b) => {
+      if (n < applied.current) return;
+      applied.current = n;
+      setBatch(b);
+      setLoadError(null);
+    }).catch((err: Error) => { if (n > applied.current) setLoadError(err.message); });
+  }, [id]);
   useEffect(() => { void load(); }, [load]);
-  // Polled while anything is still being read; quiet once every item has an answer.
-  const working = !batch || batch.status === "queued" || batch.status === "running"
-    || batch.items.some((i) => i.status === "queued" || i.status === "reading");
+  // Polled while anything is still being read; quiet once every item has an answer, or the hand-over can't be loaded.
+  const working = batch ? batch.status === "queued" || batch.status === "running"
+    || batch.items.some((i) => i.status === "queued" || i.status === "reading") : !loadError;
   useEffect(() => {
     if (!working) return;
     const t = setInterval(() => void load(), 2000);
@@ -180,23 +204,54 @@ function BatchView({ id, onAdded, onClose }: { id: number; onAdded: () => void; 
 
   const pending = useMemo(() => batch?.drafts.filter((d) => d.status === "pending") ?? [], [batch]);
   const clean = pending.filter((d) => d.issues.length === 0);
+  /** What the admin typed into a draft, when it differs from what was read. */
+  const correction = (d: IntakeDraft) => (edits[d.id] !== undefined && edits[d.id] !== originalText(d) ? edits[d.id] : null);
 
+  // The bulk endpoint approves drafts as read, so a corrected draft goes through its own approval, which
+  // carries the correction. A draft with something to check is left for the admin either way.
   async function bulk(ids: number[]) {
+    const byId = new Map((batch?.drafts ?? []).map((d) => [d.id, d] as const));
+    const corrected = ids.map((i) => byId.get(i)).filter((d): d is IntakeDraft => Boolean(d) && d!.issues.length === 0 && correction(d!) !== null);
+    const plain = ids.filter((i) => !corrected.some((d) => d.id === i));
     setBusy(true);
+    let done = 0;
+    let skipped = 0;
     try {
-      const out = await decideDrafts(id, ids);
-      toast({ kind: out.skipped.length ? "warning" : "success", title: `${out.done.length} added to the library`,
-        detail: out.skipped.length ? `${out.skipped.length} left for you to check one by one.` : undefined });
+      for (const d of corrected) {
+        const text = correction(d)!;
+        if (!text.trim()) { skipped += 1; continue; }
+        try {
+          await decideDraft(d.id, "approve", { [fieldOf(d.target)]: text });
+          done += 1;
+        } catch {
+          skipped += 1;
+        }
+      }
+      if (plain.length) {
+        const out = await decideDrafts(id, plain);
+        done += out.done.length;
+        skipped += out.skipped.length;
+      }
+      toast({ kind: skipped ? "warning" : "success", title: `${done} added to the library`,
+        detail: skipped ? `${skipped} left for you to check one by one.` : undefined });
       setChosen(new Set());
-      onAdded();
-      await load();
     } catch (err) {
       toast({ kind: "error", title: "Couldn't approve", detail: (err as Error).message });
     }
+    if (done) onAdded();
+    await load();
     setBusy(false);
   }
 
-  if (!batch) return <div className="h-40 animate-pulse rounded-xl bg-sunken" />;
+  if (!batch) {
+    return loadError ? (
+      <div className="vt-card flex flex-wrap items-center gap-3 p-4 text-sm" role="alert">
+        <span className="min-w-0 flex-1 text-[var(--vt-blocker)]">Couldn&apos;t open hand-over #{id}: {loadError}</span>
+        <button type="button" onClick={() => void load()} className="vt-btn vt-btn-quiet vt-btn-sm">Try again</button>
+        <button type="button" onClick={onClose} className="vt-btn vt-btn-quiet vt-btn-sm">Close</button>
+      </div>
+    ) : <div className="h-40 animate-pulse rounded-xl bg-sunken" />;
+  }
   const groups = (["rule", "fact", "term", "asset"] as const).map((t) => [t, batch.drafts.filter((d) => d.target === t)] as const)
     .filter(([, ds]) => ds.length > 0);
   return (
@@ -231,6 +286,7 @@ function BatchView({ id, onAdded, onClose }: { id: number; onAdded: () => void; 
               <ul className="flex flex-col divide-y divide-line rounded-xl border border-line">
                 {ds.map((d) => (
                   <DraftRow key={d.id} d={d} item={batch.items.find((i) => i.id === d.item_id)} chosen={chosen.has(d.id)}
+                    text={edits[d.id] ?? originalText(d)} onText={(t) => setEdits((e) => ({ ...e, [d.id]: t }))}
                     onChoose={(on) => setChosen((s) => { const n = new Set(s); if (on) n.add(d.id); else n.delete(d.id); return n; })}
                     onDone={() => { onAdded(); void load(); }} />
                 ))}
@@ -246,8 +302,19 @@ function BatchView({ id, onAdded, onClose }: { id: number; onAdded: () => void; 
 function ItemCard({ item, onChanged }: { item: IntakeItem; onChanged: () => void }) {
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
+  const [rereading, setRereading] = useState(false);
   const toast = useToast();
   const s = STATUS[item.status];
+  async function reread() {
+    setRereading(true);
+    try {
+      await refreshIntake(item.id);
+      onChanged();
+    } catch (err) {
+      toast({ kind: "error", title: "Couldn't read the link again", detail: (err as Error).message });
+    }
+    setRereading(false);
+  }
   async function send() {
     setBusy(true);
     try {
@@ -290,7 +357,7 @@ function ItemCard({ item, onChanged }: { item: IntakeItem; onChanged: () => void
         </div>
       )}
       {item.source_url && item.status !== "reading" && (
-        <button type="button" onClick={() => refreshIntake(item.id).then(onChanged)} className="vt-btn vt-btn-quiet vt-btn-sm self-start">
+        <button type="button" disabled={rereading} onClick={reread} className="vt-btn vt-btn-quiet vt-btn-sm self-start">
           Read the link again{item.refreshed_at ? ` (last ${new Date(item.refreshed_at).toLocaleString()})` : ""}
         </button>
       )}
@@ -303,15 +370,15 @@ function label(d: IntakeDraft): string {
   return String(p.statement ?? p.title ?? p.term ?? p.name ?? "Draft");
 }
 
-function DraftRow({ d, item, chosen, onChoose, onDone }: {
-  d: IntakeDraft; item?: IntakeItem; chosen: boolean; onChoose: (on: boolean) => void; onDone: () => void;
+function DraftRow({ d, item, chosen, text, onText, onChoose, onDone }: {
+  d: IntakeDraft; item?: IntakeItem; chosen: boolean; text: string; onText: (t: string) => void;
+  onChoose: (on: boolean) => void; onDone: () => void;
 }) {
-  const field = d.target === "fact" ? "statement" : d.target === "rule" ? "text" : d.target === "term" ? "term" : "name";
-  const [text, setText] = useState(String((d.payload as Record<string, unknown>)[field] ?? ""));
+  const field = fieldOf(d.target);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   const p = d.payload as Record<string, string | number | null | undefined>;
-  const edited = text !== String(p[field] ?? "");
+  const edited = text !== originalText(d);
   async function decide(action: "approve" | "reject") {
     setBusy(true);
     try {
@@ -330,7 +397,7 @@ function DraftRow({ d, item, chosen, onChoose, onDone }: {
       <div className="flex min-w-0 flex-col gap-1.5">
         {d.target === "rule" && <p className="text-sm font-medium">{String(p.title ?? "")} <code className="text-[11px] font-normal text-subtle">{String(p.code ?? "")}</code></p>}
         {done ? <p className="text-sm">{text}</p> : (
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={d.target === "rule" ? 2 : 1} aria-label="Edit before approving"
+          <textarea value={text} onChange={(e) => onText(e.target.value)} rows={d.target === "rule" ? 2 : 1} aria-label="Edit before approving"
             className="w-full resize-y rounded-md bg-transparent px-1 py-0.5 text-sm outline-none hover:bg-sunken focus:bg-sunken" />
         )}
         <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-subtle">
