@@ -112,6 +112,9 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
             const s = f.suggestions[0];
             const fixable = Boolean(s) && (f.source ?? "body") === "body";
             const quiet = call?.state === "kept" || call?.state === "done";
+            // A withdrawn request is history, so the creator can ask again.
+            const raised = escalations[f.id]?.status === "withdrawn" ? undefined : escalations[f.id];
+            const canAsk = f.level !== "advisory" && Boolean(onEscalate) && !raised;
             return (
               <li key={f.id} data-finding={f.id}
                 className={`rounded-2xl border transition-[border-color,box-shadow,background-color] duration-200 ${isOpen
@@ -239,8 +242,18 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                           className={`vt-btn vt-btn-sm ${!fixable && !row.done ? "vt-btn-primary" : ""}`}>
                           {row.done ? "Not done yet" : "Mark done"}
                         </button>
+                      </div>
+                    )}
+                    {/* Disagreeing, on its own quiet line: Verytas looks again (dispute) or a person does (escalation). */}
+                    {creator && ((!d && !row.disputing) || canAsk) && (
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-subtle">
+                        <span>Think it&apos;s wrong?</span>
                         {!d && !row.disputing && (
-                          <button type="button" onClick={() => onRow(f.id, { disputing: true })} className="vt-btn vt-btn-quiet vt-btn-sm">Dispute</button>
+                          <button type="button" onClick={() => onRow(f.id, { disputing: true })} className="font-medium text-accent hover:underline">Dispute it</button>
+                        )}
+                        {!d && !row.disputing && canAsk && <span aria-hidden>·</span>}
+                        {canAsk && (
+                          <EscalationBox f={f} request={undefined} side="creator" onEscalate={onEscalate} onChanged={onEscalationChanged} />
                         )}
                       </div>
                     )}
@@ -250,23 +263,27 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                         <textarea id={`dispute-${f.id}`} value={row.dispute} maxLength={2000}
                           onChange={(e) => onRow(f.id, { dispute: e.target.value })}
                           className="vt-input min-h-16"
-                          placeholder="e.g. In Marathi 'bhari' means excellent, not heavy" />
+                          placeholder="e.g. In Marathi, 'भारी' (bhaari) means excellent, not heavy" />
                         <div className="flex flex-wrap items-center gap-2">
                           <input value={row.language} maxLength={60} onChange={(e) => onRow(f.id, { language: e.target.value })}
                             placeholder="Language (optional)" className="vt-input w-44 py-1.5 text-xs" />
+                          {/* A minimum, not a limit (up to 2,000), and where the words go: there is no separate send. */}
                           <span className="text-[11px] text-muted">
                             {row.dispute.trim().length < 10
-                              ? `${10 - row.dispute.trim().length} more character${10 - row.dispute.trim().length === 1 ? "" : "s"}`
-                              : "Sent with the resubmission"}
+                              ? `At least 10 characters (${10 - row.dispute.trim().length} to go)`
+                              : "Saved. Verytas reads it on the next re-check, from the bar below."}
                           </span>
-                          <button type="button" onClick={() => onRow(f.id, { disputing: false, dispute: "" })} className="ml-auto text-xs text-muted hover:text-ink">Cancel</button>
+                          <button type="button" onClick={() => onRow(f.id, { disputing: false, dispute: "" })} className="vt-btn vt-btn-xs ml-auto">Cancel</button>
                         </div>
                       </div>
                     )}
                     <DecisionControls f={f} decide={decide} canDismissBlockers={canDismissBlockers} people={people}
                       onBusy={onBusy} onDecided={onDecided} />
-                    <EscalationBox f={f} request={escalations[f.id]} side={creator ? "creator" : "manager"}
-                      onEscalate={creator && f.level !== "advisory" ? onEscalate : undefined} onChanged={onEscalationChanged} />
+                    {/* An escalation already raised shows here; asking for one is on the creator's "Think it's wrong?" line. */}
+                    {(!creator || raised) && (
+                      <EscalationBox f={f} request={escalations[f.id]} side={creator ? "creator" : "manager"}
+                        onEscalate={undefined} onChanged={onEscalationChanged} />
+                    )}
                   </div>
                   </div>
                 </div>

@@ -205,6 +205,8 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
   // Someone who can act on the rows walks the ones still open; anyone else simply reads them in turn.
   const acting = (creatorTools && !readOnly) || deciding;
   const open = acting ? findings.filter((f) => !calls.get(f.id)) : findings;
+  // "Open" filters only while some issues are decided and some are not; otherwise every issue shows.
+  const filterable = open.length > 0 && open.length < findings.length;
   const asked = findings.filter((f) => callOf(f) === "asked");
   const blocking = findings.filter((f) => f.level === "blocker" && callOf(f) !== "kept").length;
 
@@ -519,12 +521,13 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
                 {acting ? `${findings.length - open.length} of ${findings.length} ${creatorTools ? "handled" : "decided"}` : findings.length}
               </span>
             )}
-            {acting && findings.length > 0 && !checking && (
+            {/* Only while it would change the list: with nothing decided, or everything, both views are the same. */}
+            {acting && !checking && filterable && (
               <div role="group" aria-label="Show issues" className="ml-auto flex gap-0.5">
                 {(["all", "open"] as const).map((k) => (
                   <button key={k} type="button" aria-pressed={show === k} onClick={() => setShow(k)}
                     className={`rounded-md px-2 py-0.5 text-xs transition ${show === k ? "bg-sunken text-ink" : "text-muted hover:text-ink"}`}>
-                    {k === "all" ? "All" : "Open"}
+                    {k === "all" ? "All" : <>Open <span className="tabular-nums text-subtle">{open.length}</span></>}
                   </button>
                 ))}
               </div>
@@ -547,7 +550,7 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
             // A failed check has its own alert above; only a finished one can say what was checked.
             review.status === "done" ? <CleanResult categories={summary?.categories} /> : null
           ) : (
-            <Checklist findings={findings} rows={rows} disputes={disputeByFinding} active={active} onSelect={pick} show={show}
+            <Checklist findings={findings} rows={rows} disputes={disputeByFinding} active={active} onSelect={pick} show={filterable ? show : "all"}
               onRow={onRow} creator={creatorTools} people={people} escalations={requests} onEscalationChanged={loadTimeline}
               onEscalate={creatorTools && !readOnly ? async (f, message) => {
                 await escalate(f.id, message);
@@ -639,6 +642,7 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
         ) : review ? (
           <DockBody findings={findings} calls={calls} active={active} open={open.length} acting={acting} walking={walking}
             onWalk={walk} busy={busy}
+            also={creatorTools && !readOnly && changes > 0 ? { label: `Apply ${changes} and re-check`, run: () => recheck() } : null}
             message={!acting ? <><b className="font-semibold">{findings.length} issue{findings.length === 1 ? "" : "s"}</b></>
               : open.length ? <><b className="font-semibold">{open.length} to go</b>{deciding && <span className="hidden text-muted sm:inline">{blocking ? `${blocking} block${blocking === 1 ? "s" : ""} approval` : "none block approval"}</span>}</>
               : creatorTools ? <><b className="font-semibold">{findings.length ? "All handled" : "All clear"}</b>{changes > 0 && <span className="hidden text-muted sm:inline">{changes} to apply</span>}</>
@@ -689,15 +693,22 @@ function CheckingNote() {
 }
 
 /** Dots for every issue, how many are left, and one button: walk the open ones, or the move that fits what was decided. */
-function DockBody({ findings, calls, active, open, acting, walking, onWalk, message, done, busy }: {
+function DockBody({ findings, calls, active, open, acting, walking, onWalk, message, done, busy, also }: {
   findings: Finding[]; calls: Calls; active: number | null; open: number; acting: boolean; walking: boolean;
   onWalk: () => void; message: React.ReactNode; done: Done; busy: boolean;
+  /** A move that can't wait for the rest: fixes already chosen, applied while other issues are still open. */
+  also?: { label: string; run: () => void } | null;
 }) {
   const left = acting ? open > 0 : findings.length > 0;
   return (
     <>
       {findings.length > 0 && <PipChain findings={findings} calls={calls} active={active} />}
       <span className="flex min-w-0 items-baseline gap-1.5 whitespace-nowrap text-[13px]">{message}</span>
+      {also && open > 0 && (
+        <button type="button" disabled={busy} onClick={also.run} className="vt-btn h-9 rounded-full px-4 font-semibold">
+          {also.label}
+        </button>
+      )}
       {left && (!done || open > 0) ? (
         <button type="button" onClick={onWalk} className="vt-btn vt-btn-primary h-9 rounded-full px-4 font-semibold">
           {walking || !acting ? "Next issue" : open < findings.length ? "Continue" : "Walk me through"}
