@@ -9,9 +9,12 @@ What it is, and is not:
 - evidence for the reviewer, shown as "found on the web, not approved": it never raises, lowers or
   clears a finding, and the fact library stays the only thing a claim is checked against; a brand
   admin can turn a good source into an approved fact, which is the only way a web page becomes proof;
-- never for confidential content, and confidential terms and personal data are masked out of the query;
-- bounded: at most `per_review` searches per review and `per_day` per process, and every search is
-  listed under "How it was checked"; a failed search says so and changes nothing else.
+- only for public-tier content: a claim in a post that is going out is no secret, while an internal or
+  confidential one must not be handed to a third-party search API at all. Confidential terms and personal
+  data are masked out of the query as well;
+- bounded: at most `per_review` searches per review, `per_workspace` per workspace and `per_day` in all,
+  and every search is listed under "How it was checked", including one cut short by the time limit; a
+  failed search says so and changes nothing else.
 
 Page text is untrusted: it goes to the judge as escaped content (providers/ollama_judge.py), it is only
 ever shown as text, and only http(s) links are kept.
@@ -37,18 +40,26 @@ _DAY_S = 86_400.0
 
 @dataclass
 class DailyCap:
-    """Searches left today for this process. Shared by every review, so a busy demo can't run up a bill."""
+    """Searches left today for this process. `per_day` is the ceiling for everyone, so a busy demo can't run up
+    a bill; `per_workspace` is each workspace's share of it, so one tenant resubmitting pieces cannot leave
+    the others with nothing. A share of 0 or less means no share, only the ceiling."""
     per_day: int
+    per_workspace: int = 0
     used: int = 0
+    by_workspace: dict[int, int] = field(default_factory=dict)
     since: float = field(default_factory=time.monotonic)
 
-    def take(self) -> bool:
+    def take(self, workspace: int = 0) -> str | None:
+        """None when a search may go ahead, else why it may not."""
         if time.monotonic() - self.since > _DAY_S:
-            self.used, self.since = 0, time.monotonic()
+            self.used, self.by_workspace, self.since = 0, {}, time.monotonic()
         if self.used >= self.per_day:
-            return False
+            return "daily limit reached"
+        if self.per_workspace > 0 and self.by_workspace.get(workspace, 0) >= self.per_workspace:
+            return "this workspace's daily limit reached"
         self.used += 1
-        return True
+        self.by_workspace[workspace] = self.by_workspace.get(workspace, 0) + 1
+        return None
 
 
 def _question() -> Question:
@@ -70,23 +81,32 @@ def query_for(f: RawFinding, mask: Callable[[str], str], brand: str | None) -> s
 
 
 async def research(findings: list[RawFinding], search: Any, judge: JudgeProvider, mask: Callable[[str], str],
-                   brand: str | None, cap: DailyCap, per_review: int = 3) -> dict[str, Any]:
-    """Attach web results to the first unsupported claims; returns the record for "How it was checked"."""
+                   brand: str | None, cap: DailyCap, per_review: int = 3, *, workspace: int = 0,
+                   log: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Attach web results to the first unsupported claims; returns the record for "How it was checked".
+
+    The caller may pass `log` to keep what was done if this is cancelled by a time limit: every search is
+    listed before it starts, as timed out, and its outcome is filled in when it ends.
+    """
     todo = [f for f in findings if f.rule_code == RULE and f.quote][:per_review]
-    log: dict[str, Any] = {"provider": search.name, "searched": [], "skipped": 0}
+    if log is None:
+        log = {}
+    log.update({"provider": search.name, "searched": [], "skipped": 0})
 
     async def one(f: RawFinding) -> None:
         q = query_for(f, mask, brand)
         if q is None:
             log["skipped"] += 1
             return
-        if not cap.take():
-            log["searched"].append({"query": q, "outcome": "daily limit reached"})
+        if (refused := cap.take(workspace)) is not None:
+            log["searched"].append({"query": q, "outcome": refused})
             return
+        entry: dict[str, Any] = {"query": q, "outcome": "timed out"}
+        log["searched"].append(entry)
         try:
             found: list[WebResult] = await search.search(q)
         except Exception as exc:  # noqa: BLE001, a failed search is reported and changes nothing else
-            log["searched"].append({"query": q, "outcome": f"search failed: {str(exc)[:120]}"})
+            entry["outcome"] = f"search failed: {str(exc)[:120]}"
             return
         scores: list[float | None] = [None] * len(found)
         if found:
@@ -99,8 +119,8 @@ async def research(findings: list[RawFinding], search: Any, judge: JudgeProvider
                 pass
         f.research = [{"title": r.title, "url": r.url, "site": r.site, "snippet": r.snippet[:300],
                        "supports": None if s is None else round(s, 3)} for r, s in zip(found, scores, strict=True)]
-        log["searched"].append({"query": q, "outcome": f"{len(found)} result{'s' if len(found) != 1 else ''}",
-                                "likely_support": sum(1 for s in scores if s is not None and s >= SUPPORTS)})
+        entry.update(outcome=f"{len(found)} result{'s' if len(found) != 1 else ''}",
+                     likely_support=sum(1 for s in scores if s is not None and s >= SUPPORTS))
 
     await asyncio.gather(*(one(f) for f in todo))
     return log

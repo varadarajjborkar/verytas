@@ -13,11 +13,14 @@ start of a later word, then anywhere, and within a rank the newest first (ids gr
 
 from __future__ import annotations
 
+import time
+from collections import deque
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy import ColumnElement, and_, case, func, or_, select
+from sqlalchemy.orm import aliased
 
 from verytas.api.content import _latest_review, visible
 from verytas.api.deps import CurrentUser, Session
@@ -45,6 +48,14 @@ QUERY_MAX = 100
 _ESC = "\\"
 # A health score at or above this is the point where guideline health itself says to clarify the wording.
 UNCLEAR_AMBIGUITY = 0.5
+# The bar asks once typing settles (about six calls a second at its fastest), so this leaves room for a fast
+# typist and stops a loop. A search spends no model calls, hence its own small limit rather than the
+# self-serve budget, which counts model work per day.
+SEARCH_WINDOW_S = 10
+SEARCH_MAX_IN_WINDOW = 40
+# Guideline health scans every finding of the workspace; the empty bar asks for it on each open, so it is
+# reused for this long. Suggestions that are a few seconds old cost nothing.
+HEALTH_TTL_S = 30
 
 _STATUS = {
     ContentStatus.draft: "Draft", ContentStatus.in_review: "In review",
@@ -110,8 +121,11 @@ async def _pieces(session, user: User, q: str, limit: int) -> list[Hit]:
     stmt = select(Content).where(Content.workspace_id == user.workspace_id, Content.tier.in_(_tiers(user)),
                                  _own(user, Content.created_by))
     if q:
-        in_body = Content.id.in_(select(ContentVersion.content_id).where(
-            ContentVersion.body.ilike(_like(q), escape=_ESC)))
+        # The body match is scoped to the workspace inside the subquery, so it never walks other tenants' versions.
+        owner = aliased(Content)
+        in_body = Content.id.in_(
+            select(ContentVersion.content_id).join(owner, ContentVersion.content_id == owner.id)
+            .where(owner.workspace_id == user.workspace_id, ContentVersion.body.ilike(_like(q), escape=_ESC)))
         stmt = stmt.where(or_(_anywhere(q, Content.title, Content.channel), in_body)).order_by(
             _rank(q, Content.title), Content.id.desc())
     else:
@@ -122,16 +136,23 @@ async def _pieces(session, user: User, q: str, limit: int) -> list[Hit]:
 
 
 async def _findings(session, user: User, q: str, limit: int) -> list[Hit]:
+    # Only each piece's latest review: that is the one the opened screen shows, and the same finding recurs
+    # on every older version, where a much-revised piece would otherwise fill the page and hide the others.
+    latest = (select(func.max(Review.id)).join(ContentVersion, Review.version_id == ContentVersion.id)
+              .join(Content, ContentVersion.content_id == Content.id)
+              .where(Content.workspace_id == user.workspace_id).group_by(ContentVersion.content_id)
+              .correlate(None))  # same tables as the outer query; this one must not borrow its rows
     stmt = (select(Finding, Content)
             .join(Review, Finding.review_id == Review.id)
             .join(ContentVersion, Review.version_id == ContentVersion.id)
             .join(Content, ContentVersion.content_id == Content.id)
-            .where(Content.workspace_id == user.workspace_id, Content.tier.in_(_tiers(user)),
-                   _own(user, Content.created_by), _anywhere(q, Finding.title, Finding.quote, Finding.explanation))
+            .where(Review.id.in_(latest), Content.workspace_id == user.workspace_id,
+                   Content.tier.in_(_tiers(user)), _own(user, Content.created_by),
+                   _anywhere(q, Finding.title, Finding.quote, Finding.explanation))
             .order_by(_rank(q, Finding.title), Finding.id.desc()))
     seen: set[tuple[int, str]] = set()
     out: list[Hit] = []
-    # The same finding recurs on every version of a piece; one hit per piece and title is enough.
+    # One review can still list a title twice (two quotes); one hit per piece and title is enough.
     for finding, content in (await session.execute(stmt.limit(limit * 4))).all():
         if (content.id, finding.title) in seen:
             continue
@@ -238,7 +259,42 @@ async def _events(session, user: User, q: str, limit: int) -> list[Hit]:
             for e in (await session.scalars(stmt)).all()]
 
 
-async def _suggestions(session, user: User, limit: int) -> list[Hit]:
+def _throttle(request: Request, user: User) -> None:
+    """At most SEARCH_MAX_IN_WINDOW searches per person in SEARCH_WINDOW_S. In process, like the sign-in limits."""
+    state = request.app.state
+    if not hasattr(state, "search_calls"):
+        state.search_calls = {}
+    calls: dict[int, deque[float]] = state.search_calls
+    now = time.monotonic()
+    recent = calls.setdefault(user.id, deque())
+    while recent and now - recent[0] > SEARCH_WINDOW_S:
+        recent.popleft()
+    if len(recent) >= SEARCH_MAX_IN_WINDOW:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "searching too fast; try again in a moment")
+    recent.append(now)
+    if len(calls) > 5_000:  # people who stopped searching leave empty windows behind
+        for uid in [u for u, d in calls.items() if not d or now - d[-1] > SEARCH_WINDOW_S]:
+            del calls[uid]
+
+
+async def _health(request: Request, session, user: User) -> list[dict]:
+    """Guideline health for this workspace at this clearance, reused for HEALTH_TTL_S."""
+    state = request.app.state
+    if not hasattr(state, "search_health"):
+        state.search_health = {}
+    cache: dict[tuple[int, int], tuple[float, list[dict]]] = state.search_health
+    key = (user.workspace_id, user.clearance.rank)
+    now = time.monotonic()
+    if (hit := cache.get(key)) is not None and now - hit[0] < HEALTH_TTL_S:
+        return hit[1]
+    health = await guideline_health_for(session, user, _tiers(user))
+    if len(cache) > 1_000:
+        cache.clear()
+    cache[key] = (now, health)
+    return health
+
+
+async def _suggestions(request: Request, session, user: User, limit: int) -> list[Hit]:
     """What to offer before anything is typed: the pieces and requests that need this person next."""
     def tag(hits: list[Hit], section: str) -> list[Hit]:
         for h in hits:
@@ -262,7 +318,7 @@ async def _suggestions(session, user: User, limit: int) -> list[Hit]:
         return distinct([*tag(await pieces(ContentStatus.changes_requested, ContentStatus.draft), "needs_changes"),
                          *tag(await pieces(ContentStatus.in_review), "with_brand_team"),
                          *tag(await _pieces(session, user, "", limit), "recent")])
-    health = await guideline_health_for(session, user, _tiers(user))
+    health = await _health(request, session, user)
     unclear = [Hit(type="rule", id=h["rule_id"], title=f"{h['code']} · {h['title']}",
                    subtitle=f"Reviewers override {round(h['override_rate'] * 100)}% of its findings",
                    href="/guidelines")
@@ -277,11 +333,13 @@ async def _suggestions(session, user: User, limit: int) -> list[Hit]:
 
 
 @router.get("/search", response_model=SearchOut)
-async def search(session: Session, user: CurrentUser, q: Annotated[str, Query(max_length=QUERY_MAX)] = "",
+async def search(request: Request, session: Session, user: CurrentUser,
+                 q: Annotated[str, Query(max_length=QUERY_MAX)] = "",
                  limit: Annotated[int, Query(ge=1, le=10, description="Hits per group")] = 5) -> SearchOut:
+    _throttle(request, user)
     q = " ".join(q.split())
     if not q:
-        return SearchOut(query="", results=await _suggestions(session, user, limit))
+        return SearchOut(query="", results=await _suggestions(request, session, user, limit))
     results: list[Hit] = []
     for group in (_pieces, _findings, _escalations, _creators, _rules, _facts, _terms, _assets, _events):
         results += await group(session, user, q, limit)

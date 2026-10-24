@@ -7,7 +7,7 @@ import {
 import { ApiError, search } from "@/lib/review-client";
 import type { Side } from "@/lib/roles";
 import {
-  type ActionId, type Entry, type IconKey, matchEntries, parseRecent, RECENT_KEY, safeHref, SECTION_LABEL, SECTION_ORDER,
+  type ActionId, type Entry, type IconKey, LEGACY_RECENT_KEY, matchEntries, parseRecent, recentKey, safeHref, SECTION_LABEL, SECTION_ORDER,
   staticEntries, suggestedEntries, type Target, TYPE_LABEL, TYPE_ORDER, type Who, withRecent, destination, demoHits, highlight,
 } from "@/lib/search";
 import { useStored, writeStored } from "@/lib/stored";
@@ -51,15 +51,21 @@ const fromHit = (h: SearchHit, k: string): Item => ({
   where: destination(h.href),
 });
 
-/** True once the API has said it is not connected; from then on the bar answers from sample data without asking. */
+/** True once this server has said it has no API configured; from then on the bar answers from sample data
+ * without asking. That cannot change while the page is open, unlike an API that is merely down. */
 let sampleMode = false;
+
+/** The proxy's own answer when no API is configured. Any other 503 is the API failing: an error to show and
+ * to retry on the next query, not a reason to invent results. */
+const isDemoRefusal = (err: unknown) => err instanceof ApiError && err.status === 503
+  && (err.detail as { demo?: unknown } | null | undefined)?.demo === true;
 
 async function fetchHits(q: string, side: Side, signal: AbortSignal): Promise<SearchHit[]> {
   if (!sampleMode) {
     try {
       return (await search(q, q ? PER_GROUP : 3, signal)).results;
     } catch (err) {
-      if (signal.aborted || !(err instanceof ApiError && err.status === 503)) throw err;
+      if (signal.aborted || !isDemoRefusal(err)) throw err;
       sampleMode = true;
     }
   }
@@ -109,13 +115,16 @@ export function GlobalSearch() {
   const toast = useToast();
   const { setChoice } = useTheme();
   const viewer = useViewer();
-  const { me, side, app, loading, canSwitch, switchTo } = viewer;
+  const { me, side, app, loading, canSwitch, switchTo, demo } = viewer;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [remote, setRemote] = useState<Remote | null>(null);
   const [session, setSession] = useState<{ required: boolean; demo: boolean } | null>(null);
-  const rawRecent = useStored(RECENT_KEY);
+  // Without an account (the sample-data demo) there is one reader; with sign-in still loading, nothing is kept.
+  const owner = me?.id ?? (demo ? "demo" : null);
+  const storeKey = recentKey(owner);
+  const rawRecent = useStored(storeKey);
   const recent = useMemo(() => parseRecent(rawRecent), [rawRecent]);
   const mod = useSyncExternalStore(noSubscribe, () => (isApple() ? "⌘" : "Ctrl"), () => "Ctrl");
 
@@ -168,6 +177,9 @@ export function GlobalSearch() {
     return () => { document.body.style.overflow = overflow; };
   }, [open]);
 
+  // The list used to live under one shared key whose content may belong to anyone, so it is only ever dropped.
+  useEffect(() => { writeStored(LEGACY_RECENT_KEY, null); }, []);
+
   // Whether there is a session to end, learned the first time the bar opens.
   useEffect(() => {
     if (!open || session) return;
@@ -192,6 +204,9 @@ export function GlobalSearch() {
   // The previous answer stays up while the next one is on its way, so the list does not blink between keys.
   const shown = wantsRemote && remote && (q ? remote.q !== "" : remote.q === "") ? remote : null;
   const pending = open && wantsRemote && ready && remote?.q !== q;
+  // While the answer for what is typed now is on its way, the hits still listed answer an older query. They
+  // stay up so the list does not blink, but they cannot be opened: Enter would land on the wrong thing.
+  const staleHits = pending && q !== "";
 
   const who = useMemo<Who>(() => ({
     side, role: me?.role, signin: session?.required ?? null, demoSignin: Boolean(session?.demo), canSwitch,
@@ -213,6 +228,7 @@ export function GlobalSearch() {
     } else if (id.startsWith("settings:")) {
       window.dispatchEvent(new CustomEvent(OPEN_SETTINGS, { detail: id.slice(9) }));
     } else if (id === "signout") {
+      writeStored(storeKey, null);
       await fetch("/api/session", { method: "DELETE" }).catch(() => null);
       router.replace("/signin");
       router.refresh();
@@ -222,6 +238,7 @@ export function GlobalSearch() {
   }
 
   function choose(item: Item) {
+    if (item.hit && staleHits) return;
     close(false);
     const t = item.target;
     if ("run" in t) {
@@ -229,7 +246,7 @@ export function GlobalSearch() {
       return;
     }
     if (!safeHref(t.href)) return;
-    if (item.hit) writeStored(RECENT_KEY, withRecent(rawRecent, item.hit));
+    if (item.hit && owner !== null) writeStored(storeKey, withRecent(rawRecent, item.hit));
     router.push(t.href);
   }
 
@@ -303,9 +320,10 @@ export function GlobalSearch() {
                         const Ico = ICON[item.icon];
                         return (
                           <div key={item.key} id={optionId(i)} role="option" aria-selected={i === idx}
+                            aria-disabled={item.hit && staleHits ? true : undefined}
                             onMouseMove={() => { if (i !== idx) setActive(i); }} onMouseDown={(e) => e.preventDefault()}
                             onClick={() => choose(item)}
-                            className="group flex cursor-pointer items-center gap-3 rounded-2xl px-2.5 py-2.5 aria-selected:bg-[var(--vt-glass-active)] md:py-2">
+                            className="group flex cursor-pointer items-center gap-3 rounded-2xl px-2.5 py-2.5 aria-selected:bg-[var(--vt-glass-active)] aria-disabled:opacity-60 md:py-2">
                             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--vt-glass-hover)] text-muted group-aria-selected:bg-accent group-aria-selected:text-accent-ink">
                               <Ico size={17} />
                             </span>

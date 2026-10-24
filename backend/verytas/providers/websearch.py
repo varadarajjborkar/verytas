@@ -29,7 +29,8 @@ class WebResult:
 
     @property
     def site(self) -> str:
-        return urlparse(self.url).netloc.removeprefix("www.")
+        # The host alone: netloc would show "apple.com@evil.example" or a port as if it were the site's name.
+        return (urlparse(self.url).hostname or "").removeprefix("www.")
 
 
 class OllamaWebSearch:
@@ -80,8 +81,13 @@ def _results(res: httpx.Response) -> list[WebResult]:
         if not isinstance(r, dict):
             continue
         url = str(r.get("url") or "")
-        # Only web pages: a javascript: or data: link from a search result is never shown.
-        if urlparse(url).scheme not in ("http", "https"):
+        # Only web pages: a javascript: or data: link from a search result is never shown, nor is one that
+        # has no host ("https:foo") or hides one behind credentials ("https://apple.com@evil.example/").
+        try:
+            parts = urlparse(url)
+        except ValueError:  # e.g. an unclosed IPv6 bracket
+            continue
+        if parts.scheme not in ("http", "https") or not parts.hostname or "@" in parts.netloc:
             continue
         text = " ".join(str(r.get("content") or "").split())
         out.append(WebResult(" ".join(str(r.get("title") or url).split())[:200], url[:500], text[:SNIPPET_CHARS]))

@@ -222,3 +222,44 @@ def test_an_empty_query_suggests_what_needs_the_caller_next(town):
     _post(c, who["senior"], "Board-only plan", tier="confidential")
     assert "Board-only plan" not in {h["title"] for h in _hits(c, who["intern"], "")}
     assert "Board-only plan" in {h["title"] for h in _hits(c, who["senior"], "")}
+
+
+def test_findings_come_from_the_latest_review_only(town):
+    c, who = town
+    made = _post(c, who["ana"], "Revised copy", LEAK)
+    first = next(f for f in c.get(f"/reviews/{made['review_id']}", headers=_auth(who["ana"])).json()["findings"]
+                 if f["level"] == "blocker")
+    word = first["title"].split()[0]
+    assert any(h["id"] == first["id"] for h in _hits(c, who["ana"], word, limit=10))
+    # Three clean revisions later the old blocker is history: the opened review no longer shows it.
+    for i in range(3):
+        r = c.post(f"/contents/{made['content']['id']}/versions?wait=true", headers=_auth(who["ana"]),
+                   json={"body": f"A plain note about the week, take {i}."})
+        assert r.status_code == 201, r.text
+    assert not any(h["type"] == "finding" and h["id"] == first["id"] for h in _hits(c, who["ana"], word, limit=10))
+
+
+def test_a_much_revised_piece_does_not_crowd_out_other_pieces(town):
+    c, who = town
+    old = _post(c, who["ana"], "Revised copy", LEAK)
+    word = next(f for f in c.get(f"/reviews/{old['review_id']}", headers=_auth(who["ana"])).json()["findings"]
+                if f["level"] == "blocker")["title"].split()[0]
+    for _ in range(4):
+        assert c.post(f"/contents/{old['content']['id']}/versions?wait=true", headers=_auth(who["ana"]),
+                      json={"body": LEAK}).status_code == 201
+    _post(c, who["ben"], "Another leak", LEAK)
+    found = _hits(c, who["admin"], word, limit=2)
+    pieces = {h["subtitle"].split(" in ", 1)[1] for h in found if h["type"] == "finding"}
+    assert {"Revised copy", "Another leak"} <= pieces
+
+
+def test_searching_is_throttled_per_person(town, monkeypatch):
+    from verytas.api import search as module
+
+    c, who = town
+    monkeypatch.setattr(module, "SEARCH_MAX_IN_WINDOW", 3)
+    for _ in range(3):
+        assert c.get("/search", headers=_auth(who["admin"]), params={"q": "lantern"}).status_code == 200
+    assert c.get("/search", headers=_auth(who["admin"]), params={"q": "lantern"}).status_code == 429
+    # The window belongs to the person, not the workspace.
+    assert c.get("/search", headers=_auth(who["reviewer"]), params={"q": "lantern"}).status_code == 200

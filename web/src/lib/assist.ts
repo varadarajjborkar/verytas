@@ -91,14 +91,32 @@ export function parseBrief(content: string): Brief | null {
   }
 }
 
+/** Follow-ups are short, plain questions: the prompt asks for under 60 characters. */
+const FOLLOW_UP_CHARS = 70;
+const FOLLOW_UPS_MAX = 3;
+
 /**
- * A chat answer and the follow-up questions the model put on its last line (">> a | b | c"). The marker
- * line is never shown: while an answer streams, anything from a line starting with ">>" on is held back.
+ * A chat answer and the follow-up questions the model put on its last line (">> a | b | c"). Only the final
+ * line counts: a ">>" earlier in the text is part of the answer (quoted mail, a creator's own wording echoed
+ * back) and must neither cut it short nor become a button. The marker line is never shown, and a lone ">"
+ * on the last line is held back too, so the marker does not flash while it streams in.
+ *
+ * Buttons send their text as the manager's own message, so a candidate that is not short plain text (links,
+ * markup) or that merely repeats words of the answer itself is dropped.
  */
 export function splitFollowUps(text: string): { body: string; followUps: string[] } {
-  const at = text.search(/(^|\n)\s*>>/);
-  if (at < 0) return { body: text, followUps: [] };
-  const tail = text.slice(at).replace(/^\s*>>\s*/, "");
-  const followUps = tail.split("|").map((q) => q.replace(/\s+/g, " ").trim()).filter((q) => q.length > 3 && q.length <= 120).slice(0, 3);
-  return { body: text.slice(0, at).trimEnd(), followUps };
+  const trimmed = text.trimEnd();
+  const start = trimmed.lastIndexOf("\n") + 1;
+  const marker = /^\s*(?:>>\s*(.*)|>)$/.exec(trimmed.slice(start));
+  if (!marker) return { body: text, followUps: [] };
+  const body = trimmed.slice(0, start).trimEnd();
+  const seen = new Set<string>();
+  const followUps = (marker[1] ?? "").split("|").map((q) => q.replace(/\s+/g, " ").trim()).filter((q) => {
+    const key = q.toLowerCase();
+    if (q.length <= 3 || q.length > FOLLOW_UP_CHARS || /[<>`[\]{}]|https?:|www\./i.test(q)) return false;
+    if (seen.has(key) || body.toLowerCase().includes(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, FOLLOW_UPS_MAX);
+  return { body, followUps };
 }

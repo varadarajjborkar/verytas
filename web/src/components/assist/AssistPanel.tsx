@@ -109,8 +109,17 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
   const asked = new Set(turns.filter((t) => t.role === "user").map((t) => t.content.trim().toLowerCase()));
   const latest = [...turns].reverse().find((t) => t.role === "assistant" && !t.failed && t.content);
   const fromAnswer = latest && !sending ? splitFollowUps(latest.content).followUps : [];
-  const suggestions = (fromAnswer.length ? fromAnswer : brief?.follow_ups ?? [])
-    .filter((q) => !asked.has(q.trim().toLowerCase())).slice(0, 3);
+  // The model can repeat itself; one button per distinct question keeps the list (and its keys) unique.
+  const shownAlready = new Set(asked);
+  const suggestions = (fromAnswer.length ? fromAnswer : brief?.follow_ups ?? []).filter((q) => {
+    const key = q.trim().toLowerCase();
+    if (shownAlready.has(key)) return false;
+    shownAlready.add(key);
+    return true;
+  }).slice(0, 3);
+  // Announced once, when the answer is complete: a live region over the streaming list would read the
+  // growing text again on every chunk.
+  const announced = latest && !sending ? plainText(splitFollowUps(latest.content).body) : "";
 
   return createPortal(
     <div data-vt-modal className="fixed inset-0 z-50">
@@ -147,8 +156,9 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
 
           <section aria-label="Ask about this item" className="mt-6 border-t border-line pt-5">
             <h3 className="text-[11px] font-medium uppercase tracking-wide text-subtle">Ask about this item</h3>
+            <p role="status" className="sr-only">{announced}</p>
             {turns.length > 0 && (
-              <ul className="mt-3 flex flex-col gap-3" aria-live="polite">
+              <ul className="mt-3 flex flex-col gap-3">
                 {turns.map((t, i) => (
                   <li key={i} className={t.role === "user" ? "ml-8 self-end rounded-xl bg-sunken px-3 py-2 text-[13px] leading-5"
                     : `text-[13px] leading-6 ${t.failed ? "text-[var(--vt-blocker)]" : ""}`}>

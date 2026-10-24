@@ -179,12 +179,27 @@ export function destination(href: string): string {
   }
 }
 
-/** Only in-app links are followed, whatever a response contains. */
-export const safeHref = (href: string) => href.startsWith("/") && !href.startsWith("//");
+const ORIGIN = "http://vt.invalid";
+
+/** Only in-app links are followed, whatever a response contains. A backslash or a tab inside the first
+ * characters turns "/\\host" into "//host" for the browser, so the link is resolved the way the browser
+ * would and refused if it leaves the origin. */
+export const safeHref = (href: string) => {
+  if (!href.startsWith("/") || href.startsWith("//")) return false;
+  try {
+    return new URL(href, ORIGIN).origin === ORIGIN;
+  } catch {
+    return false;
+  }
+};
 
 // --- recently opened ---------------------------------------------------------------------------
 
-export const RECENT_KEY = "vt-search-recent";
+/** What was opened is a person's own trail: titles and counts of pieces their clearance let them see. It is kept
+ * per account, so another person on the same browser (the demo's account picker) never reads it. */
+export const recentKey = (owner: number | "demo" | null | undefined) => `vt-search-recent:${owner ?? "none"}`;
+/** The key before the list was per account; its content may belong to anyone, so it is only ever deleted. */
+export const LEGACY_RECENT_KEY = "vt-search-recent";
 const RECENT_MAX = 5;
 
 export function parseRecent(raw: string | null): SearchHit[] {

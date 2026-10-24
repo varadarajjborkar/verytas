@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { addComment, relativeTime } from "@/lib/review-client";
 import { ROLE_LABEL } from "@/lib/roles";
 import type { ContentStatus, Timeline, TimelineItem } from "@/lib/types";
@@ -60,9 +60,13 @@ export function Activity({ timeline, contentId, versionId, onPosted }: {
     return { feed, replies };
   }, [timeline]);
 
+  // The text is cleared only once the request resolves, so a second Ctrl+Enter before then would send it again.
+  // `busy` state lags a keystroke behind; the ref closes the gap.
+  const sending = useRef(false);
   async function post() {
     const body = text.trim();
-    if (!body) return;
+    if (!body || sending.current) return;
+    sending.current = true;
     setBusy(true);
     try {
       // A reply goes on the top of its thread, so threads stay one level deep.
@@ -73,6 +77,7 @@ export function Activity({ timeline, contentId, versionId, onPosted }: {
     } catch (err) {
       toast({ kind: "error", title: "Couldn't post the comment", detail: (err as Error).message });
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   }
@@ -105,7 +110,7 @@ export function Activity({ timeline, contentId, versionId, onPosted }: {
         )}
         <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={5000} aria-label="Add a comment"
           placeholder={replyTo ? "Write a reply" : "Leave a comment for everyone on this piece"} className="vt-input min-h-16 text-sm"
-          onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void post(); }} />
+          onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !e.repeat) void post(); }} />
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-[11px] text-subtle">Saved with the current version</span>
           <button type="button" disabled={busy || !text.trim()} onClick={post} className="vt-btn vt-btn-primary vt-btn-sm">
