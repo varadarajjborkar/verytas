@@ -58,7 +58,7 @@ export function SideNav() {
       <div className={`flex items-center gap-2.5 px-5 py-4 md:py-6 ${collapsed ? "md:flex-col md:px-0" : ""}`}>
         {/* The mark and name lead home from any screen. Already home, a click does nothing: navigating to
             the same page would only fetch and render it again. */}
-        <Link href="/" aria-current={pathname === "/" ? "page" : undefined} className="flex flex-1 items-center gap-2.5 rounded-lg"
+        <Link href="/" aria-current={pathname === "/" ? "page" : undefined} className={`flex flex-1 items-center gap-2.5 rounded-lg ${collapsed ? "md:hidden" : ""}`}
           onClick={(e) => { if (pathname === "/") e.preventDefault(); }}>
           <Logo size={32} className="shrink-0" />
           <p className={`leading-tight ${collapsed ? "md:sr-only" : ""}`}>
@@ -66,7 +66,16 @@ export function SideNav() {
             {app && <span className="mt-1 block text-[11px] font-medium text-subtle">{app === "manager" ? "Brand Console" : "Studio"}</span>}
           </p>
         </Link>
-        {toggle}
+        {collapsed ? (
+          // Folded, the mark is the way back out: it turns into the expand button under the pointer and back to
+          // the mark when the pointer leaves, so the top of the rail holds one thing, not two.
+          <button type="button" onClick={() => setCollapsed(false)} aria-expanded={false} aria-controls="main-nav"
+            aria-label="Expand sidebar" title="Expand sidebar"
+            className="group relative hidden h-10 w-10 place-items-center rounded-lg transition hover:bg-sunken focus-visible:bg-sunken md:grid">
+            <Logo size={32} className="transition-[opacity,transform] duration-150 group-hover:scale-90 group-hover:opacity-0 group-focus-visible:opacity-0" />
+            <PanelIcon size={18} className="absolute text-ink opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100" />
+          </button>
+        ) : toggle}
         <div className="md:hidden"><SettingsMenu compact /></div>
       </div>
       <nav id="main-nav" aria-label="Main" className={`overflow-x-auto overflow-y-hidden pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_85%,transparent)] md:pb-6 md:[mask-image:none] ${collapsed ? "px-3 md:px-2.5" : "px-3"}`}>
