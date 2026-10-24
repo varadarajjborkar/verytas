@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import re
 import time
 import zipfile
 
@@ -158,3 +159,107 @@ def test_an_admin_hands_over_material_and_approves_only_what_reads_right(client)
     # Brand admins only; and a creator can't even see that an intake exists.
     creator = client.post("/users", headers=h, json={"email": "c@k.io", "name": "Cy", "role": "creator"}).json()
     assert client.get(f"/intake/{b['id']}", headers={"Authorization": f"Bearer {creator['token']}"}).status_code == 403
+
+
+def test_hostile_or_odd_files_stay_bounded_and_addresses_stay_true():
+    # One long shared string in every cell: each cell is cut, so text and preview stay small.
+    raw = xlsx([["Plan", "Note"]] + [[f"P{i}", "BIG"] for i in range(300)])
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        parts = {n: z.read(n) for n in z.namelist()}
+    # Every "Note" cell points at shared string 1, which is now 2 MB.
+    big = "x" * 2_000_000
+    parts["xl/sharedStrings.xml"] = f'<sst xmlns="{M}"><si><t>Plan</t></si><si><t>{big}</t></si></sst>'.encode()
+    sheet = parts["xl/worksheets/sheet1.xml"].decode()
+    parts["xl/worksheets/sheet1.xml"] = re.sub(r'(<c r="B\d+" t="s"><v>)\d+', r"\g<1>1", sheet).encode()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for n, b in parts.items():
+            z.writestr(n, b)
+    r = readers.read(buf.getvalue(), readers.XLSX)
+    assert len(r.text) <= readers.MAX_TEXT and len(json.dumps(r.preview())) < 200_000
+    assert all(len(c) <= readers.MAX_CELL for row in r.tables[0].rows for c in row)
+    # A blank row inside the table keeps the rows below it at their real addresses.
+    t = readers.read(b"Plan,Price\nBasic,299\n,\nPro,599\n", "text/csv", "p.csv").tables[0]
+    assert t.cell(1, 1) == "p!B4"
+    cleaned, origin, _ = tables.apply(t, [Dedupe(columns=["Plan"])])
+    rows, _ = tables.facts(cleaned, FactPlan(statement="{Plan}: {Price}", subject="Plan", value="Price"), origin, "p")
+    assert [f["provenance"]["cell"] for f in rows] == ["p!B2", "p!B4"]
+    # Only spreadsheets have serial dates, and "Price from" is a price.
+    t = readers.read(b"Plan,Price from\nBasic,25000\nPro,45000\n", "text/csv", "p.csv").tables[0]
+    assert [r[1] for r in t.rows] == ["25000", "45000"]
+    # Prose that starts with a bracket is text, not broken JSON.
+    note = b"[Draft] Always write Kitepath with a capital K.\nNever mock rivals."
+    assert readers.sniff_text(note) == "text/plain"
+    assert "capital K" in readers.read(note, "application/json", "a").text
+    # A picture over the pixel budget is skipped before it is decoded.
+    from PIL import Image
+
+    from verytas.media.files import MAX_PIXELS
+
+    side = int(MAX_PIXELS ** 0.5) + 100
+    buf = io.BytesIO()
+    Image.new("1", (side, side)).save(buf, "PNG")
+    assert readers._as_png(buf.getvalue()) is None
+
+
+def test_sheet_dates_come_from_cell_styles():
+    raw = xlsx([["Plan", "Price from", "Launch"], ["Basic", 25000, 46023]])
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        parts = {n: z.read(n) for n in z.namelist()}
+    parts["xl/worksheets/sheet1.xml"] = parts["xl/worksheets/sheet1.xml"].replace(
+        b'<c r="C2"><v>46023</v></c>', b'<c r="C2" s="1"><v>46023</v></c>')
+    parts["xl/styles.xml"] = (f'<styleSheet xmlns="{M}"><cellXfs><xf numFmtId="0"/><xf numFmtId="14"/></cellXfs>'
+                              '</styleSheet>').encode()
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        for n, b in parts.items():
+            z.writestr(n, b)
+    [t] = readers.read(out.getvalue(), readers.XLSX).tables
+    assert t.rows[0] == ["Basic", "25000", "2026-01-01"]
+
+
+def test_approvals_are_claimed_once_and_a_refused_one_does_not_break_the_rest(client):
+    h = {"Authorization": "Bearer " + client.post("/bootstrap", json={
+        "workspace_name": "Kitepath", "admin_email": "a@k.io", "admin_name": "Meera"}).json()["token"]}
+    text = ("Always write Kitepath with a capital K. Never mock other learning apps. Project Falcon is our "
+            "unreleased tutor app.")
+
+    def batch(t: str) -> dict:
+        started = client.post("/intake", headers=h, json={"items": [{"text": t, "name": "Brand book"}]})
+        assert started.status_code == 201, started.text
+        return _wait(client, h, started.json()["id"])
+
+    first = batch(text)
+    rules = [d for d in first["drafts"] if d["target"] == "rule"]
+    # A brand book's rules reach public posts, as the brand-book importer's do.
+    assert rules and all(d["payload"]["tier"] == "public" for d in rules)
+    # The same material again proposes nothing the first batch already drafted.
+    again = batch(text)
+    assert not [d for d in again["drafts"] if d["target"] in ("rule", "term")]
+    assert any(i["kind"] == "known" for i in again["items"][0]["issues"])
+
+    # One draft, two approvals: the second finds it taken and creates nothing.
+    one = rules[0]
+    assert client.post(f"/intake/drafts/{one['id']}", headers=h, json={"action": "approve"}).status_code == 200
+    assert client.post(f"/intake/drafts/{one['id']}", headers=h, json={"action": "approve"}).status_code == 409
+    assert sum(r["text"] == one["payload"]["text"] for r in client.get("/rules", headers=h).json()) == 1
+
+    # The library refuses one draft of a bulk approval (the codename was added by hand meanwhile): that one
+    # is marked and left pending, the rest go in.
+    term = next(d for d in first["drafts"] if d["target"] == "term")
+    assert client.post("/confidential-terms", headers=h, json={"term": term["payload"]["term"]}).status_code == 201
+    rest = [d["id"] for d in first["drafts"] if d["status"] == "pending" and d["id"] != one["id"]
+            and not d["issues"]]
+    res = client.post(f"/intake/{first['id']}/decide", headers=h, json={"ids": rest})
+    assert res.status_code == 200, res.text
+    assert term["id"] in res.json()["skipped"] and res.json()["done"]
+    after = {d["id"]: d for d in client.get(f"/intake/{first['id']}", headers=h).json()["drafts"]}
+    assert after[term["id"]]["status"] == "pending"
+    assert any(i["kind"] == "rejected_by_library" for i in after[term["id"]]["issues"])
+
+
+def test_a_signed_link_never_shows_its_key():
+    from verytas.intake import pipeline
+
+    assert pipeline.public_source("https://u:p@sheets.example:8443/d/x.csv?X-Amz-Signature=abc#g") \
+        == "https://sheets.example:8443/d/x.csv"

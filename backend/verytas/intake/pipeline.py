@@ -22,17 +22,31 @@ import asyncio
 import base64
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import ValidationError
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from verytas.intake import fetch as live
 from verytas.intake import readers, tables
 from verytas.intake.understand import DescribeTask, Picture, Understanding, UnderstandTask
-from verytas.models import Fact, IntakeBatch, IntakeDraft, IntakeItem, MediaBlob, Rule, Tier, utcnow
+from verytas.models import (
+    ConfidentialTerm,
+    Fact,
+    IntakeBatch,
+    IntakeDraft,
+    IntakeItem,
+    MediaBlob,
+    Rule,
+    Tier,
+    User,
+    utcnow,
+)
 from verytas.prism import rulebook
 from verytas.schemas import FactIn, TermIn
 
@@ -41,6 +55,27 @@ log = logging.getLogger("verytas.intake")
 MAX_PARALLEL = 3
 MAX_PICTURES = 6
 ITEM_TIMEOUT_S = 240
+# Reading runs in threads, and a timed-out item cannot stop its thread, so reads share a small pool of
+# their own: however many batches are running, at most this many files are being parsed at once.
+_READERS = ThreadPoolExecutor(max_workers=2, thread_name_prefix="intake-read")
+
+
+@dataclass
+class Known:
+    """What the workspace already has, so a draft is never a copy of it."""
+    facts: list[Fact] = field(default_factory=list)  # only those the batch's filer may read
+    codes: set[str] = field(default_factory=set)  # rule codes in the library and in pending drafts
+    rule_texts: set[str] = field(default_factory=set)
+    terms: set[str] = field(default_factory=set)
+
+
+def public_source(url: str) -> str:
+    """A link as it may be shown: no password, query or fragment, where signed links keep their keys."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, host, parts.path, "", ""))
 
 
 def _pending(item: IntakeItem, target: str, payload: dict[str, Any], provenance: dict[str, Any],
@@ -65,6 +100,16 @@ async def run_batch(prism: Any, batch_id: int) -> None:
             await run_item(prism, item_id)
 
     await asyncio.gather(*(one(i) for i in ids), return_exceptions=True)
+    await summarise(prism, batch_id)
+
+
+async def rerun_item(prism: Any, item_id: int, batch_id: int) -> None:
+    """One item read again (an answer, a refresh), and its batch's counts brought up to date."""
+    await run_item(prism, item_id)
+    await summarise(prism, batch_id)
+
+
+async def summarise(prism: Any, batch_id: int) -> None:
     async with prism.sessionmaker() as session:
         batch = await session.get(IntakeBatch, batch_id)
         items = (await session.scalars(select(IntakeItem).where(IntakeItem.batch_id == batch_id))).all()
@@ -87,8 +132,27 @@ async def run_item(prism: Any, item_id: int) -> None:
             item = await session.get(IntakeItem, item_id)
             if item is not None:
                 item.status = "failed"
-                item.error = ("took too long to read" if isinstance(exc, TimeoutError) else str(exc))[:500]
+                # Our own refusals say what to do; anything else is an internal error, logged, not shown.
+                item.error = ("took too long to read" if isinstance(exc, TimeoutError)
+                              else str(exc)[:500] if isinstance(exc, (ValueError, live.FetchRefused))
+                              else "couldn't be read; try again or export it in another format")
                 await session.commit()
+
+
+async def recover(sessionmaker: Any) -> None:
+    """After a restart nothing is still reading: what was mid-way is marked so a person can run it again."""
+    async with sessionmaker() as session:
+        await session.execute(update(IntakeItem).where(IntakeItem.status.in_(("queued", "reading"))).values(
+            status="failed", error="interrupted by a server restart; refresh or answer it to read it again"))
+        await session.execute(update(IntakeBatch).where(IntakeBatch.status.in_(("queued", "running"))).values(
+            status="done", finished_at=utcnow()))
+        # An approval cut off between creating the library object and recording it: back to pending, flagged,
+        # because the object may already exist.
+        for d in (await session.scalars(select(IntakeDraft).where(IntakeDraft.status == "applying"))).all():
+            d.status = "pending"
+            d.issues = [*d.issues, {"kind": "interrupted",
+                                    "detail": "an approval was interrupted; check the library before approving"}]
+        await session.commit()
 
 
 async def _load(session: AsyncSession, item: IntakeItem) -> tuple[bytes, str]:
@@ -141,11 +205,11 @@ async def _run_item(prism: Any, item_id: int) -> None:
         raw, kind = await _load(session, item)
         tier, note = batch.tier, " ".join(x for x in (batch.note, item.context) if x)
         redactor = await _redactor(session, item.workspace_id)
-        library = (await session.scalars(select(Fact).where(Fact.workspace_id == item.workspace_id))).all()
-        taken = set((await session.scalars(select(Rule.code).where(Rule.workspace_id == item.workspace_id))).all())
+        filer = await session.get(User, batch.created_by)
+        known = await _known(session, item, filer)
         await session.commit()  # no transaction across the reading and the model calls
 
-    reading = await asyncio.to_thread(readers.read, raw, kind, item.name)
+    reading = await asyncio.get_running_loop().run_in_executor(_READERS, readers.read, raw, kind, item.name)
     if kind.startswith(("video/", "audio/")):
         await _media(prism, raw, kind, reading)
     # Confidential material never goes to a hosted model: it gets the offline reading, and pictures wait
@@ -171,7 +235,7 @@ async def _run_item(prism: Any, item_id: int) -> None:
         item = await session.get(IntakeItem, item_id)
         await session.execute(delete(IntakeDraft).where(IntakeDraft.item_id == item.id,
                                                         IntakeDraft.status == "pending"))
-        drafts, issues = build_drafts(item, found, reading, library, taken, tier, pictures)
+        drafts, issues = build_drafts(item, found, reading, known, tier, pictures)
         held = {i for i, p in enumerate(pictures) if _unclear(p, note)}
         if reading.kind == "image" and not note.strip() and not pictures:
             held = {0}
@@ -196,6 +260,28 @@ async def _run_item(prism: Any, item_id: int) -> None:
         if item.source_url:
             item.refreshed_at = utcnow()
         await session.commit()
+
+
+async def _known(session: AsyncSession, item: IntakeItem, filer: User | None) -> Known:
+    ws = item.workspace_id
+    # Facts above the filer's clearance are neither shown in a conflict note nor offered for replacing.
+    ceiling = filer.clearance.rank if filer is not None else Tier.public.rank
+    facts = [f for f in (await session.scalars(select(Fact).where(Fact.workspace_id == ws))).all()
+             if f.tier.rank <= ceiling]
+    rules = (await session.execute(select(Rule.code, Rule.text).where(Rule.workspace_id == ws))).all()
+    others = (await session.scalars(select(IntakeDraft).where(
+        IntakeDraft.workspace_id == ws, IntakeDraft.status.in_(("pending", "applying")),
+        IntakeDraft.item_id != item.id, IntakeDraft.target.in_(("rule", "term"))))).all()
+    known = Known(facts=facts, codes={c for c, _ in rules}, rule_texts={_norm(t) for _, t in rules},
+                  terms={_norm(t) for t in (await session.scalars(select(ConfidentialTerm.term).where(
+                      ConfidentialTerm.workspace_id == ws))).all()})
+    for d in others:
+        if d.target == "rule":
+            known.codes.add(str(d.payload.get("code", "")))
+            known.rule_texts.add(_norm(d.payload.get("text")))
+        else:
+            known.terms.add(_norm(d.payload.get("term")))
+    return known
 
 
 async def _describe(vision: Any, png: bytes, note: str) -> Picture:
@@ -238,24 +324,40 @@ def _norm(s: str | None) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", (s or "").lower()))
 
 
-def build_drafts(item: IntakeItem, found: Understanding, reading: readers.Reading, library: list[Fact],
-                 taken: set[str], tier: Tier, pictures: list[Picture] | None = None,
-                 ) -> tuple[list[IntakeDraft], list[dict[str, Any]]]:
+def build_drafts(item: IntakeItem, found: Understanding, reading: readers.Reading, known: Known, tier: Tier,
+                 pictures: list[Picture] | None = None) -> tuple[list[IntakeDraft], list[dict[str, Any]]]:
     """Every candidate as a pending draft, validated, with its source and anything a person should check."""
     drafts: list[IntakeDraft] = []
     issues: list[dict[str, Any]] = []
-    source = item.name if not item.source_url else f"{item.name} ({item.source_url})"
+    # A link is shown without its query: read-only links are often signed, and a rule's source is public.
+    source = item.name if not item.source_url else f"{item.name} ({public_source(item.source_url)})"
+    # Rules from a brand book govern what goes out, so they reach public posts, as the brand-book importer's
+    # do; only material filed as confidential keeps its rules (and their wording) confidential.
+    rule_tier = Tier.confidential if tier is Tier.confidential else Tier.public
 
-    # Rules: through the brand-book importer's own coder and validator.
-    proposals = [rulebook.Proposal(category=r.category, kind=r.kind, severity=r.severity, title=r.title, text=r.text,
-                                   quote=r.quote, pattern=r.pattern, good_examples=r.good_examples,
-                                   bad_examples=r.bad_examples) for r in found.rules]
-    rules, skipped = rulebook.to_rules(proposals, set(taken), source)
-    for rule, cand in zip(rules, [r for r in found.rules], strict=False):
-        payload = rule.model_dump(mode="json") | {"tier": tier.value}
+    # Rules: through the brand-book importer's own coder and validator, one at a time so each keeps its own
+    # source sentence, and never a second copy of a rule the library or another draft already has.
+    codes, texts, repeats = set(known.codes), set(known.rule_texts), 0
+    for cand in found.rules:
+        key = _norm(cand.text)
+        if not key or key in texts:
+            repeats += bool(key)
+            continue
+        proposal = rulebook.Proposal(category=cand.category, kind=cand.kind, severity=cand.severity,
+                                     title=cand.title, text=cand.text, quote=cand.quote, pattern=cand.pattern,
+                                     good_examples=cand.good_examples, bad_examples=cand.bad_examples)
+        made, skipped = rulebook.to_rules([proposal], codes, source)
+        issues += [{"kind": "skipped", "detail": s} for s in skipped]
+        if not made:
+            continue
+        codes.add(made[0].code)
+        texts.add(key)
+        payload = made[0].model_dump(mode="json") | {"tier": rule_tier.value}
         prov = {"source": source, "where": cand.where, "quote": cand.quote[:300]}
         drafts.append(_pending(item, "rule", payload, prov, found.confidence))
-    issues += [{"kind": "skipped", "detail": s} for s in skipped]
+    if repeats:
+        issues.append({"kind": "known", "detail": f"{repeats} rule{'s' if repeats > 1 else ''} already in the "
+                       "library or another draft, left out"})
 
     # Facts the model read from prose.
     facts: list[tuple[dict[str, Any], dict[str, Any], float]] = []
@@ -295,6 +397,7 @@ def build_drafts(item: IntakeItem, found: Understanding, reading: readers.Readin
                                "quote": f"{label}: {value:g}"}, 0.5))
 
     seen: dict[tuple[str, str], list[float]] = {}
+    already = 0
     for payload, prov, conf in facts:
         flags = []
         payload = {k: v for k, v in payload.items() if v not in (None, "")}
@@ -314,10 +417,15 @@ def build_drafts(item: IntakeItem, found: Understanding, reading: readers.Readin
         # The same claim with another number: the statement with its figures blanked out ("The Pro plan costs
         # Rs #"), so a series (Jan: 42, Feb: 48) is not mistaken for two answers to one question.
         key = (_skeleton(checked.statement), _norm(checked.unit))
+        current = [o for o in known.facts if o.valid_to is None and _norm(o.unit) == key[1]
+                   and _skeleton(o.statement) == key[0]]
+        if checked.value is not None and any(o.value == checked.value for o in current):
+            # Already in the library as it stands: a refresh shows what changed, not everything again.
+            already += 1
+            continue
         if checked.value is not None:
-            for other in library:
-                if (other.value is not None and _norm(other.unit) == key[1] and other.value != checked.value
-                        and other.valid_to is None and _skeleton(other.statement) == key[0]):
+            for other in current:
+                if other.value is not None:
                     flags.append({"kind": "conflict", "detail": f"the library says {other.value:g} "
                                   f"({other.statement[:80]}); approving this one replaces it",
                                   "supersedes": other.id})
@@ -327,6 +435,9 @@ def build_drafts(item: IntakeItem, found: Understanding, reading: readers.Readin
                               "for the same thing"})
             values.append(checked.value)
         drafts.append(_pending(item, "fact", checked.model_dump(mode="json"), prov, conf, flags))
+    if already:
+        issues.append({"kind": "known", "detail": f"{already} figure{'s' if already > 1 else ''} already in the "
+                       "library with the same value, left out"})
 
     for term in found.terms:
         # A codename is a name: a few words with letters in them, on one line.
@@ -337,10 +448,16 @@ def build_drafts(item: IntakeItem, found: Understanding, reading: readers.Readin
             checked = TermIn.model_validate({"term": term.term, "note": term.why[:2000]})
         except ValidationError:
             continue
+        if _norm(checked.term) in known.terms:
+            continue
+        known.terms.add(_norm(checked.term))
         drafts.append(_pending(item, "term", checked.model_dump(mode="json"),
                                {"source": source, "quote": term.quote[:300]}, found.confidence))
 
     for a in found.assets:
+        # A video's frames are looked at but not kept, so a frame can't become artwork: export a still.
+        if reading.kind in ("video", "audio"):
+            continue
         if 0 <= a.image < len(reading.images):
             drafts.append(_pending(item, "asset", {"name": a.name[:120], "kind": a.kind, "image": a.image,
                                                    "tier": tier.value},

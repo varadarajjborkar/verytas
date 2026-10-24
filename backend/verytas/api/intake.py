@@ -17,7 +17,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field, ValidationError, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from verytas.api.accounts import SelfServeBudget
 from verytas.api.deps import PrismDep, Session, can_read, require
@@ -26,7 +26,7 @@ from verytas.intake import fetch as live
 from verytas.intake import pipeline, readers
 from verytas.media.files import UNSUPPORTED_IMAGES, limit_for, sniff
 from verytas.media.storage import over_quota, reclaim_orphans, usage, workspace_lock
-from verytas.models import IntakeBatch, IntakeDraft, IntakeItem, MediaBlob, Role, RuleStatus, Tier, User, utcnow
+from verytas.models import IntakeBatch, IntakeDraft, IntakeItem, MediaBlob, Role, Rule, RuleStatus, Tier, User, utcnow
 from verytas.schemas import BrandAssetIn, FactIn, RuleIn, TermIn
 from verytas.security.audit import append
 
@@ -123,7 +123,9 @@ async def start(body: BatchIn, session: Session, admin: Admin, prism: PrismDep) 
     await session.flush()
     for i, it in enumerate(body.items):
         name = it.name or (found[it.blob_id].name if it.blob_id and found[it.blob_id].name else None) \
-            or (it.url.rsplit("/", 1)[-1][:200] if it.url else None) or f"Pasted text {i + 1}"
+            or (_link_name(it.url) if it.url else None) or f"Pasted text {i + 1}"
+        if it.url and name == it.name:
+            name = name.split("?", 1)[0].split("#", 1)[0] or _link_name(it.url)
         session.add(IntakeItem(batch_id=batch.id, workspace_id=admin.workspace_id, name=name[:200],
                                blob_id=it.blob_id, source_url=it.url, text=it.text, context=it.context))
     await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}", action="intake.started",
@@ -133,6 +135,11 @@ async def start(body: BatchIn, session: Session, admin: Admin, prism: PrismDep) 
     await session.commit()
     prism.schedule_job(lambda: pipeline.run_batch(prism, batch.id))
     return {"id": batch.id, "status": batch.status}
+
+
+def _link_name(url: str) -> str:
+    """A link's last path segment, never its query: read-only links are often signed with a key there."""
+    return pipeline.public_source(url).rstrip("/").rsplit("/", 1)[-1][:200] or "Linked source"
 
 
 def _batch_out(b: IntakeBatch) -> dict:
@@ -191,13 +198,22 @@ class AnswerIn(BaseModel):
 async def answer(item_id: int, body: AnswerIn, session: Session, admin: Admin, prism: PrismDep) -> dict:
     """The admin's answer to an item's questions, or more context on it: the item is understood again."""
     item = await _item(session, admin, item_id)
-    item.context = "\n".join(x for x in (item.context, body.context.strip()) if x)[:8000]
+    _idle(item)
+    # The newest answer matters most, so a long history is cut from the front.
+    item.context = "\n".join(x for x in (item.context, body.context.strip()) if x)[-8000:]
     item.status, item.questions = "queued", []
     await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}", action="intake.answered",
                  object_type="intake_item", object_id=item.id, detail={"chars": len(body.context)})
     await session.commit()
-    prism.schedule_job(lambda: pipeline.run_item(prism, item_id))
+    batch_id = item.batch_id
+    prism.schedule_job(lambda: pipeline.rerun_item(prism, item_id, batch_id))
     return _item_out(item)
+
+
+def _idle(item: IntakeItem) -> None:
+    # Two runs of one item would each clear the other's drafts and add their own: one at a time.
+    if item.status in ("queued", "reading"):
+        raise HTTPException(status.HTTP_409_CONFLICT, "this item is still being read; wait for it to finish")
 
 
 @router.post("/intake/items/{item_id}/refresh", dependencies=[SelfServeBudget])
@@ -207,9 +223,11 @@ async def refresh(item_id: int, session: Session, admin: Admin, prism: PrismDep)
     item = await _item(session, admin, item_id)
     if not item.source_url:
         raise HTTPException(status.HTTP_409_CONFLICT, "only a linked source can be refreshed")
+    _idle(item)
     item.status = "queued"
     await session.commit()
-    prism.schedule_job(lambda: pipeline.run_item(prism, item_id))
+    batch_id = item.batch_id
+    prism.schedule_job(lambda: pipeline.rerun_item(prism, item_id, batch_id))
     return _item_out(item)
 
 
@@ -221,7 +239,15 @@ class DecisionIn(BaseModel):
 async def _apply(session, admin: User, d: IntakeDraft, payload: dict[str, Any]) -> str:
     """Creates the draft through the library's own endpoint. Returns "fact:12" and the like."""
     if d.target == "rule":
-        rule = await create_rule(RuleIn.model_validate(payload), session, admin)
+        body = RuleIn.model_validate(payload)
+        # Codes are given when the draft is made; another approval since may have taken this one.
+        taken = set((await session.scalars(select(Rule.code).where(Rule.workspace_id == admin.workspace_id))).all())
+        if body.code in taken:
+            stem, n = body.code.rsplit("-", 1)[0], 1
+            while f"{stem}-{n}" in taken:
+                n += 1
+            body.code = payload["code"] = f"{stem}-{n}"
+        rule = await create_rule(body, session, admin)
         rule.status = RuleStatus.active
         await session.commit()
         return f"rule:{rule.id}"
@@ -237,7 +263,10 @@ async def _apply(session, admin: User, d: IntakeDraft, payload: dict[str, Any]) 
         return f"term:{term.id}"
     if d.target == "asset":
         item = await session.get(IntakeItem, d.item_id)
-        png = await _picture(session, item, int(payload.get("image", d.payload.get("image", 0))))
+        index = payload.get("image", d.payload.get("image", 0))
+        if not isinstance(index, int) or isinstance(index, bool):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "image must be the picture's number")
+        png = await _picture(session, item, index)
         body = BrandAssetIn.model_validate({k: v for k, v in payload.items() if k != "image"}
                                            | {"media_type": "image/png", "data_base64": base64.b64encode(png).decode()})
         asset = await create_asset(body, session, admin)
@@ -257,14 +286,29 @@ async def _picture(session, item: IntakeItem, index: int) -> bytes:
 
 
 async def _decide(session, admin: User, d: IntakeDraft, body: DecisionIn) -> dict:
-    if d.status != "pending":
+    draft_id = d.id
+    # Claimed before anything is created, in its own commit: a double click or a retry finds it taken
+    # and creates nothing a second time.
+    claimed = await session.execute(update(IntakeDraft).where(IntakeDraft.id == draft_id,
+                                                              IntakeDraft.status == "pending")
+                                    .values(status="applying"))
+    await session.commit()
+    if claimed.rowcount != 1:
+        await session.refresh(d)
         raise HTTPException(status.HTTP_409_CONFLICT, f"this draft is already {d.status}")
     if body.action == "approve":
         payload = d.payload if body.payload is None else {**d.payload, **body.payload}
         try:
-            d.created_object = await _apply(session, admin, d, payload)
-        except ValidationError as exc:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.errors()[0]["msg"]) from None
+            try:
+                d.created_object = await _apply(session, admin, d, payload)
+            except ValidationError as exc:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.errors()[0]["msg"]) from None
+        except HTTPException:
+            # Refused by the library: nothing was created, so the draft goes back to waiting for a person.
+            await session.rollback()
+            await session.execute(update(IntakeDraft).where(IntakeDraft.id == draft_id).values(status="pending"))
+            await session.commit()
+            raise
         d.payload = payload
     d.status = "approved" if body.action == "approve" else "rejected"
     d.decided_by, d.decided_at = admin.id, utcnow()
@@ -295,17 +339,22 @@ async def decide_many(batch_id: int, body: BulkIn, session: Session, admin: Admi
     b = await _batch(session, admin, batch_id)
     items = set((await session.scalars(select(IntakeItem.id).where(IntakeItem.batch_id == b.id))).all())
     drafts = (await session.scalars(select(IntakeDraft).where(IntakeDraft.id.in_(body.ids)))).all()
+    # Plain values up front: a refused draft rolls the session back, which expires every loaded object.
+    todo = [(d.id, d.item_id in items and d.status == "pending" and not (body.action == "approve" and d.issues))
+            for d in drafts]
+    admin_id = admin.id
     done, skipped = [], []
-    for d in drafts:
-        if d.item_id not in items or d.status != "pending" or (body.action == "approve" and d.issues):
-            skipped.append(d.id)
+    for draft_id, ok in todo:
+        if not ok:
+            skipped.append(draft_id)
             continue
+        admin = await session.get(User, admin_id)
+        d = await session.get(IntakeDraft, draft_id)
         try:
             done.append((await _decide(session, admin, d, DecisionIn(action=body.action)))["id"])
         except HTTPException as exc:
-            await session.rollback()
-            skipped.append(d.id)
-            d = await session.get(IntakeDraft, d.id)
+            skipped.append(draft_id)
+            d = await session.get(IntakeDraft, draft_id)
             d.issues = [*d.issues, {"kind": "rejected_by_library", "detail": str(exc.detail)[:300]}]
             await session.commit()
     pending = await session.scalar(select(func.count()).select_from(IntakeDraft).where(

@@ -27,6 +27,7 @@ from verytas.api import (
 )
 from verytas.config import Settings, get_settings
 from verytas.db import Database
+from verytas.intake import pipeline as intake_pipeline
 from verytas.media import storage
 from verytas.prism.orchestrator import Prism
 from verytas.services.workspace import backfill_system_rule_tiers, backfill_system_rules
@@ -62,6 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async with db.sessionmaker() as session:
             await backfill_system_rule_tiers(session)
             await backfill_system_rules(session)
+        await intake_pipeline.recover(db.sessionmaker)
         sweep = asyncio.create_task(storage.sweep_forever(db.sessionmaker, settings.orphan_upload_ttl_h))
         try:
             yield
