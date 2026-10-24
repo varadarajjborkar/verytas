@@ -4,7 +4,7 @@
 import type {
   BrandAsset, BrandEvent, ContentDetail, CreatorRow, CreatorTrack, EscalationRequest, EventImpact, PublicContact, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
   IntakeBatch, IntakeBatchDetail, IntakeDraft, IntakeItem, IntakeItemIn,
-  Review, Rule, RuleClarification, RuleDraft, Term, Timeline, UploadedMedia,
+  Review, Rule, RuleClarification, RuleDraft, SearchHit, Term, Timeline, UploadedMedia,
 } from "./types";
 
 export class ApiError extends Error {
@@ -124,6 +124,9 @@ export const versionImageUrl = (contentId: number, versionId: number, imageId: s
   `/api/v/contents/${contentId}/versions/${versionId}/images/${encodeURIComponent(imageId)}`;
 export const getContent = (id: number) => api<ContentDetail>(`contents/${id}`);
 export const getMe = () => api<Me>("me");
+/** The global search. `limit` is hits per group; an empty query returns the caller's suggestions. Abort stale calls with `signal`. */
+export const search = (q: string, limit = 5, signal?: AbortSignal) =>
+  api<{ query: string; results: SearchHit[] }>(`search?q=${encodeURIComponent(q)}&limit=${limit}`, { signal });
 export const transition = (contentId: number, to: ContentStatus, note?: string, override = false) =>
   api<ContentRow>(`contents/${contentId}/transition`, json({ to, note: note || null, override_blockers: override }));
 export const aiEdit = (contentId: number, instruction: string) =>

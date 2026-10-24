@@ -352,7 +352,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_25rem]">
         {/* The text, with every issue marked where it is. */}
         {/* Pinned beside a long issue list, so the highlight being discussed stays in sight. */}
-        <section className="vt-card min-w-0 p-5 md:p-7 xl:sticky xl:top-6 xl:max-h-[calc(100dvh-3rem)] xl:overflow-y-auto" aria-label={manager && !author ? "The text" : "Your text"}>
+        <section className="vt-card min-w-0 p-5 md:p-7 xl:sticky xl:top-[4.5rem] xl:max-h-[calc(100dvh-6rem)] xl:overflow-y-auto" aria-label={manager && !author ? "The text" : "Your text"}>
           {versions.length > 1 && !editing && (
             <div role="tablist" aria-label="Show" className="mb-5 inline-flex rounded-lg bg-sunken p-0.5 text-xs font-medium"
               onKeyDown={tabKeys(["text", "compare"] as const, docView, setDocView, `doc-${contentId}`)}>

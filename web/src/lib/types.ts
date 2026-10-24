@@ -442,3 +442,10 @@ export type IntakeDraft = { id: number; item_id: number; target: "rule" | "fact"
   provenance: { source?: string; cell?: string; where?: string; quote?: string; picture?: number }; confidence: number;
   issues: { kind: string; detail: string }[]; status: "pending" | "approved" | "rejected"; created_object: string | null };
 export type IntakeBatchDetail = IntakeBatch & { items: IntakeItem[]; drafts: IntakeDraft[] };
+
+// --- global search (GET /search) ---------------------------------------------------------------
+
+export type SearchHitType = "content" | "finding" | "escalation" | "creator" | "rule" | "fact" | "term" | "asset" | "event";
+
+/** One result, already scoped to what the caller may open. `section` is set only on the suggestions for an empty query. */
+export type SearchHit = { type: SearchHitType; id: number; title: string; subtitle: string; href: string; section?: string | null };

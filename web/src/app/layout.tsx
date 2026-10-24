@@ -4,6 +4,7 @@ import "@openuidev/react-ui/styles/index.css";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { SideNav } from "@/components/SideNav";
+import { TopBar } from "@/components/TopBar";
 import { APP, APP_NAME } from "@/lib/app";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -38,9 +39,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Providers app={APP}>
           <div className="flex min-h-screen w-full flex-col overflow-x-clip md:flex-row">
             <SideNav />
-            <main id="main" className="min-w-0 flex-1 px-4 py-6 md:px-10 md:py-9">
-              <div className="mx-auto w-full max-w-[1320px]">{children}</div>
-            </main>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <TopBar />
+              <main id="main" className="min-w-0 flex-1 px-4 py-6 md:px-10 md:py-9">
+                <div className="mx-auto w-full max-w-[1320px]">{children}</div>
+              </main>
+            </div>
           </div>
         </Providers>
       </body>

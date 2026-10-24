@@ -87,7 +87,7 @@ function CreatorWorkspace({ initialBody }: { initialBody: string }) {
   return (
     <div className={`grid items-start gap-5 ${collapsed ? "lg:grid-cols-[3.25rem_minmax(0,1fr)]" : "lg:grid-cols-[17rem_minmax(0,1fr)]"}`}>
       {collapsed ? (
-        <div className="vt-card hidden flex-col items-center gap-1.5 py-2.5 lg:sticky lg:top-6 lg:flex">
+        <div className="vt-card hidden flex-col items-center gap-1.5 py-2.5 lg:sticky lg:top-[4.5rem] lg:flex">
           <button type="button" onClick={() => setCollapsed(false)} aria-label="Show reviews" title="Show reviews"
             className="grid h-9 w-9 place-items-center rounded-lg text-muted transition hover:bg-sunken hover:text-ink">
             <PanelIcon size={16} />
@@ -98,7 +98,7 @@ function CreatorWorkspace({ initialBody }: { initialBody: string }) {
           </button>
         </div>
       ) : (
-        <aside className="vt-card vt-rail hidden overflow-hidden lg:sticky lg:top-6 lg:block lg:h-[calc(100dvh-7.5rem)]">{rail(true)}</aside>
+        <aside className="vt-card vt-rail hidden overflow-hidden lg:sticky lg:top-[4.5rem] lg:block lg:h-[calc(100dvh-10.5rem)]">{rail(true)}</aside>
       )}
       <div className="flex gap-2 lg:hidden">
         <button type="button" onClick={() => setRailOpen(true)} className="vt-btn vt-btn-quiet"><HistoryIcon size={15} /> Reviews</button>
