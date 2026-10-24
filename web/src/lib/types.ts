@@ -449,3 +449,8 @@ export type SearchHitType = "content" | "finding" | "escalation" | "creator" | "
 
 /** One result, already scoped to what the caller may open. `section` is set only on the suggestions for an empty query. */
 export type SearchHit = { type: SearchHitType; id: number; title: string; subtitle: string; href: string; section?: string | null };
+
+/** First steps for a signed-in person (GET /onboarding): computed from the workspace, never stored. */
+export type OnboardingStep = { key: string; title: string; detail: string; done: boolean; href: string | null };
+export type Onboarding = { role: string; company: string; self_serve: boolean; steps: OnboardingStep[]; sample_kit: boolean };
+export type SampleKit = { rules: number; facts: number; terms: number; contacts: number; assets: number };

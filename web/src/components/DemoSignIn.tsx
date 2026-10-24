@@ -125,7 +125,7 @@ export function DemoSignIn({ companies, resetsOn, next, selfSignup }:
         <h2 id="demo-notes" className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-subtle">Good to know</h2>
         <ul className="grid gap-3 text-xs leading-5 text-muted sm:grid-cols-2">
           <li className="flex gap-2.5"><UsersIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
-            <span>One shared demo: what you add or change is saved, and other visitors see it too.</span></li>
+            <span>The companies, people and history are made up for the demo. It is shared: what you add or change is saved, and other visitors see it too.</span></li>
           <li className="flex gap-2.5"><RefreshIcon size={15} className="mt-0.5 shrink-0 text-subtle" />
             <span>Be someone else any time with <span className="font-medium text-ink">Switch account</span> in the sidebar. Your work stays.</span></li>
           <li className="flex gap-2.5"><CalendarIcon size={15} className="mt-0.5 shrink-0 text-subtle" />

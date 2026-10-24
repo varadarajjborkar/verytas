@@ -88,8 +88,10 @@ export function AccountPanel({ next, demo }: { next: string; demo: boolean }) {
         </div>
         {about && (
           <p id={aboutId} className="rounded-xl bg-sunken px-4 py-3 text-xs leading-5 text-muted">
-            Accounts work like the real product, but one you make here starts empty: no brand library, no posts, no
-            history, only Verytas&apos;s built-in checks. They are here to show sign-up works.{demo
+            Accounts work like the real product, and a company you make here starts empty: no brand library, no posts,
+            only Verytas&apos;s built-in checks. Your home page then lists what to set up, and you can hand over your own
+            brand material or load a sample brand kit to try a review straight away. Creators join with the code
+            shown in your settings.{demo
               ? " To see Verytas at work, go back to the live demo and pick a person at one of its companies."
               : ""} Accounts made here are removed when the demo resets.
           </p>

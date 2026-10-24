@@ -26,6 +26,8 @@ const ALLOWED: [string, RegExp][] = [
   ["GET", /^search$/],
   // A self-serve company's join code, for its brand admin (the API refuses everyone else).
   ["GET", /^accounts\/join-code$/],
+  ["GET", /^onboarding$/],
+  ["POST", /^onboarding\/sample-kit$/],
   ["GET", /^contents$/],
   ["POST", /^contents\/\d+\/transition$/],
   ["GET", /^chats$/],

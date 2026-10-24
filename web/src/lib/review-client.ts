@@ -3,7 +3,7 @@
 
 import type {
   BrandAsset, BrandEvent, ContentDetail, CreatorRow, CreatorTrack, EscalationRequest, EventImpact, PublicContact, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
-  IntakeBatch, IntakeBatchDetail, IntakeDraft, IntakeItem, IntakeItemIn,
+  IntakeBatch, IntakeBatchDetail, IntakeDraft, IntakeItem, IntakeItemIn, Onboarding, SampleKit,
   Review, Rule, RuleClarification, RuleDraft, SearchHit, Term, Timeline, UploadedMedia,
 } from "./types";
 
@@ -106,6 +106,8 @@ const send = (method: string, body?: unknown): RequestInit => ({
 export const listRules = () => api<Rule[]>("rules");
 export const createRule = (rule: RuleDraft) => api<Rule>("rules", json(rule));
 export const updateRule = (id: number, patch: Partial<Rule>) => api<Rule>(`rules/${id}`, send("PATCH", patch));
+export const getOnboarding = () => api<Onboarding>("onboarding");
+export const loadSampleKit = () => api<SampleKit>("onboarding/sample-kit", json({}));
 export const clarifyRule = (id: number) => api<RuleClarification>(`rules/${id}/clarify`, json({}));
 export const extractRules = (input: { text?: string; blob_id?: string; source_ref?: string }) =>
   api<{ rules: RuleDraft[]; notes: string[]; model: string }>("rules/extract", json(input));
