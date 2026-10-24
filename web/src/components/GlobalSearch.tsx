@@ -285,7 +285,7 @@ export function GlobalSearch() {
           e.preventDefault();
           input.current?.focus();
         }}
-          className="vt-glass flex h-11 cursor-text items-center gap-2.5 rounded-full pl-4 pr-2 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent md:h-10">
+          className="vt-glass vt-search flex h-11 cursor-text items-center gap-2.5 rounded-full pl-4 pr-2 md:h-10">
           <SearchIcon size={17} className="shrink-0 text-muted" />
           <input ref={input} type="text" role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list"
             aria-activedescendant={open && flat.length ? optionId(idx) : undefined} aria-label="Search everything"

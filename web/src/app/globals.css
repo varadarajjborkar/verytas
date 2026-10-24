@@ -228,6 +228,8 @@ table, .tabular-nums { font-variant-numeric: tabular-nums; }
 /* The bar draws its own focus ring around the whole pill, so the field inside carries none (the page-wide
    :focus-visible rule is unlayered, which a utility class cannot beat). */
 .vt-glass input:focus-visible { outline: none; }
+/* The search pill shows it has the caret by a firmer neutral rim, not an accent ring around it. */
+.vt-search:focus-within::before { background: var(--vt-line-strong); }
 /* What the search matched, inside a result. */
 .vt-hit { background: transparent; color: var(--vt-accent); font-weight: 650; }
 .vt-kbd {
