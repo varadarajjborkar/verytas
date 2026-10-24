@@ -45,8 +45,20 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   if (crossOrigin(request)) return new Response(null, { status: 403 });
+  const jar = await cookies();
+  const token = jar.get(SESSION_COOKIE)?.value;
+  // Revoke it at the API too (a password account's token then stops working anywhere it was copied).
+  // Best effort: an unreachable API must not keep anyone signed in here.
+  if (API_URL && token) {
+    await fetch(`${API_URL}/accounts/signout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(2_000),
+    }).catch(() => undefined);
+  }
   // Expired by setting it, not cookies().delete(): the delete omits Secure, and browsers ignore a
   // __Host- cookie without it, which would leave the session signed in.
-  (await cookies()).set(SESSION_COOKIE, "", { ...cookieOptions(), maxAge: 0 });
+  jar.set(SESSION_COOKIE, "", { ...cookieOptions(), maxAge: 0 });
   return new Response(null, { status: 204 });
 }

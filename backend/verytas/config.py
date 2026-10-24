@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     self_signup_per_hour: int = Field(default=30, ge=0)
     self_serve_actions_per_day: int = Field(default=60, ge=0)
     self_serve_actions_per_day_total: int = Field(default=600, ge=0)
+    # A password account's token lapses this many days after sign-in, and signing out revokes it. Tokens an
+    # admin issues (and the shared demo picker's) have no password to get a new one with, so they do not lapse.
+    account_token_days: int = Field(default=7, ge=1)
 
     # Judge thresholds (architecture section 8.1). Tuned later by calibration.
     semantic_flag_threshold: float = 0.6

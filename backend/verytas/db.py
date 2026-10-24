@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from sqlalchemy import event
+from sqlalchemy import event, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -60,6 +60,11 @@ class Database:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
             await conn.run_sync(_add_missing_columns)
+            # Password accounts from before tokens lapsed start their clock now rather than never lapsing.
+            # A signed-out account matches too; harmless, since nobody holds a token for its hash.
+            await conn.execute(update(models.User).where(models.User.password_hash.is_not(None),
+                                                         models.User.token_issued_at.is_(None))
+                               .values(token_issued_at=models.utcnow()))
 
     async def session(self) -> AsyncIterator[AsyncSession]:
         async with self.sessionmaker() as session:

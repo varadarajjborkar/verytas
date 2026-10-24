@@ -103,7 +103,7 @@ The audit's hardening suggestions, and where each one stands.
 | Learned thresholds counted repeated decisions | Done ([`cad2338`](https://github.com/varadarajjborkar/verytas/commit/cad2338)) |
 | Edge worker should compare redirect origins | Done ([`c664631`](https://github.com/varadarajjborkar/verytas/commit/c664631)). Allowlisting forwarded headers is still to do. |
 | Fail closed when sign-in is off in production | Open. The deployed demo runs with sign-in on, so this only matters for a misconfigured install. |
-| Tokens never expire and sign-out does not revoke them | Open |
+| Tokens never expire and sign-out does not revoke them | Partly done. A password account's token lapses 7 days after sign-in (`account_token_days`) and sign-out revokes it at the API. Tokens an admin issues, and the shared demo picker's, still never lapse: they have no password to get a new one with. Short access tokens with rotating refresh tokens are still to do. |
 | No per-user rate or spend limit on Ask Verytas | Open |
 | `Redactor.restore` also restores placeholders a user typed | Open |
 | The audit chain's head is not anchored or signed; signing keys share an owner with the database | Open |

@@ -20,7 +20,7 @@ from sqlalchemy import select
 from verytas.api.deps import new_token
 from verytas.config import Settings
 from verytas.db import Database
-from verytas.models import User
+from verytas.models import User, utcnow
 from verytas.security.audit import append
 
 
@@ -40,6 +40,8 @@ async def issue_token(email: str) -> str:
                 raise SystemExit(f"no user with email {email}")
             token, token_hash = new_token()
             user.token_hash = token_hash
+            if user.password_hash:  # the new token gets a full lifetime (api/deps.py)
+                user.token_issued_at = utcnow()
             await append(session, workspace_id=user.workspace_id, actor="operator:cli", action="user.token_issued",
                          object_type="user", object_id=user.id, detail={})
             await session.commit()

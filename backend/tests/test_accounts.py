@@ -111,3 +111,34 @@ def test_companies_are_capped_and_self_serve_reviews_have_a_daily_allowance(open
     # Other companies have their own allowance; seeded workspaces have none.
     assert c.post("/contents", headers=_auth(tokens[1]), json={"title": "P", "channel": "linkedin",
                                                                "body": "Hi."}).status_code == 201
+
+
+def test_sign_out_revokes_a_password_account_and_its_token_lapses(open_client, tmp_path):
+    import sqlite3
+
+    c = open_client
+    boss = _company(c).json()["token"]
+    assert c.post("/accounts/signout", headers=_auth(boss)).json() == {"revoked": True}
+    assert c.get("/me", headers=_auth(boss)).status_code == 401
+    # Signing in again works, and a token older than the lifetime (7 days by default) is refused.
+    fresh = c.post("/accounts/signin", json={"email": "mira@leafco.example", "password": PASSWORD}).json()["token"]
+    assert c.get("/me", headers=_auth(fresh)).status_code == 200
+    with sqlite3.connect(tmp_path / "acc.db") as db:
+        db.execute("UPDATE users SET token_issued_at = '2020-01-01 00:00:00.000000' WHERE email = ?",
+                   ("mira@leafco.example",))
+    lapsed = c.get("/me", headers=_auth(fresh))
+    assert lapsed.status_code == 401 and "expired" in lapsed.json()["detail"]
+
+
+def test_sign_out_keeps_a_token_that_cannot_be_reissued(open_client):
+    # A token an admin hands out (and the shared demo picker's) has no password behind it: revoking it would
+    # lock that person out for good, so sign-out leaves it, and it does not lapse either.
+    c = open_client
+    boss = _company(c).json()["token"]
+    made = c.post("/users", headers=_auth(boss), json={"email": "tia@leafco.example", "name": "Tia",
+                                                       "role": "creator", "clearance": "internal"})
+    assert made.status_code == 201, made.text
+    tia = made.json()["token"]
+    assert c.post("/accounts/signout", headers=_auth(tia)).json() == {"revoked": False}
+    assert c.get("/me", headers=_auth(tia)).status_code == 200
+    assert c.post("/accounts/signout").status_code == 401

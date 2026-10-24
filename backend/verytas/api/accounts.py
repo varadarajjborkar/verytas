@@ -25,7 +25,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from verytas.api.deps import CurrentUser, Session, new_token
-from verytas.models import Role, Tier, User, Workspace
+from verytas.models import Role, Tier, User, Workspace, utcnow
 from verytas.schemas import UserOut
 from verytas.security.audit import append
 from verytas.services.workspace import create_workspace
@@ -212,13 +212,14 @@ async def signup(body: Annotated[CompanySignup | CreatorSignup, Field(discrimina
             ws, user, token = await create_workspace(session, name=body.company_name.strip(), admin_email=email,
                                                      admin_name=body.name.strip())
             ws.self_serve, ws.join_code = True, _join_code()
-            user.password_hash = hashed
+            user.password_hash, user.token_issued_at = hashed, utcnow()
             await session.flush()
             action = "account.signed_up_company"
         else:
             token, token_hash = new_token()
             user = User(workspace_id=ws.id, email=email, name=body.name.strip(), role=Role.creator,
-                        clearance=Tier.internal, token_hash=token_hash, password_hash=hashed)
+                        clearance=Tier.internal, token_hash=token_hash, password_hash=hashed,
+                        token_issued_at=utcnow())
             session.add(user)
             await session.flush()
             action = "account.signed_up_creator"
@@ -243,11 +244,26 @@ async def signin(body: SignIn, request: Request, session: Session) -> AccountOut
         limits.failed(email)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "wrong email or password")
     token, user.token_hash = new_token()
+    user.token_issued_at = utcnow()
     ws = await session.get(Workspace, user.workspace_id)
     await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="account.signed_in",
                  object_type="user", object_id=user.id)
     return AccountOut(user=UserOut.model_validate(user), token=token, company=ws.name if ws else "",
                       join_code=ws.join_code if ws and user.role is Role.brand_admin else None)
+
+
+@router.post("/accounts/signout")
+async def signout(session: Session, user: CurrentUser) -> dict:
+    """Revoke the caller's token. Only a password account is revoked, because it can sign in again; a token an
+    admin issued (or the demo picker's, shared by everyone who picks that person) would be lost for good."""
+    if not user.password_hash:
+        return {"revoked": False}
+    # The stored hash is replaced by one nobody holds the token for; the next sign-in issues a new one.
+    _, user.token_hash = new_token()
+    user.token_issued_at = None
+    await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="account.signed_out",
+                 object_type="user", object_id=user.id)
+    return {"revoked": True}
 
 
 @router.get("/accounts/join-code")

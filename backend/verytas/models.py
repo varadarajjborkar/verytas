@@ -133,6 +133,9 @@ class User(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     # Only for accounts made by signing up; everyone else signs in with a token. scrypt (api/accounts.py).
     password_hash: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # When a password account's current token was issued (api/accounts.py); it lapses after
+    # Settings.account_token_days. None for token-only accounts.
+    token_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
