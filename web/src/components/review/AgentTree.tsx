@@ -29,7 +29,7 @@ export function AgentTree({ agents }: { agents: AgentNode[] }) {
             <li key={a.id} className="py-0.5">
               <div className="flex min-w-0 items-center gap-2 text-xs">
                 <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${st.dot}`} />
-                <span className="truncate font-medium">{a.label}</span>
+                <span className="truncate font-medium" title={a.label}>{a.label}</span>
                 <span className="shrink-0 rounded bg-bg px-1 text-[11px] uppercase text-muted">{a.role}</span>
                 {a.findings > 0 && <span className="shrink-0 text-[11px] text-accent">{a.findings} found</span>}
                 <span className="ml-auto shrink-0 tabular-nums text-[11px] text-muted">{a.ms >= 1000 ? `${(a.ms / 1000).toFixed(1)} s` : `${a.ms} ms`}</span>

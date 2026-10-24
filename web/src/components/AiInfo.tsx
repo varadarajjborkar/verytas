@@ -154,10 +154,15 @@ export function AiInfoContent() {
       </section>
 
       <p className="rounded-xl border border-[var(--vt-warning)]/30 bg-[var(--vt-warning-bg)] px-4 py-3 text-[13px] leading-5">
-        <span className="font-semibold text-[var(--vt-warning)]">AI can be wrong.</span>{" "}
-        <span className="text-muted">Treat a finding as a careful second reader. Dismissing one with a reason teaches Verytas
-          where a rule reads unclearly. Each review lists the exact models it used, under &ldquo;How it was checked&rdquo;;
-          with no AI service, those checks say they were limited.</span>
+        <span className="font-semibold text-[var(--vt-warning)]">AI can be wrong, so it never decides alone.</span>{" "}
+        <span className="text-muted">Much of a review isn&apos;t AI at all: figures and dates are compared with approved
+          facts, and banned words, codenames and artwork are matched against the library, by code. AI reads tone and
+          meaning, and explains. Every finding names the rule or fact behind it, and quotes the words when it is about
+          words, so you can check it in seconds; a person makes every call. How often each check is right is measured and
+          published with the code: the artwork check, for example, catches 93% of misuse and wrongly flags about 5% of
+          correct use across 1,200 generated test pictures, though recoloured icons are still caught only a third
+          of the time. Dismissing a finding with a reason teaches Verytas where a rule
+          reads unclearly; each review lists the exact models it used, under &ldquo;How it was checked&rdquo;.</span>
       </p>
     </div>
   );

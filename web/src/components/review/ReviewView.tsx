@@ -6,7 +6,7 @@ import { journey } from "@/lib/journey";
 import {
   ApiError, decide as decideFinding, escalate, FINISHED, getContent, getReview, getTimeline, listDisputes,
   listEscalations, listPeople, nextSteps,
-  relativeTime, resubmit, STATUS_LABEL, transition, waitForReview, whereLabel,
+  relativeTime, resubmit, STATUS_HINT, STATUS_LABEL, transition, waitForReview, whereLabel,
 } from "@/lib/review-client";
 import { canDecide, sideOf } from "@/lib/roles";
 import type { ContentDetail, ContentStatus, Dispute, EscalationRequest, Finding, Person, Review, SecondLooks, Timeline } from "@/lib/types";
@@ -22,7 +22,7 @@ import { Attachments } from "./Attachments";
 import { DocumentPages } from "./DocumentPages";
 import { Checklist, emptyRow, rowCall, type RowState, sortFindings } from "./Checklist";
 import { callOf, type DecideFn } from "./DecisionControls";
-import { AiEditBox, CoverageTag, findingKey, HighlightedBody } from "./parts";
+import { AiEditBox, CleanResult, CoverageTag, findingKey, HighlightedBody } from "./parts";
 import { VersionCompare } from "./VersionCompare";
 import { channelName } from "@/lib/channels";
 import { AiInfoButton } from "../AiInfo";
@@ -391,13 +391,13 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
       {/* Header: what this is and where it stands; what to do next lives in the bar at the bottom. */}
       <header className="flex flex-col gap-3 md:flex-row md:items-center">
         <div className="min-w-0 flex-1">
-          <h2 className={`truncate text-lg font-semibold tracking-tight ${FINISHED.includes(status) ? "text-muted" : ""}`}>{content.title}</h2>
+          <h2 title={content.title} className={`line-clamp-2 break-words text-lg font-semibold tracking-tight ${FINISHED.includes(status) ? "text-muted" : ""}`}>{content.title}</h2>
           <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted">
-            <span className={`rounded-md px-1.5 py-0.5 font-medium ${STATUS_TONE[status]}`}>{STATUS_LABEL[status]}</span>
+            <span title={STATUS_HINT[status]} className={`rounded-md px-1.5 py-0.5 font-medium ${STATUS_TONE[status]}`}>{STATUS_LABEL[status]}</span>
             <span>{channelName(content.channel)}</span>
             <span aria-hidden>·</span>
             <span>Version {latest?.version_no ?? 1}</span>
-            {summary?.overall != null && !checking && <><span aria-hidden>·</span><span className="tabular-nums">Score {Math.round(summary.overall * 100)}%</span></>}
+            {summary?.overall != null && !checking && <><span aria-hidden>·</span><span className="tabular-nums" title="The score of the weakest check on this version. 100% means no check found anything.">Score {Math.round(summary.overall * 100)}%</span></>}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -537,11 +537,15 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
             </div>
           )}
           {checking ? (
-            <div className="flex flex-col gap-1.5">{[0, 1, 2].map((i) => <div key={i} className="h-14 animate-pulse rounded-2xl bg-sunken" />)}</div>
+            <div className="flex flex-col gap-1.5">
+              <CheckingNote />
+              {[0, 1, 2].map((i) => <div key={i} className="h-14 animate-pulse rounded-2xl bg-sunken" />)}
+            </div>
           ) : !review ? (
             <p className="px-1 text-sm text-muted">Not reviewed yet.</p>
           ) : findings.length === 0 ? (
-            <p className="rounded-2xl bg-[var(--vt-ok-bg)] px-4 py-3 text-sm font-medium text-[var(--vt-ok)]">All clear. Every check that ran passed.</p>
+            // A failed check has its own alert above; only a finished one can say what was checked.
+            review.status === "done" ? <CleanResult categories={summary?.categories} /> : null
           ) : (
             <Checklist findings={findings} rows={rows} disputes={disputeByFinding} active={active} onSelect={pick} show={show}
               onRow={onRow} creator={creatorTools} people={people} escalations={requests} onEscalationChanged={loadTimeline}
@@ -672,6 +676,17 @@ function Dock({ children }: { children: React.ReactNode }) {
 
 type Done = { label: string; run: () => void; ready?: boolean } | null;
 type Calls = Map<number, ReturnType<typeof rowCall>>;
+
+/** While a check runs: what it is doing and how long it takes, so nobody wonders whether to press again.
+ * The elapsed time is already beside the title and in the bar below. */
+function CheckingNote() {
+  return (
+    <p className="px-1 pb-1 text-sm text-muted">
+      Checking against the brand&apos;s rules and approved facts. Text takes a few seconds, images and video
+      longer; you can leave this page and come back.
+    </p>
+  );
+}
 
 /** Dots for every issue, how many are left, and one button: walk the open ones, or the move that fits what was decided. */
 function DockBody({ findings, calls, active, open, acting, walking, onWalk, message, done, busy }: {

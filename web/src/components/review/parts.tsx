@@ -69,6 +69,57 @@ export function AiEditBox({ contentId, onUse }: { contentId: number; onUse: (bod
   );
 }
 
+// What each check looks at, in words a first-time reader follows: a clean result lists these, so "clean"
+// says what was looked at, not only that nothing was found.
+const CHECKED_PLAIN: Record<string, string> = {
+  claims: "Facts, prices and offers match what the brand approved",
+  tone: "It sounds like the brand",
+  terminology: "Product and brand names are written the brand's way",
+  messaging: "It stays on topic and implies nothing the brand wouldn't say",
+  visual: "Logos and artwork are the official ones, used as allowed",
+  accessibility: "Everyone can follow it: image descriptions, captions, hashtags and readable wording",
+  legal: "People shown have agreed to it, AI-made images say so, and the brand's legal rules are met",
+  confidentiality: "No secret codenames or private details",
+};
+
+/** The checks behind a clean result: each one that ran, and plainly, each one that ran only partly or not at all. */
+export function CleanResult({ categories }: { categories?: Record<string, CategoryScore> }) {
+  const status = (c: CategoryScore) => c.status ?? (c.checked ? "checked" : "not_checked");
+  const all = Object.entries(categories ?? {});
+  const ran = all.filter(([, c]) => status(c) === "checked");
+  const simpler = all.filter(([, c]) => status(c) === "degraded");
+  const skipped = all.filter(([, c]) => !["checked", "degraded"].includes(status(c)));
+  const plain = (name: string) => CHECKED_PLAIN[name] ?? name;
+  if (all.length === 0) {
+    return <p className="rounded-2xl bg-[var(--vt-ok-bg)] px-4 py-3 text-sm font-medium text-[var(--vt-ok)]">Nothing to fix.</p>;
+  }
+  return (
+    <div className="rounded-2xl bg-[var(--vt-ok-bg)] px-4 py-3 text-sm">
+      <p className="font-medium text-[var(--vt-ok)]">Nothing to fix. Here is what was checked:</p>
+      {ran.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-1.5">
+          {ran.map(([name]) => (
+            <li key={name} className="flex gap-2">
+              <span aria-hidden className="text-[var(--vt-ok)]">✓</span>
+              <span className="text-ink">{plain(name)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {simpler.length > 0 && (
+        <p className="mt-2 text-xs text-muted">
+          Checked only with simple word matching, without AI, this time: {simpler.map(([n]) => plain(n).toLowerCase()).join("; ")}.
+        </p>
+      )}
+      {skipped.length > 0 && (
+        <p className="mt-2 text-xs text-muted">
+          Not checked: {skipped.map(([n, c]) => `${plain(n).toLowerCase()} (${(COVERAGE_LABEL[status(c)]?.text ?? "not checked").toLowerCase()})`).join("; ")}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function CoverageTag({ category: c }: { category: CategoryScore }) {
   const label = COVERAGE_LABEL[c.status ?? (c.checked ? "checked" : "not_checked")];
   if (!label) return <span className="text-muted">{c.findings} finding{c.findings === 1 ? "" : "s"}</span>;

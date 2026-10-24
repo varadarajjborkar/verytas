@@ -1,7 +1,7 @@
 "use client";
 
 import { type KeyboardEvent, useMemo, useState } from "react";
-import { FINISHED, relativeTime, STATUS_LABEL } from "@/lib/review-client";
+import { FINISHED, relativeTime, STATUS_HINT, STATUS_LABEL } from "@/lib/review-client";
 import type { ContentRow } from "@/lib/types";
 import { DashboardIcon, PanelIcon, PlusIcon } from "../Icons";
 import { channelName } from "@/lib/channels";
@@ -86,7 +86,8 @@ export function ReviewHistory({ rows, loading, selected, scopes, scope, demo, on
           <li key={i} className="mx-1 my-1.5 h-12 animate-pulse rounded-lg bg-sunken" />
         ))}
         {!demo && !loading && shown.length === 0 && (
-          <li className="px-2 py-2 text-xs text-muted">{query ? "No review matches that search." : "Nothing here."}</li>
+          <li className="px-2 py-2 text-xs text-muted">{query ? "No review matches that search."
+            : scopes.length > 1 ? "No pieces in this group yet. Try another one above." : "No pieces yet. They show here once one is started."}</li>
         )}
         {shown.map((r) => {
           const finished = FINISHED.includes(r.status);
@@ -113,7 +114,7 @@ export function ReviewHistory({ rows, loading, selected, scopes, scope, demo, on
                 <span className="flex items-center gap-1.5 text-[11px] text-subtle">
                   <span className="truncate">{channelName(r.channel)}</span>
                   <span aria-hidden>·</span>
-                  <span className="shrink-0">{STATUS_LABEL[r.status]}</span>
+                  <span className="shrink-0" title={STATUS_HINT[r.status]}>{STATUS_LABEL[r.status]}</span>
                   <span className="ml-auto shrink-0">{relativeTime(r.updated_at)}</span>
                 </span>
               </button>

@@ -174,6 +174,15 @@ export const STATUS_LABEL: Record<ContentStatus, string> = {
   published: "Published",
   withdrawn: "Withdrawn",
 };
+/** What each status means, for a first-time reader: shown on hover wherever the status is. */
+export const STATUS_HINT: Record<ContentStatus, string> = {
+  draft: "Still being written. The brand team isn't asked to decide until the creator sends it.",
+  in_review: "Sent by the creator and waiting for the brand team to decide.",
+  changes_requested: "The brand team sent it back with changes to make.",
+  approved: "The brand team approved it. It can go out.",
+  published: "Approved and posted.",
+  withdrawn: "Taken back by the creator or an approver; it won't go out.",
+};
 /** Finished pieces: shown struck through in the history, and read-only once published or withdrawn. */
 export const FINISHED: ContentStatus[] = ["approved", "published", "withdrawn"];
 

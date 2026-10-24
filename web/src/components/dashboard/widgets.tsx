@@ -101,7 +101,7 @@ export const WIDGETS: Record<string, WidgetDef> = {
             <li key={r.id}>
               <Link href={`/review?id=${r.id}`} className="group flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sunken">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{r.title}</p>
+                  <p className="truncate text-sm font-medium" title={r.title}>{r.title}</p>
                   <p className="truncate text-[11px] text-subtle">{nameOf(d, r.created_by)} · sent {relativeTime(sinceOf(r))}</p>
                 </div>
                 {r.latest_review?.blockers ? (
@@ -144,7 +144,7 @@ export const WIDGETS: Record<string, WidgetDef> = {
               <Link href={`/escalations?id=${e.id}`} className="flex items-start gap-3 rounded-lg px-2 py-2 hover:bg-sunken">
                 <PriorityPill level={e.finding.level} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{e.finding.title}</p>
+                  <p className="truncate text-sm font-medium" title={e.finding.title}>{e.finding.title}</p>
                   <p className="truncate text-[11px] text-subtle">{e.raised_by?.name ?? "Creator"} on {e.content.title} · {relativeTime(e.created_at)}</p>
                 </div>
               </Link>
@@ -193,7 +193,7 @@ export const WIDGETS: Record<string, WidgetDef> = {
             <li key={r.id}>
               <Link href={`/review?queue=all&id=${r.id}`} className="flex items-center gap-3 rounded-lg py-1.5 text-sm hover:text-accent">
                 <StageDots status={r.status} checked={r.latest_review?.status === "done"} />
-                <span className="min-w-0 flex-1 truncate">{r.title}</span>
+                <span className="min-w-0 flex-1 truncate" title={r.title}>{r.title}</span>
                 <span className="shrink-0 text-[11px] text-subtle">{relativeTime(r.updated_at ?? r.created_at)}</span>
               </Link>
             </li>
@@ -255,7 +255,7 @@ export const WIDGETS: Record<string, WidgetDef> = {
           <li key={`${r.rule}-${r.phrase}`} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">&ldquo;{r.phrase}&rdquo;</p>
-              <p className="truncate text-xs text-subtle">{r.title}</p>
+              <p className="truncate text-xs text-subtle" title={r.title}>{r.title}</p>
             </div>
             <p className="shrink-0 text-sm tabular-nums" title={`${r.count} times across ${r.reviews} reviews`}>{r.count}</p>
           </li>
@@ -274,7 +274,7 @@ export const WIDGETS: Record<string, WidgetDef> = {
           {list.map((h) => (
             <li key={h.rule_id}>
               <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                <p className="truncate text-sm font-medium">{h.title}</p>
+                <p className="truncate text-sm font-medium" title={h.title}>{h.title}</p>
                 <code className="shrink-0 text-xs text-subtle">{h.code}</code>
               </div>
               <Meter value={h.ambiguity ?? 0} label={`Ambiguity of ${h.code}`} tone="danger" />

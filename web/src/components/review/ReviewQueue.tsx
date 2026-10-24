@@ -6,7 +6,7 @@ import {
   GROUPS, type Group, isQueue, isSort, priority, priorityBand, QUEUE_ORDER, QUEUES, type Queue, type Signal, SIGNALS,
   sinceOf, type Sort, SORTS, sortRows,
 } from "@/lib/queue";
-import { ApiError, listContents, listEvents, listPeople, relativeTime, STATUS_LABEL } from "@/lib/review-client";
+import { ApiError, listContents, listEvents, listPeople, relativeTime, STATUS_HINT, STATUS_LABEL } from "@/lib/review-client";
 import type { BrandEvent, ContentRow, Person } from "@/lib/types";
 import { BackButton } from "../BackButton";
 import { ArrowRightIcon, ArrowUpIcon, CloseIcon, InboxIcon, RefreshIcon } from "../Icons";
@@ -260,10 +260,8 @@ export function ReviewQueue() {
           <ul className="flex flex-col gap-2 p-4">{[0, 1, 2, 3, 4].map((i) => <li key={i} className="h-12 animate-pulse rounded-lg bg-sunken" />)}</ul>
         ) : filtered.length === 0 ? (
           <div className="px-5 py-10 text-center">
-            <p className="text-sm font-medium">{filters ? "Nothing matches these filters" : queue === "waiting" ? "The queue is clear" : "Nothing here"}</p>
-            <p className="mt-1 text-sm text-muted">
-              {filters ? "Clear a filter to widen the list." : queue === "waiting" ? "Pieces appear here when creators send them for approval." : "Try another stage."}
-            </p>
+            <p className="text-sm font-medium">{filters ? "Nothing matches these filters" : EMPTY[queue].title}</p>
+            <p className="mx-auto mt-1 max-w-md text-sm text-muted">{filters ? "Clear a filter to widen the list." : EMPTY[queue].why}</p>
           </div>
         ) : (
           <>
@@ -359,7 +357,7 @@ function QueueRow({ r, queue, creatorName, eventName, onOpen }: {
           <span aria-hidden className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-sunken text-[10px] font-semibold text-muted">{initials}</span>
           <div className="min-w-0">
             <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(); }}
-              className="block max-w-full truncate text-left font-medium hover:text-accent">{r.title}</button>
+              className="block max-w-full truncate text-left font-medium hover:text-accent" title={r.title}>{r.title}</button>
             <p className="truncate text-[11px] text-subtle">
               {creatorName} · {channelName(r.channel)}{r.version_count > 1 ? ` · v${r.version_count}` : ""}
               {eventName ? <> · <span className="text-accent">{eventName}</span></> : null}
@@ -370,7 +368,7 @@ function QueueRow({ r, queue, creatorName, eventName, onOpen }: {
       <td className="whitespace-nowrap px-3 py-2.5">
         <span className="flex items-center gap-2.5">
           <StageDots status={r.status} checked={lr?.status === "done"} />
-          <span className="text-xs text-muted">{STATUS_LABEL[r.status]}</span>
+          <span className="text-xs text-muted" title={STATUS_HINT[r.status]}>{STATUS_LABEL[r.status]}</span>
         </span>
       </td>
       <td className="whitespace-nowrap px-3 py-2.5 text-xs"><CheckSummary r={r} /></td>
@@ -391,7 +389,7 @@ function QueueCard({ r, queue, creatorName, eventName, onOpen }: {
       <button type="button" onClick={onOpen} className="flex w-full flex-col gap-1.5 px-4 py-3 text-left transition-colors active:bg-sunken/60">
         <span className="flex w-full items-center gap-2">
           <PriorityMark band={priorityBand(priority(r))} compact />
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">{r.title}</span>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium" title={r.title}>{r.title}</span>
           <span className="shrink-0 text-[11px] text-subtle">{relativeTime(queue === "waiting" ? sinceOf(r) : r.updated_at ?? r.created_at)}</span>
         </span>
         <span className="truncate text-xs text-subtle">
@@ -422,6 +420,15 @@ function PriorityMark({ band, compact = false }: { band: ReturnType<typeof prior
   );
 }
 
+// An empty tab says why it is empty and what fills it, so a first-time visitor doesn't wonder what they missed.
+const EMPTY: Record<Queue, { title: string; why: string }> = {
+  waiting: { title: "The queue is clear", why: "Pieces appear here when creators send them for approval." },
+  escalated: { title: "No escalations", why: "When someone asks a person to look again at an issue, usually a creator who thinks it is wrong, the piece waits here." },
+  creator: { title: "Nothing with creators", why: "Drafts, and pieces sent back for changes, stay here until the creator sends them again." },
+  approved: { title: "Nothing approved yet", why: "Approved pieces, and those since published, are kept here." },
+  all: { title: "No pieces yet", why: "Every piece shows here once a creator starts one on their side of Verytas." },
+};
+
 function CheckSummary({ r }: { r: ContentRow }) {
   const lr = r.latest_review;
   if (!lr) return <span className="text-subtle">Not checked</span>;
@@ -431,10 +438,10 @@ function CheckSummary({ r }: { r: ContentRow }) {
   }
   return (
     <span className="flex items-center gap-2">
-      {lr.overall != null && <span className="w-9 tabular-nums">{Math.round(lr.overall * 100)}%</span>}
+      {lr.overall != null && <span className="w-9 tabular-nums" title="The score of the weakest check. 100% means no check found anything.">{Math.round(lr.overall * 100)}%</span>}
       {lr.blockers > 0 ? (
         <span className="rounded-full bg-[var(--vt-blocker-bg)] px-1.5 font-semibold tabular-nums text-[var(--vt-blocker)]">{lr.blockers} must-fix</span>
-      ) : lr.warnings > 0 ? <span className="text-muted">{lr.warnings} to fix</span> : <span className="text-[var(--vt-ok)]">Clean</span>}
+      ) : lr.warnings > 0 ? <span className="text-muted">{lr.warnings} to fix</span> : <span className="text-[var(--vt-ok)]" title="Nothing must change and nothing is left to fix">Clean</span>}
     </span>
   );
 }

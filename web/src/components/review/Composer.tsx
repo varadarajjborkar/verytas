@@ -153,22 +153,13 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
         Title
         <input className={field} value={draft.title} maxLength={300} required onChange={(e) => set({ title: e.target.value })} />
       </label>
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,9rem)]">
-        <label className="flex flex-col gap-1 text-xs font-medium text-muted">
-          Where it will be posted
-          <Select value={draft.channel} onChange={(v) => set({ channel: v })}>
-            {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </Select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-muted">
-          Audience
-          <Select value={draft.tier} onChange={(v) => set({ tier: v as Draft["tier"] })}>
-            <option value="public">Public</option>
-            <option value="internal">Internal</option>
-          </Select>
-        </label>
-      </div>
-      <EventPicker value={draft.eventId} onChange={(eventId) => set({ eventId })} />
+      {/* Only what every review needs is up front; audience, campaign and notes wait under More options. */}
+      <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+        Where it will be posted
+        <Select value={draft.channel} onChange={(v) => set({ channel: v })}>
+          {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </Select>
+      </label>
       {draft.channel === "other" && (
         <label className="flex flex-col gap-1 text-xs font-medium text-muted">
           Which app or channel?
@@ -253,12 +244,26 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
       <div className="rounded-xl border border-line">
         <button type="button" onClick={() => setShowNotes((s) => !s)} aria-expanded={showNotes}
           className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium">
-          <span>Context for reviewers <span className="font-normal text-subtle">optional</span></span>
+          <span className="min-w-0">
+            More options <span className="font-normal text-subtle">optional</span>
+            {/* What the folded settings are now, so a default is never a surprise. */}
+            <span className="block truncate text-xs font-normal text-subtle">
+              {draft.tier === "internal" ? "Internal audience" : "Public audience"}{draft.eventId != null ? ", campaign chosen" : ""}{draft.intent.trim() ? ", note added" : ""}{draft.language.trim() ? `, read in ${draft.language.trim()}` : ""}{draft.aiUsed ? ", made partly with AI" : ""}
+            </span>
+          </span>
           <ChevronIcon size={16} className={`text-muted transition-transform duration-200 ${showNotes ? "rotate-180" : ""}`} />
         </button>
         {showNotes && (
           <div className="vt-pop flex flex-col gap-3 border-t border-line p-3">
-            <p className="text-xs text-subtle">Read only when something is flagged. It never clears a rule on its own.</p>
+            <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+              Audience
+              <Select value={draft.tier} onChange={(v) => set({ tier: v as Draft["tier"] })}>
+                <option value="public">Public: anyone can see it</option>
+                <option value="internal">Internal: staff only</option>
+              </Select>
+            </label>
+            <EventPicker value={draft.eventId} onChange={(eventId) => set({ eventId })} />
+            <p className="text-xs text-subtle">Context for reviewers: read only when something is flagged. It never clears a rule on its own.</p>
             <textarea className={`${field} min-h-20`} value={draft.intent} maxLength={2000}
               placeholder="e.g. 'Dhamaka' here means a big sale, not an explosion" onChange={(e) => set({ intent: e.target.value })} />
             <div className="grid gap-3 sm:grid-cols-2">

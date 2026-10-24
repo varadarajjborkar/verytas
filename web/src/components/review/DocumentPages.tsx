@@ -166,7 +166,7 @@ const PagePart = memo(function PagePart({ part: x, unit, active, onSelect, kept 
                 active === f.id ? "border-accent bg-accent/10 text-ink" : "border-line text-muted hover:text-ink"} ${
                 kept?.has(f.id) ? "opacity-60" : ""}`}>
               <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: `var(--vt-${f.level})` }} />
-              <span className="truncate">{f.title}</span>
+              <span className="truncate" title={f.title}>{f.title}</span>
             </button>
           ))}
         </div>

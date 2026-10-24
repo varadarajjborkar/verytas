@@ -83,7 +83,7 @@ export function RulesTab({ rules, editable, onChanged, initialState, initialQuer
                       <RuleCode code={r.code} className="hidden w-40 sm:block" />
                       <span className="min-w-0 flex-1">
                         {/* On a phone the title wraps and the source steps aside, so a row reads at a glance. */}
-                        <span className="block text-sm font-medium sm:truncate">{r.title}</span>
+                        <span className="block text-sm font-medium sm:truncate" title={r.title}>{r.title}</span>
                         <span className="mt-0.5 block truncate text-xs text-subtle">
                           <span className="font-mono sm:hidden">{r.code} · </span>
                           {r.kind === "deterministic" ? "Checked by rules" : "Judged by the model"}{r.version > 1 ? ` · v${r.version}` : ""}

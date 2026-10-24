@@ -49,7 +49,7 @@ export function GuidelineHealthView({ health, canEdit = false }: { health: RuleH
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-center">
                 <div className="min-w-0">
                   <div className="flex items-baseline gap-2">
-                    <p className="truncate text-sm font-medium">{h.title}</p>
+                    <p className="truncate text-sm font-medium" title={h.title}>{h.title}</p>
                     <RuleCode code={h.code} />
                   </div>
                   <div className="mt-2.5 max-w-sm">

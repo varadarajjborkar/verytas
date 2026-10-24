@@ -58,7 +58,7 @@ export function AssetsTab({ assets, editable, onChanged }: { assets: BrandAsset[
                 <img src={assetImageUrl(a.id)} alt={`${a.name} (${a.part})`} loading="lazy" className="max-h-full max-w-full object-contain" />
               </div>
               <div className="flex flex-col gap-1 p-3">
-                <p className="truncate text-sm font-medium">{a.name}</p>
+                <p className="truncate text-sm font-medium" title={a.name}>{a.name}</p>
                 <div className="flex flex-wrap gap-1">
                   <Badge>{a.kind}</Badge><Badge>{a.part}</Badge>
                   {!a.active && <Badge tone="warning">Retired</Badge>}

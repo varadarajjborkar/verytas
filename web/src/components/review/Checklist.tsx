@@ -125,7 +125,7 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                     {!call ? i + 1 : quiet ? "•" : <CheckIcon size={12} strokeWidth={3} />}
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className={`truncate text-[13.5px] font-medium ${call ? "text-muted" : ""}`}>{f.title}</span>
+                    <span className={`truncate text-[13.5px] font-medium ${call ? "text-muted" : ""}`} title={f.title}>{f.title}</span>
                     <span className="truncate text-[11.5px] text-subtle">
                       <span className="capitalize">{f.category}</span> · {whereLabel(f)}
                       {d && <span className="text-accent"> · {DISPUTE_TEXT[d.status]}</span>}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ApiError, getTimeline, listContents, relativeTime, STATUS_LABEL } from "@/lib/review-client";
+import { ApiError, getTimeline, listContents, relativeTime, STATUS_HINT, STATUS_LABEL } from "@/lib/review-client";
 import type { ContentRow, Person, TimelineItem } from "@/lib/types";
 import { ArrowRightIcon, ChatIcon, PlusIcon } from "../Icons";
 import { StageDots } from "../Journey";
@@ -148,10 +148,10 @@ function PieceList({ rows }: { rows: ContentRow[] }) {
           <li key={r.id}>
             <Link href={`/review?id=${r.id}`} className="group flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sunken">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{r.title}</p>
+                <p className="truncate text-sm font-medium" title={r.title}>{r.title}</p>
                 <p className="flex items-center gap-2 text-[11px] text-subtle">
                   <StageDots status={r.status} checked={lr?.status === "done"} />
-                  <span>{STATUS_LABEL[r.status]}</span>
+                  <span title={STATUS_HINT[r.status]}>{STATUS_LABEL[r.status]}</span>
                   <span aria-hidden>·</span>
                   <span className={lr?.blockers ? "text-[var(--vt-blocker)]" : ""}>{issues}</span>
                 </p>

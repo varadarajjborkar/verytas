@@ -107,7 +107,7 @@ function Profile({ id }: { id: number }) {
                   <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${p.blockers ? "bg-[var(--vt-blocker)]" : p.warnings
                     ? "bg-[var(--vt-warning)]" : p.advisories ? "bg-[var(--vt-advisory)]" : "bg-[var(--vt-ok)]"}`} aria-hidden />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium group-hover:text-accent">{p.title}</span>
+                    <span className="block truncate text-sm font-medium group-hover:text-accent" title={p.title}>{p.title}</span>
                     <span className="block text-xs text-muted">{p.summary}</span>
                   </span>
                   <span className="shrink-0 text-right text-xs">

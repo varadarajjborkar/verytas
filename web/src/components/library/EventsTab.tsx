@@ -59,7 +59,7 @@ export function EventsTab({ events, editable, onChanged }: { events: BrandEvent[
                   className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-sunken/50">
                   <CalendarIcon size={16} className="shrink-0 text-subtle" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{e.name}</span>
+                    <span className="block truncate text-sm font-medium" title={e.name}>{e.name}</span>
                     <span className="block truncate text-[11px] text-subtle">
                       {KINDS[e.kind]} · {e.starts_on}{e.ends_on ? ` to ${e.ends_on}` : " onwards"}
                       {e.pieces ? ` · ${e.pieces} piece${e.pieces === 1 ? "" : "s"} made for it` : ""}
@@ -134,7 +134,7 @@ function EventDetail({ event, editable, onEdit, onChanged }: { event: BrandEvent
             {impacts.map((i, n) => (
               <li key={`${i.content_id}-${i.revision}-${n}`} className="flex items-center gap-2">
                 <span className="w-16 shrink-0 text-subtle">rev. {i.revision}</span>
-                <Link href={`/review?queue=all&id=${i.content_id}`} className="min-w-0 flex-1 truncate hover:text-accent">{i.title}</Link>
+                <Link href={`/review?queue=all&id=${i.content_id}`} className="min-w-0 flex-1 truncate hover:text-accent" title={i.title}>{i.title}</Link>
                 <span className={`shrink-0 tabular-nums ${i.blockers ? "text-[var(--vt-blocker)]" : "text-muted"}`}>
                   {i.review_status !== "done" ? (i.review_status ?? "queued") : i.blockers ? `${i.blockers} must-fix` : "clean"}
                 </span>

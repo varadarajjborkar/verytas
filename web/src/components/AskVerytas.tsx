@@ -274,7 +274,7 @@ export function AskVerytas() {
               className={`flex w-full items-center gap-2 rounded-lg py-2 pl-2.5 pr-8 text-left text-sm transition ${
                 t.id === threadId ? "bg-accent/12 text-ink" : "text-muted hover:bg-sunken hover:text-ink"}`}>
               <ChatIcon size={14} className="shrink-0 opacity-70" />
-              <span className="min-w-0 flex-1 truncate">{t.title}</span>
+              <span className="min-w-0 flex-1 truncate" title={t.title}>{t.title}</span>
               <span className="shrink-0 text-[11px] text-subtle group-focus-within:invisible group-hover:invisible [@media(hover:none)]:invisible">{when(t.updated_at)}</span>
             </button>
             <button type="button" onClick={() => remove(t.id)} aria-label={`Delete "${t.title}"`}
@@ -409,7 +409,8 @@ export function AskVerytas() {
               </div>
             </div>
             <p className="mx-auto mt-2 max-w-3xl px-1 text-[11px] text-subtle">
-              Answers are written by an AI model from your workspace&apos;s data and can be wrong.{" "}
+              Answers are written by an AI model from your workspace&apos;s records and can be wrong: check what an
+              answer names in the queue or the brand library before acting on it.{" "}
               <AiInfoButton className="underline underline-offset-2 hover:text-ink" />.
               Images are kept with the chat; the current model can&apos;t read them yet.
             </p>
