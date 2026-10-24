@@ -37,8 +37,6 @@ const STATUS_TONE: Record<ContentStatus, string> = {
   published: "bg-[var(--vt-ok-bg)] text-[var(--vt-ok)]",
   withdrawn: "bg-sunken text-subtle",
 };
-// Past this many issues the dock's dots stop meaning anything at a glance; the count says it instead.
-const MAX_PIPS = 14;
 const fixOf = (f: Finding) => ((f.source ?? "body") === "body" ? f.suggestions[0] : undefined);
 
 /**
@@ -683,15 +681,7 @@ function DockBody({ findings, calls, active, open, acting, walking, onWalk, mess
   const left = acting ? open > 0 : findings.length > 0;
   return (
     <>
-      {findings.length > 0 && findings.length <= MAX_PIPS && (
-        <span className="hidden gap-[5px] sm:flex" aria-hidden>
-          {findings.map((f) => {
-            const c = calls.get(f.id)?.state;
-            const state = !c ? undefined : c === "kept" || c === "done" ? "kept" : "asked";
-            return <i key={f.id} className="vt-pip" data-level={f.level} data-state={state} data-on={f.id === active && !c} />;
-          })}
-        </span>
-      )}
+      {findings.length > 0 && <PipChain findings={findings} calls={calls} active={active} />}
       <span className="flex min-w-0 items-baseline gap-1.5 whitespace-nowrap text-[13px]">{message}</span>
       {left && (!done || open > 0) ? (
         <button type="button" onClick={onWalk} className="vt-btn vt-btn-primary h-9 rounded-full px-4 font-semibold">
@@ -705,6 +695,35 @@ function DockBody({ findings, calls, active, open, acting, walking, onWalk, mess
         </button>
       ) : null}
     </>
+  );
+}
+
+const PIP_STEP = 14; // a pip's 9px and the 5px gap after it
+const PIP_WINDOW = 9; // pips in view at once; the rest of the chain fades out at either end
+
+/**
+ * One dot per issue, as a chain that keeps the issue in hand in the middle: a few either side are in view and
+ * the rest fade out at both ends, so a long review reads as calmly as a short one. Deciding slides the chain on
+ * to the next. Short chains show whole and stay put.
+ */
+function PipChain({ findings, calls, active }: { findings: Finding[]; calls: Calls; active: number | null }) {
+  const states = findings.map((f) => {
+    const c = calls.get(f.id)?.state;
+    return !c ? undefined : c === "kept" || c === "done" ? "kept" : "asked";
+  });
+  const pips = findings.map((f, i) => (
+    <i key={f.id} className="vt-pip shrink-0" data-level={f.level} data-state={states[i]} data-on={f.id === active && !states[i]} />
+  ));
+  if (findings.length <= PIP_WINDOW) return <span className="hidden gap-[5px] sm:flex" aria-hidden>{pips}</span>;
+  // In hand: the issue open in the list, else the next undecided one, else (all decided) the last.
+  const at = findings.findIndex((f) => f.id === active);
+  const next = states.findIndex((s) => !s);
+  const focus = at >= 0 ? at : next >= 0 ? next : findings.length - 1;
+  const width = PIP_WINDOW * PIP_STEP - 5;
+  return (
+    <span className="vt-pip-window hidden sm:block" style={{ width }} aria-hidden>
+      <span className="vt-pip-track" style={{ transform: `translateX(${width / 2 - (focus * PIP_STEP + 4.5)}px)` }}>{pips}</span>
+    </span>
   );
 }
 
