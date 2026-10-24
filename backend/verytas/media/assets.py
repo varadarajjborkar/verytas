@@ -43,6 +43,10 @@ from verytas.media.files import shrink
 GRID = 6
 MIN_INLIERS = 10
 MIN_INLIER_RATIO = 0.25
+# A match found only on the flipped artwork is called mirrored only above these (see _mirror_sure).
+MIRROR_MIN_INLIERS = 15
+MIRROR_MIN_SIMILARITY = 0.85
+MIRROR_CLEAR_GAIN = 0.15
 CELL_SSIM_FLOOR = 0.45  # below this a cell's structure has changed
 # Colour is scored by the 90th percentile of a lightly blurred Lab distance,
 # so a small strongly recoloured feature (an eye) counts while edge
@@ -265,14 +269,27 @@ def _best(asset: PreparedAsset, feats: SceneFeatures) -> AssetMatch:
     weak = found.found and (found.inliers < 3 * MIN_INLIERS or (found.similarity or 0) < 0.9)
     if (not found.found or weak) and asset.mirror is not None and not flat(asset):
         flipped = _match(asset.mirror, feats)
-        if flipped.found and (not found.found or (flipped.inliers >= 1.5 * found.inliers
-                                                  and (flipped.similarity or 0) > (found.similarity or 0))):
+        # A plain match with no comparable cells has no similarity to beat, so only inliers can decide.
+        gain = (flipped.similarity or 0) - (found.similarity or 0) if found.similarity is not None else 0.0
+        # Clearly better means more of the artwork fits (half again the inliers), or it looks much more alike.
+        if flipped.found and _mirror_sure(flipped) and (not found.found or gain >= MIRROR_CLEAR_GAIN or (
+                flipped.inliers >= 1.5 * found.inliers and gain > 0)):
             flipped.mirrored = True
             # Cells were compared in the flipped artwork's frame; name them as they sit in the official one.
             for cell in flipped.altered_cells:
                 cell["col"] = GRID - 1 - cell["col"]
             return flipped
     return found
+
+
+def _mirror_sure(m: AssetMatch) -> bool:
+    """A match found only by flipping must also look like the artwork once un-flipped. Symmetric shapes (a
+    kite emblem, a rounded icon) and other artwork nearby supply enough keypoints for a weak flipped fit:
+    on the demo posters every such false "mirrored" scored 0.83 or less or had under 15 inliers, while
+    every real mirrored copy in the 1,200-scene benchmark scored 0.94 or more with 19 or more."""
+    if m.similarity is None:  # too small to compare: only a fit with many inliers is believed
+        return m.inliers >= 3 * MIN_INLIERS
+    return m.inliers >= MIRROR_MIN_INLIERS and m.similarity >= MIRROR_MIN_SIMILARITY
 
 
 def _match(asset: PreparedAsset, feats: SceneFeatures) -> AssetMatch:
