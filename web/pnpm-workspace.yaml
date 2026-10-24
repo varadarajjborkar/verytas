@@ -7,3 +7,9 @@ allowBuilds:
 overrides:
   # GHSA-238p-pmpm-9mq7, reached through the chat UI's math rendering.
   katex: '>=0.18.2'
+auditConfig:
+  ignoreGhsas:
+    # zod 3 has no patched release. It reaches us only through @ag-ui/core, from which the chat UI imports
+    # types and the EventType enum; nothing ever calls parse() on its schemas, so the oversized-collection
+    # validation path cannot run. Drop this once @openuidev/react-headless moves to @ag-ui/core 1.x.
+    - GHSA-mrhx-c7xc-m3w5
