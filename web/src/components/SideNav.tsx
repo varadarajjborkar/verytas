@@ -11,6 +11,7 @@ import { Logo } from "./Logo";
 import { NAME } from "./Wordmark";
 import { SettingsMenu } from "./SettingsMenu";
 import { useViewer } from "./Viewer";
+import { AiInfoButton } from "./AiInfo";
 
 type NavLink = { href: string; label: string; short?: string; Icon: typeof HomeIcon };
 const REVIEW: NavLink = { href: "/review", label: "Review", Icon: ReviewIcon };
@@ -104,9 +105,9 @@ export function SideNav() {
               Switch account
             </button>
           )}
-          <Link href="/ai" className="mt-2 inline-block text-[11px] text-subtle underline-offset-2 hover:text-ink hover:underline">
+          <AiInfoButton className="mt-2 inline-block text-left text-[11px] text-subtle underline-offset-2 hover:text-ink hover:underline">
             AI-assisted · how AI is used
-          </Link>
+          </AiInfoButton>
         </div>
       )}
       <div className={`hidden md:block ${me && !collapsed ? "" : "md:mt-auto"} ${collapsed ? "px-2.5 py-3 [&>button]:mx-auto" : "p-3"}`}>

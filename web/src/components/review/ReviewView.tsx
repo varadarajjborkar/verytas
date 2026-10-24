@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { journey } from "@/lib/journey";
 import {
@@ -22,6 +21,7 @@ import type { DecideFn } from "./DecisionControls";
 import { AiEditBox, CoverageTag, findingKey, HighlightedBody } from "./parts";
 import { VersionCompare } from "./VersionCompare";
 import { channelName } from "@/lib/channels";
+import { AiInfoButton } from "../AiInfo";
 
 type Phase = "loading" | "checking" | "ready" | "failed" | "missing";
 
@@ -404,7 +404,7 @@ export function ReviewView({ contentId, role, userId, onChanged }: {
         <aside className="flex min-w-0 flex-col gap-5" aria-label="Issues">
           <p className="-mb-3 text-[11px] text-subtle">
             AI-assisted review: people make the final call.{" "}
-            <Link href="/ai" className="underline underline-offset-2 hover:text-ink">How AI is used</Link>
+            <AiInfoButton className="underline underline-offset-2 hover:text-ink" />
           </p>
           <section className="vt-card p-4">
             <div role="tablist" aria-label="Side panel" className="mb-3 flex gap-4 border-b border-line text-sm"
