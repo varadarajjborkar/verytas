@@ -245,7 +245,14 @@ def _xlsx(raw: bytes) -> Reading:
     out.text = "\n\n".join(_table_text(t) for t in out.tables)[:MAX_TEXT]
     if not out.tables:
         out.notes.append("No sheet had a table to read.")
+    _note_cut(out)
     return out
+
+
+def _note_cut(out: Reading) -> None:
+    if any(len(c) >= MAX_CELL for t in out.tables for r in t.rows for c in r):
+        out.notes.append(f"Cells longer than {MAX_CELL} characters were cut; long text reads in full as a "
+                         "document (Word, PDF or text).")
 
 
 # Excel's built-in number formats that show a date or time.
@@ -408,6 +415,7 @@ def _csv(raw: bytes, name: str) -> Reading:
     out.text = _table_text(table)[:MAX_TEXT] if table else ""
     if not table:
         out.notes.append("No table found in the file.")
+    _note_cut(out)
     return out
 
 

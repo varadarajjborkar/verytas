@@ -29,7 +29,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import ValidationError
-from sqlalchemy import delete, select, update
+from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from verytas.intake import fetch as live
@@ -43,6 +43,7 @@ from verytas.models import (
     IntakeItem,
     MediaBlob,
     Rule,
+    RuleStatus,
     Tier,
     User,
     utcnow,
@@ -266,13 +267,20 @@ async def _known(session: AsyncSession, item: IntakeItem, filer: User | None) ->
     ws = item.workspace_id
     # Facts above the filer's clearance are neither shown in a conflict note nor offered for replacing.
     ceiling = filer.clearance.rank if filer is not None else Tier.public.rank
-    facts = [f for f in (await session.scalars(select(Fact).where(Fact.workspace_id == ws))).all()
+    # Withdrawn facts are not "in the library", and only a rule's version in force says what it reads now;
+    # every code ever used stays taken, since a code can't be created twice.
+    facts = [f for f in (await session.scalars(select(Fact).where(Fact.workspace_id == ws, Fact.approved))).all()
              if f.tier.rank <= ceiling]
-    rules = (await session.execute(select(Rule.code, Rule.text).where(Rule.workspace_id == ws))).all()
+    newest = select(Rule.code, func.max(Rule.version).label("v")).where(Rule.workspace_id == ws) \
+        .group_by(Rule.code).subquery()
+    current = (await session.execute(select(Rule.text).join(newest, and_(Rule.code == newest.c.code,
+                                                                         Rule.version == newest.c.v))
+                                     .where(Rule.workspace_id == ws, Rule.status != RuleStatus.retired))).all()
+    codes = set((await session.scalars(select(Rule.code).where(Rule.workspace_id == ws))).all())
     others = (await session.scalars(select(IntakeDraft).where(
         IntakeDraft.workspace_id == ws, IntakeDraft.status.in_(("pending", "applying")),
         IntakeDraft.item_id != item.id, IntakeDraft.target.in_(("rule", "term"))))).all()
-    known = Known(facts=facts, codes={c for c, _ in rules}, rule_texts={_norm(t) for _, t in rules},
+    known = Known(facts=facts, codes=codes, rule_texts={_norm(t) for (t,) in current},
                   terms={_norm(t) for t in (await session.scalars(select(ConfidentialTerm.term).where(
                       ConfidentialTerm.workspace_id == ws))).all()})
     for d in others:

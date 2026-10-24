@@ -18,6 +18,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import SQLAlchemyError
 
 from verytas.api.accounts import SelfServeBudget
 from verytas.api.deps import PrismDep, Session, can_read, require
@@ -124,8 +125,8 @@ async def start(body: BatchIn, session: Session, admin: Admin, prism: PrismDep) 
     for i, it in enumerate(body.items):
         name = it.name or (found[it.blob_id].name if it.blob_id and found[it.blob_id].name else None) \
             or (_link_name(it.url) if it.url else None) or f"Pasted text {i + 1}"
-        if it.url and name == it.name:
-            name = name.split("?", 1)[0].split("#", 1)[0] or _link_name(it.url)
+        if it.url and it.name and it.name == it.url.rstrip("/").rsplit("/", 1)[-1]:
+            name = _link_name(it.url)  # the client named it after the link, query and all; a typed name is kept
         session.add(IntakeItem(batch_id=batch.id, workspace_id=admin.workspace_id, name=name[:200],
                                blob_id=it.blob_id, source_url=it.url, text=it.text, context=it.context))
     await append(session, workspace_id=admin.workspace_id, actor=f"user:{admin.id}", action="intake.started",
@@ -303,11 +304,16 @@ async def _decide(session, admin: User, d: IntakeDraft, body: DecisionIn) -> dic
                 d.created_object = await _apply(session, admin, d, payload)
             except ValidationError as exc:
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.errors()[0]["msg"]) from None
-        except HTTPException:
-            # Refused by the library: nothing was created, so the draft goes back to waiting for a person.
+        except Exception as exc:
+            # Refused by the library, or the database said no (two approvals racing for one rule code, a
+            # lock): nothing was created, so the draft goes back to waiting for a person, never stuck.
             await session.rollback()
             await session.execute(update(IntakeDraft).where(IntakeDraft.id == draft_id).values(status="pending"))
             await session.commit()
+            if isinstance(exc, HTTPException):
+                raise
+            if isinstance(exc, SQLAlchemyError):
+                raise HTTPException(status.HTTP_409_CONFLICT, "the library changed meanwhile; try again") from None
             raise
         d.payload = payload
     d.status = "approved" if body.action == "approve" else "rejected"
@@ -355,8 +361,10 @@ async def decide_many(batch_id: int, body: BulkIn, session: Session, admin: Admi
         except HTTPException as exc:
             skipped.append(draft_id)
             d = await session.get(IntakeDraft, draft_id)
-            d.issues = [*d.issues, {"kind": "rejected_by_library", "detail": str(exc.detail)[:300]}]
-            await session.commit()
+            # Another request claimed it first: it is theirs to finish, not a refusal to record.
+            if d.status == "pending":
+                d.issues = [*d.issues, {"kind": "rejected_by_library", "detail": str(exc.detail)[:300]}]
+                await session.commit()
     pending = await session.scalar(select(func.count()).select_from(IntakeDraft).where(
         IntakeDraft.item_id.in_(items), IntakeDraft.status == "pending"))
     return {"done": done, "skipped": skipped, "pending": pending}

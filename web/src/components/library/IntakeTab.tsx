@@ -167,6 +167,11 @@ function HandOver({ onStarted }: { onStarted: (id: number) => void }) {
           {busy ? "Handing over..." : `Read ${picks.length || ""} item${picks.length === 1 ? "" : "s"}`}
         </button>
       </div>
+      <p className="mt-2 text-xs leading-5 text-subtle">
+        Rules found here govern every post, so they apply to public posts too and every reviewer can read them.
+        Facts, codenames and the files keep the level you choose. Confidential keeps everything, rules included,
+        restricted and read on our server only.
+      </p>
     </section>
   );
 }

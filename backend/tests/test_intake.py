@@ -263,3 +263,27 @@ def test_a_signed_link_never_shows_its_key():
 
     assert pipeline.public_source("https://u:p@sheets.example:8443/d/x.csv?X-Amz-Signature=abc#g") \
         == "https://sheets.example:8443/d/x.csv"
+
+
+def test_a_database_refusal_puts_the_draft_back_and_a_typed_name_is_kept(client, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    from verytas.api import intake as api
+
+    h = {"Authorization": "Bearer " + client.post("/bootstrap", json={
+        "workspace_name": "Kitepath", "admin_email": "a@k.io", "admin_name": "Meera"}).json()["token"]}
+    started = client.post("/intake", headers=h, json={"items": [
+        {"text": "Always write Kitepath with a capital K. Project Falcon is our unreleased tutor app.",
+         "name": "Brand book"}]})
+    b = _wait(client, h, started.json()["id"])
+    draft = b["drafts"][0]
+
+    async def locked(*_a, **_k):
+        raise OperationalError("insert", {}, Exception("database is locked"))
+
+    monkeypatch.setattr(api, "_apply", locked)
+    assert client.post(f"/intake/drafts/{draft['id']}", headers=h, json={"action": "approve"}).status_code == 409
+    monkeypatch.undo()
+    # Not stuck half way: it can be approved now.
+    assert client.post(f"/intake/drafts/{draft['id']}", headers=h, json={"action": "approve"}).status_code == 200
+    assert api._link_name("https://x.example/a/prices.csv?sig=1") == "prices.csv"
