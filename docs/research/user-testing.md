@@ -1,38 +1,38 @@
-# User testing: first round (October 2026)
+# User testing (October 2026)
 
 The brief asks for "evidence of user testing or structured feedback where reasonably available" (Round 2)
-and "evidence of testing, reliability improvements and changes made during development" (Round 3). This is
-the first round: three people outside the team used the deployed demo on their own and wrote up what worked
+and "evidence of testing, reliability improvements and changes made during development" (Round 3). Three
+people outside the team used the deployed demo on their own and wrote up what worked
 and what didn't. Their reviews are below as written, followed by what we took from them and what changed.
 
 ## Who took part
 
 | Participant | Relation to the team | Role they tried |
 |---|---|---|
-| Vaibhav Nautiyal | Classmate | Brand team and creator |
-| Sachin Kumar | Batchmate, same college, different stream | Brand team and creator |
-| Pranav Kotekar | Brother of a team member | Brand team and creator |
+| P1 | Classmate | Brand team and creator |
+| P2 | Student at the same college, different stream | Brand team and creator |
+| P3 | Family member of a team member | Brand team and creator |
 
-None of them work in brand governance, so this round tests first-use clarity, not domain fit. All three
+None of them work in brand governance, so this tests first-use clarity, not domain fit. All three
 know someone on the team, which makes the praise less telling than the criticism; we weigh it that way.
 
 ## What they said, grouped
 
 | Theme | Raised by | What they hit |
 |---|---|---|
-| A first-time visitor can't tell what the product does or where to start | Vaibhav, Sachin | The sign-in picker asks for a company and a person before explaining anything; asked for a step-by-step guided tour |
-| Words and numbers need explaining | Sachin | "Draft", "100% Clean", "Escalation" with no explanation |
-| A result doesn't say what was checked | Sachin, Vaibhav, Pranav | "Clean" without the list of checks run; asked for confidence and reasons behind each decision |
-| No sign that a review is running | Sachin | After "Run review", unsure whether to click again |
-| Empty pages don't say why or what to do | Sachin | "Nothing here" with no next step |
-| The review form asks for a lot at once | Pranav | Many fields before a quick check |
-| Cut-off text | Pranav | Some titles and labels truncated |
-| "AI can make mistakes" without context lowers trust | Pranav | Wants the disclaimer kept but backed by how checks work and evidence |
-| Verification accuracy must be shown, not claimed | Vaibhav | Can't judge false positives and negatives from the outside |
+| A first-time visitor can't tell what the product does or where to start | P1, P2 | The sign-in picker asks for a company and a person before explaining anything; asked for a step-by-step guided tour |
+| Words and numbers need explaining | P2 | "Draft", "100% Clean", "Escalation" with no explanation |
+| A result doesn't say what was checked | P2, P1, P3 | "Clean" without the list of checks run; asked for confidence and reasons behind each decision |
+| No sign that a review is running | P2 | After "Run review", unsure whether to click again |
+| Empty pages don't say why or what to do | P2 | "Nothing here" with no next step |
+| The review form asks for a lot at once | P3 | Many fields before a quick check |
+| Cut-off text | P3 | Some titles and labels truncated |
+| "AI can make mistakes" without context lowers trust | P3 | Wants the disclaimer kept but backed by how checks work and evidence |
+| Verification accuracy must be shown, not claimed | P1 | Can't judge false positives and negatives from the outside |
 
-What they liked: the interface and first impression (Vaibhav), separate creator and brand-team workspaces
-(Vaibhav), and findings that say exactly which claim or figure is wrong and why, rather than a pass or fail
-(Vaibhav).
+What they liked: the interface and first impression (P1), separate creator and brand-team workspaces
+(P1), and findings that say exactly which claim or figure is wrong and why, rather than a pass or fail
+(P1).
 
 ## What we changed
 
@@ -51,12 +51,9 @@ Each change links to its commit.
 | AI disclaimer | Kept, and now says which checks are plain code, that every finding names its source, that a person makes each call, and the measured accuracy including the weak spot ([`ab37aa7`](https://github.com/varadarajjborkar/verytas/commit/ab37aa7)) | Shipped |
 | Accuracy | Measured per check and published in [`backend/evals/results`](../../backend/evals/results); the artwork check's false alarms fell from 12.6% to 4.7% this round ([`2e24e91`](https://github.com/varadarajjborkar/verytas/commit/2e24e91)). Confidence per finding is shown in the review. | Shipped |
 
-Not done: a second round with the same three people to see whether the changes landed. Planned before the
-final round.
-
 ## The reviews as written
 
-### Vaibhav Nautiyal (classmate)
+### P1 (classmate)
 
 > **Key strengths**
 >
@@ -122,7 +119,7 @@ final round.
 > experience and a reliable verification mechanism, it has the potential to deliver meaningful value to both
 > brands and content creators.
 
-### Sachin Kumar (batchmate, same college, different stream)
+### P2 (student at the same college, different stream)
 
 > **Constructive feedback**
 >
@@ -156,7 +153,7 @@ final round.
 > helpful empty-state messages, clear next steps, and relevant actions, such as creating a review or adding
 > information, would make these pages more useful and guide users through the platform.
 
-### Pranav Kotekar (brother of a team member)
+### P3 (family member of a team member)
 
 > **Constructive feedback**
 >

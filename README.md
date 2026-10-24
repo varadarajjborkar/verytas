@@ -245,7 +245,6 @@ method and the full results.
 
 - **One-on-one meetings.** A creator asks the manager who looks after them for a meeting by chat, voice or video; the manager accepts or proposes another time or way. Calls go through temporary masked numbers, the way delivery apps connect a rider and a customer, and only the time, the way and an outcome note go on the record. It is designed and previewed in both apps (marked *Planned*), not built: in a demo one person plays both sides, and masked calling needs a paid telephony provider.
 - **Managing it all from the console:** an approved-people tab in the Library, a video player with findings on its timeline, and managers marking moments and areas with comments (the API supports all three today).
-- **A second round of user testing** with the same people, to see whether the changes landed.
 - **Sharper visual checks on busy backgrounds**, where a mascot's cut-out still takes in some background and raises false alarms, and on recoloured app icons (caught in a third of cases); a better Hindi speech model, since the general one still mishears much of it; and a GPU for the language and vision models once AWS grants the quota.
 
 ## Run it locally
