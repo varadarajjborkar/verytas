@@ -124,6 +124,16 @@ export const retireAsset = (id: number) => api<null>(`brand-assets/${id}`, send(
 export const assetImageUrl = (id: number) => `/api/v/brand-assets/${id}/image`;
 export const versionImageUrl = (contentId: number, versionId: number, imageId: string) =>
   `/api/v/contents/${contentId}/versions/${versionId}/images/${encodeURIComponent(imageId)}`;
+export type DocumentPreview =
+  | { kind: "pages"; pages: { width: number; height: number }[]; total_pages: number;
+      marks: { finding_id: number; page: number; box: number[] }[] }
+  | { kind: "html"; html: string };
+const docPath = (contentId: number, versionId: number, docId: string) =>
+  `contents/${contentId}/versions/${versionId}/documents/${encodeURIComponent(docId)}`;
+export const getDocumentPreview = (contentId: number, versionId: number, docId: string) =>
+  api<DocumentPreview>(`${docPath(contentId, versionId, docId)}/preview`);
+export const documentPageUrl = (contentId: number, versionId: number, docId: string, page: number) =>
+  `/api/v/${docPath(contentId, versionId, docId)}/pages/${page}`;
 export const getContent = (id: number) => api<ContentDetail>(`contents/${id}`);
 export const getMe = () => api<Me>("me");
 /** The global search. `limit` is hits per group; an empty query returns the caller's suggestions. Abort stale calls with `signal`. */

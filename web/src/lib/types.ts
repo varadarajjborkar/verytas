@@ -94,7 +94,7 @@ export type Finding = {
   signature_valid: boolean;
   /** "body" for typed text; otherwise a derived source such as "img:hero:ocr" or "vid:reel:speech". */
   source?: string;
-  locator?: { image?: string; document?: string; page?: number; video?: string; time?: [number, number];
+  locator?: { image?: string; document?: string; page?: number; label?: string; video?: string; time?: [number, number];
     box?: number[]; intake?: string; evidence?: Evidence[] } | null;
   assessment?: { by: string; outcome?: string; view?: string; reader_reading?: string; suggestion?: string;
     reader_probability?: number; dispute_id?: number } | null;
@@ -249,7 +249,8 @@ export type ContentRow = {
 export type ContentDetail = Omit<ContentRow, "version_count" | "updated_at" | "latest_review"> & {
   versions: { id: number; version_no: number; parent_id: number | null; body: string; created_at: string;
     /** Attached images as references; the bytes come from versionImageUrl. */
-    images?: { id: string; alt: string | null; decorative: boolean; media_type: string }[] }[];
+    images?: { id: string; alt: string | null; decorative: boolean; media_type: string }[];
+    documents?: { id: string; name: string | null; media_type: string }[] }[];
   latest_review_id: number | null;
 };
 

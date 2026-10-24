@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -15,7 +17,8 @@ from sqlalchemy.orm import selectinload
 from verytas.api.accounts import SelfServeBudget
 from verytas.api.deps import CurrentUser, PrismDep, Session, can_read, require
 from verytas.api.media import build_profile, load_blobs
-from verytas.media.files import sniff
+from verytas.media import preview
+from verytas.media.files import DOCX, MAX_HTML_BYTES, MediaError, sniff
 from verytas.models import (
     BrandEvent,
     Change,
@@ -402,6 +405,82 @@ async def get_content(content_id: int, session: Session, user: CurrentUser) -> C
     detail = ContentDetail.model_validate(content)
     detail.latest_review_id = latest.id if latest else None
     return detail
+
+
+async def _document(session, user: User, content_id: int, version_id: int, doc_id: str) -> tuple[Content, bytes]:
+    """One attached document's bytes, readable exactly when the piece is; one 404 for anything missing."""
+    content = await _content(session, user, content_id, with_versions=True)
+    version = next((v for v in content.versions if v.id == version_id), None)
+    doc = next((d for d in ((version.attachments or {}).get("documents", []) if version else [])
+                if isinstance(d, dict) and d.get("id") == doc_id), None)
+    raw: bytes | None = None
+    if doc is not None and doc.get("data_base64"):
+        raw = base64.b64decode(doc["data_base64"])
+    elif doc is not None and doc.get("blob_id"):
+        blob = await session.get(MediaBlob, doc["blob_id"])
+        raw = blob.data if blob is not None and blob.workspace_id == content.workspace_id else None
+    if raw is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
+    return content, raw
+
+
+_PREVIEW_DEADLINE = 180  # seconds; past the queue wait plus a conversion, the request is answered anyway
+# Previews get their own threads, apart from the pool every other blocking call shares: conversions (slow,
+# one at a time in LibreOffice; one that outlives its request keeps its thread) and drawing pages of a PDF
+# already in hand, so a page of a converted deck never waits behind someone else's conversion.
+_CONVERT_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="preview-convert")
+_DRAW_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="preview-draw")
+
+
+async def _blocking(fn, *args, pool: ThreadPoolExecutor = _DRAW_POOL):
+    try:
+        return await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(pool, fn, *args),
+                                      _PREVIEW_DEADLINE)
+    except TimeoutError:
+        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "the preview took too long; try again") from None
+    except MediaError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
+
+
+async def _pdf_of(raw: bytes, kind: str) -> bytes:
+    return await _blocking(preview.ready, raw, kind) or await _blocking(preview.as_pdf, raw, kind, pool=_CONVERT_POOL)
+
+
+@router.get("/contents/{content_id}/versions/{version_id}/documents/{doc_id}/preview")
+async def document_preview(content_id: int, version_id: int, doc_id: str, session: Session,
+                           user: CurrentUser) -> dict:
+    """How to show one attached document as it looks. A PDF, Word file or deck: its page sizes and where each
+    finding of the version's latest review sits on them (pictures from the route below). A web page: its HTML
+    as text, for the browser's locked frame; it is never served as a page from here."""
+    _, raw = await _document(session, user, content_id, version_id, doc_id)
+    kind = sniff(raw)
+    if kind == "text/html":
+        return {"kind": "html", "html": raw[:MAX_HTML_BYTES].decode("utf-8", "replace")}
+    pdf = await _pdf_of(raw, kind)
+    sizes, total = await _blocking(preview.page_sizes, pdf)
+    review = await session.scalar(select(Review).where(Review.version_id == version_id).order_by(Review.id.desc())
+                                  .limit(1))
+    wanted: list[tuple[int, str, int | None]] = []
+    if review is not None:
+        rows = (await session.scalars(select(Finding).where(
+            Finding.review_id == review.id, Finding.source.startswith(f"doc:{doc_id}:", autoescape=True)))).all()
+        # A slide and a PDF page are the same page in the picture; Word has no pages of its own, so anywhere.
+        paged = kind != DOCX
+        wanted = [(f.id, f.quote, (f.locator or {}).get("page") if paged else None) for f in rows if f.quote]
+    marks = await _blocking(preview.locate, pdf, wanted) if wanted else []
+    return {"kind": "pages", "pages": [{"width": w, "height": h} for w, h in sizes], "total_pages": total,
+            "marks": [{"finding_id": m.finding_id, "page": m.page, "box": list(m.box)} for m in marks]}
+
+
+@router.get("/contents/{content_id}/versions/{version_id}/documents/{doc_id}/pages/{number}")
+async def document_page(content_id: int, version_id: int, doc_id: str, number: int, session: Session,
+                        user: CurrentUser) -> Response:
+    """One page of an attached document as a picture."""
+    _, raw = await _document(session, user, content_id, version_id, doc_id)
+    pdf = await _pdf_of(raw, sniff(raw))
+    png = await _blocking(preview.render, pdf, number)
+    return Response(png, media_type="image/png",
+                    headers={"Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/contents/{content_id}/versions/{version_id}/images/{image_id}")

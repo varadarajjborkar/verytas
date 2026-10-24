@@ -7,6 +7,8 @@ import base64
 import io
 import zipfile
 
+import pytest
+
 from tests.media_fixtures import b64, text_image
 from tests.test_intake import xlsx
 from tests.test_media import _auth, _submit, world  # noqa: F401, the fixture
@@ -164,3 +166,129 @@ def test_slides_follow_the_deck_order_and_unread_parts_are_named():
     out = documents.extract_pptx(raw.getvalue())
     assert [(p.label, p.text) for p in out.pages] == [("slide 1", "First on screen"), ("slide 2", "Second on screen")]
     assert out.partial and any(n.startswith("charts in the file were not read") for n in out.notes)
+
+
+def test_a_pdf_page_is_previewed_as_a_picture_with_boxes_on_the_flagged_words(client, world):  # noqa: F811
+    from tests.media_fixtures import pdf
+
+    doc = pdf([{"text": ["Spring catalogue", "Our new tutor app is a game-changer"]}, {"text": ["Nothing here"]}])
+    made, review = _submit(client, world, body="See the catalogue", channel="linkedin",
+                           attachments={"documents": [{"id": "cat", "name": "catalogue.pdf", "data_base64": b64(doc)}]})
+    base = f"/contents/{made['content']['id']}/versions/{made['version']['id']}/documents/cat"
+    shown = client.get(f"{base}/preview", headers=_auth(world["reviewer"])).json()
+    assert shown["kind"] == "pages" and len(shown["pages"]) == 2
+    banned = next(f for f in review["findings"] if f["title"] == 'Avoid "game-changer"')
+    [mark] = [m for m in shown["marks"] if m["finding_id"] == banned["id"]]
+    x0, y0, x1, y1 = mark["box"]
+    assert mark["page"] == 1 and 0 < x0 < x1 <= shown["pages"][0]["width"] and 0 < y0 < y1
+    page = client.get(f"{base}/pages/1", headers=_auth(world["reviewer"]))
+    assert page.status_code == 200 and page.headers["content-type"] == "image/png"
+    assert client.get(f"{base}/pages/9", headers=_auth(world["reviewer"])).status_code == 422
+    assert client.get(base.replace("/cat", "/nope") + "/preview", headers=_auth(world["reviewer"])).status_code == 404
+
+
+def test_a_web_page_preview_comes_back_as_text_never_as_a_page(client, world):  # noqa: F811
+    made, _ = _submit(client, world, body="Landing page", channel="linkedin", attachments={
+        "documents": [{"id": "lp", "name": "landing.html", "data_base64": b64(web_page(text_image(["Hi"])))}]})
+    res = client.get(f"/contents/{made['content']['id']}/versions/{made['version']['id']}/documents/lp/preview",
+                     headers=_auth(world["reviewer"]))
+    assert res.headers["content-type"].startswith("application/json")
+    assert res.json()["kind"] == "html" and "<h1>Learn faster</h1>" in res.json()["html"]
+
+
+def test_a_file_sent_to_libreoffice_has_nothing_left_that_reaches_outside():
+    from verytas.media import preview
+    from verytas.media.files import MediaError
+
+    rels = ('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            "<Relationship Id='a' TargetMode='External' Target='http://x/a.png'/>"
+            '<Relationship Id="b" TargetMode = "&#69;xternal" Target="http://x/b.png"/>'
+            '<Relationship Id="c" Target="http://x/c.png" TargetMode="External"/>'
+            '<Relationship Id="d" Target="media/d.png"/></Relationships>')
+    body = ('<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p>'
+            '<w:r><w:instrText> INCLUDEPICTURE "http://x/e.png" \\d </w:instrText></w:r>'
+            '<w:fldSimple w:instr=" DDEAUTO cmd /c calc "/></w:p></w:body></w:document>')
+    raw = io.BytesIO()
+    with zipfile.ZipFile(raw, "w") as z:
+        z.writestr("word/_rels/document.xml.rels", rels)
+        z.writestr("word/document.xml", body)
+    clean = zipfile.ZipFile(io.BytesIO(preview._offline(raw.getvalue())))
+    text = clean.read("word/_rels/document.xml.rels").decode() + clean.read("word/document.xml").decode()
+    assert "http://x" not in text and "DDEAUTO" not in text and 'Target="media/d.png"' in text
+    # A small file that unzips to gigabytes is refused before anything is read.
+    bomb = io.BytesIO()
+    with zipfile.ZipFile(bomb, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("word/document.xml", b"\0" * (60 * 1024 * 1024))
+    with pytest.raises(MediaError):
+        preview._offline(bomb.getvalue())
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_boxes_land_on_the_words_of_a_cropped_or_turned_page(rotation):
+    import numpy as np
+    import pypdfium2 as pdfium
+    from PIL import Image
+
+    from tests.media_fixtures import pdf
+    from verytas.media import preview
+
+    doc = pdfium.PdfDocument(pdf([{"text": ["Plain opening line", "We guarantee results in 30 days"]}]))
+    page = doc[0]
+    left, bottom, right, top = page.get_mediabox()
+    page.set_cropbox(left + 20, bottom + 30, right - 10, top - 15)
+    page.set_rotation(rotation)
+    out = io.BytesIO()
+    doc.save(out)
+    data = out.getvalue()
+    [mark, *_] = preview.locate(data, [(1, "guarantee results", 1)])
+    picture = np.asarray(Image.open(io.BytesIO(preview.render(data, 1))).convert("L"))
+    w, h = preview.page_sizes(data)[0][0]
+    assert abs(picture.shape[1] - w) <= 1 and abs(picture.shape[0] - h) <= 1  # pdfium rounds its own way
+    x0, y0, x1, y1 = mark.box
+    assert 0 <= x0 < x1 <= w and 0 <= y0 < y1 <= h
+    assert picture[y0:y1, x0:x1].min() < 100  # dark ink inside the box: it sits on the words
+
+
+def test_a_broken_pdf_is_a_clear_refusal_not_a_crash(client, world):  # noqa: F811
+    made, _ = _submit(client, world, body="Broken file", channel="linkedin", attachments={
+        "documents": [{"id": "bad_doc", "name": "bad.pdf", "data_base64": b64(b"%PDF-1.4\n" + b"junk" * 50)}]})
+    base = f"/contents/{made['content']['id']}/versions/{made['version']['id']}/documents"
+    res = client.get(f"{base}/bad_doc/preview", headers=_auth(world["reviewer"]))
+    assert res.status_code == 422 and "not a readable PDF" in res.json()["detail"]
+
+
+def test_split_field_codes_odd_paths_and_imported_chunks_are_cut_too():
+    from verytas.media import preview
+    from verytas.media.files import MediaError
+
+    w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    split = (f'<w:document xmlns:w="{w}"><w:body><w:p>'
+             '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+             '<w:r><w:instrText>INCLUDEPIC</w:instrText></w:r><w:r><w:instrText>TURE "http://x/a.png"</w:instrText></w:r>'
+             '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>shown</w:t></w:r>'
+             '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+             '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r>'
+             '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>')
+    rels = ('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="a" Target="file:///srv/verytas/etc/api.env"/>'
+            '<Relationship Id="b" Target="media/ok.png"/></Relationships>')
+    raw = io.BytesIO()
+    with zipfile.ZipFile(raw, "w") as z:
+        z.writestr("main/document.xml", split)  # not under word/
+        z.writestr("main/_rels/document.xml.rels", rels)
+        z.writestr("main/chunk.html", "<p>imported</p>")
+        z.writestr("main/embeddings/oleObject1.bin", b"\xd0\xcf\x11\xe0")
+    clean = zipfile.ZipFile(io.BytesIO(preview._offline(raw.getvalue())))
+    doc = clean.read("main/document.xml").decode()
+    assert "INCLUDEPIC" not in doc and "TURE" not in doc and "PAGE" in doc and "shown" in doc
+    assert "file:///" not in clean.read("main/_rels/document.xml.rels").decode()
+    assert "main/chunk.html" not in clean.namelist() and not any("embeddings" in n for n in clean.namelist())
+    # A damaged entry is a refusal, not a crash.
+    bad = io.BytesIO()
+    with zipfile.ZipFile(bad, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("word/document.xml", b"<w:document/>" * 50)
+    data = bytearray(bad.getvalue())
+    start = data.index(b"word/document.xml") + len(b"word/document.xml")
+    data[start:start + 20] = b"\xff" * 20
+    with pytest.raises(MediaError):
+        preview._offline(bytes(data))

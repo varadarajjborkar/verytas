@@ -261,6 +261,12 @@ class ContentVersion(Base):
                  "media_type": i.get("media_type") or "image/png"}
                 for i in (self.attachments or {}).get("images", []) if isinstance(i, dict) and i.get("id")]
 
+    @property
+    def documents(self) -> list[dict[str, Any]]:
+        """The attached documents by id, name and type, so a review can title each one; never the bytes."""
+        return [{"id": d["id"], "name": d.get("name"), "media_type": d.get("media_type") or "application/pdf"}
+                for d in (self.attachments or {}).get("documents", []) if isinstance(d, dict) and d.get("id")]
+
 
 class Review(Base):
     __tablename__ = "reviews"

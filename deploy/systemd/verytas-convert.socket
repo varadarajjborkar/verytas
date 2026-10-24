@@ -1,0 +1,15 @@
+# Word and PowerPoint to PDF for page previews (deploy/convert.py). Only the API's user may connect.
+[Unit]
+Description=Verytas document conversion socket
+
+[Socket]
+ListenStream=/run/verytas-convert.sock
+SocketUser=verytas
+SocketGroup=verytas
+SocketMode=0600
+Accept=yes
+# One conversion at a time: LibreOffice is heavy and the box has two cores.
+MaxConnections=1
+
+[Install]
+WantedBy=sockets.target

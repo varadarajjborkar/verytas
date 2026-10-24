@@ -19,6 +19,7 @@ import { Details, Meter, tabKeys } from "../ui";
 import { Activity } from "./Activity";
 import { AgentTree, Sources } from "./AgentTree";
 import { Attachments } from "./Attachments";
+import { DocumentPages } from "./DocumentPages";
 import { Checklist, emptyRow, rowCall, type RowState, sortFindings } from "./Checklist";
 import { callOf, type DecideFn } from "./DecisionControls";
 import { AiEditBox, CoverageTag, findingKey, HighlightedBody } from "./parts";
@@ -239,7 +240,8 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
     setWalking(true);
     setActive(target);
   }, [active, open, walking, nextOpen]);
-  const pick = (id: number | null) => { setWalking(false); setActive(id); };
+  // Stable, so the document pages' memoised parts re-render only when their own issue is picked.
+  const pick = useCallback((id: number | null) => { setWalking(false); setActive(id); }, []);
   // Read at the end of a save round trip, after the person may have stopped walking or opened another row.
   const walkingNow = useRef(walking);
   useEffect(() => { walkingNow.current = walking; }, [walking]);
@@ -499,7 +501,11 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
             )}
             </div>
             {latest && !editing && docView === "text" && (
-              <Attachments contentId={contentId} version={latest} findings={findings} active={active} onSelect={pick} />
+              <>
+                <Attachments contentId={contentId} version={latest} findings={findings} active={active} onSelect={pick} />
+                {coverage?.sources && <DocumentPages key={latest.id} contentId={contentId} version={latest} sources={coverage.sources}
+                  findings={findings} active={active} onSelect={pick} kept={kept} />}
+              </>
             )}
           </article>
           {route && <JourneyMap journey={route} status={status} />}

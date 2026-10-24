@@ -15,6 +15,9 @@ const ALLOWED: [string, RegExp][] = [
   ["GET", /^reviews\/\d+$/],
   ["GET", /^contents\/\d+$/],
   ["GET", /^contents\/\d+\/versions\/\d+\/images\/[A-Za-z0-9_-]{1,40}$/],
+  // A document's page pictures and where its findings sit on them (built on request).
+  ["GET", /^contents\/\d+\/versions\/\d+\/documents\/[A-Za-z0-9_-]{1,40}\/preview$/],
+  ["GET", /^contents\/\d+\/versions\/\d+\/documents\/[A-Za-z0-9_-]{1,40}\/pages\/\d{1,3}$/],
   ["POST", /^contents\/\d+\/resubmit$/],
   ["POST", /^contents\/\d+\/ai-edit$/],
   ["GET", /^contents\/\d+\/disputes$/],

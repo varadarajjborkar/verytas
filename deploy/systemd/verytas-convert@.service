@@ -1,0 +1,33 @@
+# One conversion per connection, as a throwaway user, with no network and no view of the app: LibreOffice
+# reads untrusted files, so it gets nothing worth reaching (secrets, the database) and no way out.
+[Unit]
+Description=Verytas document conversion (one file)
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/lib/verytas/convert.py
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+DynamicUser=yes
+PrivateNetwork=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+InaccessiblePaths=/srv/verytas /etc/ssh /root
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+NoNewPrivileges=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+MemoryMax=1500M
+TasksMax=64
+CPUQuota=150%
+RuntimeMaxSec=120
