@@ -339,3 +339,35 @@ def test_built_in_checks_apply_to_public_content(client, world):
     categories = {f["category"] for f in review["findings"]}
     assert {"confidentiality", "accessibility"} <= categories
     assert "confidentiality" not in review["coverage"]["not_configured"]
+
+
+def test_a_review_cut_off_by_a_restart_runs_again(settings, tmp_path):
+    import sqlite3
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from verytas.main import create_app
+
+    with TestClient(create_app(settings)) as c:
+        admin = c.post("/bootstrap", json={"workspace_name": "Acme", "admin_email": "a@acme.io",
+                                           "admin_name": "Ada"}).json()["token"]
+        res = c.post("/contents?wait=true", headers=_auth(admin),
+                     json={"title": "Post", "channel": "linkedin", "body": "We ship on Monday."})
+        version_id = c.get(f"/reviews/{res.json()['review_id']}", headers=_auth(admin)).json()["version_id"]
+
+    # What a deploy mid-review leaves behind: a review marked running, with no process working on it.
+    db = sqlite3.connect(settings.database_url.split("///", 1)[1])
+    cur = db.execute("insert into reviews (version_id, status, summary, coverage, started_at) "
+                     "values (?, 'running', '{}', '{}', '2026-10-25 00:00:00')", (version_id,))
+    stuck = cur.lastrowid
+    db.commit()
+    db.close()
+
+    with TestClient(create_app(settings)) as c:
+        for _ in range(100):
+            status = c.get(f"/reviews/{stuck}", headers=_auth(admin)).json()["status"]
+            if status == "done":
+                break
+            time.sleep(0.1)
+        assert status == "done"

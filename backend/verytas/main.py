@@ -64,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await backfill_system_rule_tiers(session)
             await backfill_system_rules(session)
         await intake_pipeline.recover(db.sessionmaker)
+        await prism.recover()
         sweep = asyncio.create_task(storage.sweep_forever(db.sessionmaker, settings.orphan_upload_ttl_h))
         try:
             yield

@@ -24,7 +24,7 @@ from typing import Any
 
 import cv2
 from PIL import Image
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -186,6 +186,23 @@ class Prism:
         task = asyncio.create_task(self.run(review_id))
         self._background.add(task)
         task.add_done_callback(self._background.discard)
+
+    async def recover(self) -> int:
+        """After a restart nothing is running: a review cut off part-way, or still waiting for a slot, is run
+        again from the start. Its findings are written only in the transaction that finishes it, so an
+        interrupted one has none to duplicate."""
+        async with self.sessionmaker() as session:
+            stuck = (await session.scalars(select(Review.id).where(
+                Review.status.in_((ReviewStatus.queued, ReviewStatus.running))))).all()
+            if stuck:
+                await session.execute(update(Review).where(Review.id.in_(stuck)).values(
+                    status=ReviewStatus.queued, started_at=None))
+                await session.commit()
+        for review_id in stuck:
+            self.schedule(review_id)
+        if stuck:
+            log.info("re-running %d review(s) interrupted by a restart", len(stuck))
+        return len(stuck)
 
     async def drain(self) -> None:
         if self._background:
