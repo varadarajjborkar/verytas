@@ -5,6 +5,7 @@ import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { SideNav } from "@/components/SideNav";
 import { TopBar } from "@/components/TopBar";
+import { Tour } from "@/components/Tour";
 import { APP, APP_NAME } from "@/lib/app";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               </main>
             </div>
           </div>
+          <Tour />
         </Providers>
       </body>
     </html>

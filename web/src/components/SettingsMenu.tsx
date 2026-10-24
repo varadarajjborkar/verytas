@@ -7,6 +7,7 @@ import { useStored, writeStored } from "@/lib/stored";
 import { CloseIcon, SettingsIcon } from "./Icons";
 import { type ThemeChoice, useTheme } from "./Providers";
 import { useToast } from "./Toaster";
+import { START_TOUR } from "./Tour";
 import { useViewer } from "./Viewer";
 
 type Me = { id: number; email: string; name: string; role: string; clearance: string };
@@ -61,7 +62,7 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
   return (
     <>
       <button ref={button} type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open}
-        aria-label="Settings"
+        aria-label="Settings" data-tour="settings"
         className={compact
           ? "grid h-10 w-10 place-items-center rounded-xl text-muted transition hover:bg-sunken hover:text-ink"
           : "group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-muted transition hover:bg-sunken hover:text-ink"}>
@@ -269,6 +270,14 @@ function SettingsDialog({ onClose, first }: { onClose: () => void; first: Tab })
                   </div>
                 </div>
               )}
+              {me && <div className="rounded-xl border border-line p-3">
+                <p className="text-sm font-medium">Guided tour</p>
+                <p className="mt-0.5 text-xs text-muted">A short walk through each part of Verytas and what it is for.</p>
+                <button type="button" className="vt-btn vt-btn-quiet mt-3"
+                  onClick={() => { onClose(); window.dispatchEvent(new Event(START_TOUR)); }}>
+                  Show the tour again
+                </button>
+              </div>}
               {me && signin && (
                 <button type="button" onClick={signOut} className="vt-btn vt-btn-quiet self-start">{demo ? "Switch account" : "Sign out"}</button>
               )}

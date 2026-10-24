@@ -84,7 +84,7 @@ export function SideNav() {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
             return (
               <li key={href}>
-                <Link href={href} aria-current={active ? "page" : undefined} title={collapsed ? label : undefined}
+                <Link href={href} data-tour={href} aria-current={active ? "page" : undefined} title={collapsed ? label : undefined}
                   className={`relative flex items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm transition-colors ${
                     collapsed ? "md:justify-center md:px-0 md:py-2.5" : ""} ${
                     active ? "bg-accent/12 font-medium text-accent" : "text-muted hover:bg-sunken hover:text-ink"}`}>
