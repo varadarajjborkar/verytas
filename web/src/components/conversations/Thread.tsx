@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  ACCEPT, CALL_STARTERS, type ChatMessage, CONVERSATIONS_SEEN_EVENT, type ConversationRow, MAX_FILES,
+  ACCEPT, type ChatMessage, CONVERSATIONS_SEEN_EVENT, type ConversationRow, MAX_FILES,
   type SharedFile, acceptInki, deleteMessage, editMessage, fileUrl, listMessages, markRead, needsInkiConsent,
   newClientId, posterUrl, sendMessage, withdrawInki, inkiConsent,
 } from "@/lib/conversations-client";
@@ -166,11 +166,15 @@ export function Thread({ conv, me, side, subscribe, inki, initialPiece, onBack, 
           {msgs?.length === 0 && (
             <p className="mt-8 text-center text-sm text-muted">Nothing here yet. Say hello to {conv.other.name.split(" ")[0]}.</p>
           )}
-          <ol className="mt-3 divide-y divide-line">
-            {msgs?.map((m) => (
-              <Row key={m.id} m={m} me={me} side={side} conversationId={conv.id} onJump={jump} onView={setViewing}
-                onReply={() => { setEditing(null); setReplyTo(m); }} onEdit={() => { setReplyTo(null); setEditing(m); }}
-                onDelete={() => remove(m)} />
+          <ol className="mt-4 flex flex-col gap-3">
+            {msgs?.map((m, i) => (
+              <Fragment key={m.id}>
+                {(i === 0 || new Date(msgs[i - 1].created_at).toDateString() !== new Date(m.created_at).toDateString())
+                  && <DayMark iso={m.created_at} />}
+                <Row m={m} me={me} side={side} conversationId={conv.id} onJump={jump} onView={setViewing}
+                  onReply={() => { setEditing(null); setReplyTo(m); }} onEdit={() => { setReplyTo(null); setEditing(m); }}
+                  onDelete={() => remove(m)} />
+              </Fragment>
             ))}
           </ol>
           {inki === "failed" && (
@@ -204,52 +208,77 @@ function Row({ m, me, side, conversationId, onJump, onView, onReply, onEdit, onD
   const owner = mine || (inki && m.asked_by?.id === me.id);
   const when = new Date(m.created_at);
   const name = inki ? INKI : mine ? "You" : m.sender?.name ?? "Someone";
+  // Meeting links pasted into the words become a Join card under them; a call shared the older way keeps its own.
+  const calls = m.deleted ? [] : [...(m.call ? [m.call] : []), ...meetingLinks(m.text).filter((c) => c.url !== m.call?.url)];
+  const bubble = inki
+    ? "rounded-2xl rounded-tl-md border border-accent/25 bg-accent/[0.07]"
+    : mine ? "rounded-2xl rounded-br-md bg-accent text-accent-ink" : "rounded-2xl rounded-bl-md bg-sunken";
   return (
-    <li data-message={m.id} className={`group relative flex gap-3 py-4 transition-colors ${inki ? "-mx-3 rounded-xl bg-accent/[0.05] px-3" : ""}`}>
-      {inki ? <InkiIcon size={32} /> : <Avatar name={m.sender?.name ?? "?"} size={32} />}
-      <div className="min-w-0 flex-1">
-        <p className="flex flex-wrap items-baseline gap-x-2">
-          <span className="text-sm font-semibold">{name}</span>
-          {inki && m.asked_by && <span className="text-xs text-subtle">answering {m.asked_by.id === me.id ? "you" : m.asked_by.name}</span>}
-          <time dateTime={m.created_at} title={when.toLocaleString()} className="ml-auto text-[11px] text-subtle">
-            {when.toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-          </time>
-        </p>
-        {m.reply_to && (
-          <button type="button" onClick={() => onJump(m.reply_to!.id)}
-            className="mt-1 flex max-w-full items-start gap-2 rounded-md border-l-2 border-accent/40 bg-sunken px-2.5 py-1 text-left text-xs text-muted hover:text-ink">
-            <ReplyIcon size={12} className="mt-0.5 shrink-0 -scale-x-100" />
-            <span className="min-w-0"><span className="font-medium">{m.reply_to.sender}</span>{" "}
-              <span className="[overflow-wrap:anywhere]">{m.reply_to.deleted ? <em>deleted message</em> : m.reply_to.excerpt}</span></span>
-          </button>
+    // Yours on the right, theirs on the left, Inki on the left with its own mark: who said what at a glance.
+    <li data-message={m.id} className={`group flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}>
+      {!mine && (inki ? <InkiIcon size={28} className="mb-5" /> : <span className="mb-5"><Avatar name={m.sender?.name ?? "?"} size={28} /></span>)}
+      <div className={`flex min-w-0 max-w-[min(34rem,85%)] flex-col gap-1 ${mine ? "items-end" : "items-start"}`}>
+        {!mine && (
+          <span className="px-1 text-[11px] text-subtle">
+            <span className="font-medium text-muted">{name}</span>
+            {inki && m.asked_by && <> · answering {m.asked_by.id === me.id ? "you" : m.asked_by.name}</>}
+          </span>
         )}
-        {m.deleted ? (
-          <p className="mt-1 text-sm italic text-subtle">This message was deleted.</p>
-        ) : (
-          <>
-            {m.text && <p className="mt-1 whitespace-pre-wrap text-sm leading-6 [overflow-wrap:anywhere]"><Mentions text={m.text} /></p>}
-            {m.call && <CallCard call={m.call} who={mine ? "You" : name} />}
-            {m.files.length > 0 && <Files files={m.files} conversationId={conversationId} onView={onView} />}
-            <p className="mt-1.5 flex flex-wrap items-center gap-2">
-              {m.piece && (
-                <Link href={pieceHref(side, m.piece.id)} className="inline-flex max-w-full items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[11px] text-muted hover:text-accent">
-                  <span className="truncate">About: {m.piece.title}</span>
-                </Link>
-              )}
-              {m.edited && <span className="text-[11px] text-subtle">edited</span>}
-              {inki && <span className="text-[11px] text-subtle">AI-written. The brand team decides.</span>}
-            </p>
-          </>
-        )}
-      </div>
-      {!m.deleted && (
-        // Floats in on hover with a mouse; on a touch screen there is no hover, so it sits in the row instead.
-        <div className="absolute -top-3.5 right-1 z-10 flex gap-0.5 rounded-lg border border-line bg-raised p-0.5 opacity-0 shadow-sm transition-opacity focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:static [@media(hover:none)]:self-start [@media(hover:none)]:opacity-100 [@media(hover:none)]:shadow-none">
-          <IconButton label="Reply" onClick={onReply}><ReplyIcon size={14} /></IconButton>
-          {mine && !inki && <IconButton label="Edit" onClick={onEdit}><PencilIcon size={14} /></IconButton>}
-          {owner && <IconButton label="Delete for everyone" onClick={onDelete}><TrashIcon size={14} /></IconButton>}
+        <div className="relative flex max-w-full items-start gap-1">
+          <div className={`min-w-0 px-3.5 py-2 ${m.deleted ? "rounded-2xl border border-dashed border-line" : bubble}`}>
+            {m.reply_to && !m.deleted && (
+              <button type="button" onClick={() => onJump(m.reply_to!.id)}
+                className={`mb-1.5 flex w-full max-w-full items-start gap-1.5 rounded-lg border-l-2 px-2 py-1 text-left text-xs ${
+                  mine ? "border-white/60 bg-white/15 text-accent-ink/90" : "border-accent/50 bg-raised/70 text-muted hover:text-ink"}`}>
+                <span className="min-w-0"><span className="font-semibold">{m.reply_to.sender}</span>{" "}
+                  <span className="[overflow-wrap:anywhere]">{m.reply_to.deleted ? "deleted message" : m.reply_to.excerpt}</span></span>
+              </button>
+            )}
+            {m.deleted ? (
+              <p className="text-sm text-subtle">This message was deleted.</p>
+            ) : m.text ? (
+              <p className="whitespace-pre-wrap text-sm leading-6 [overflow-wrap:anywhere]"><RichText text={m.text} mine={mine} /></p>
+            ) : null}
+          </div>
+          {!m.deleted && (
+            // Beside the bubble on hover with a mouse; on a touch screen there is no hover, so it stays shown.
+            <div className={`absolute top-0 z-10 flex gap-0.5 rounded-lg border border-line bg-raised p-0.5 opacity-0 shadow-sm transition-opacity focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:static [@media(hover:none)]:opacity-100 [@media(hover:none)]:shadow-none ${
+              mine ? "right-full mr-1.5 [@media(hover:none)]:order-first [@media(hover:none)]:mr-0" : "left-full ml-1.5 [@media(hover:none)]:ml-0"}`}>
+              <IconButton label="Reply" onClick={onReply}><ReplyIcon size={14} /></IconButton>
+              {mine && !inki && <IconButton label="Edit" onClick={onEdit}><PencilIcon size={14} /></IconButton>}
+              {owner && <IconButton label="Delete for everyone" onClick={onDelete}><TrashIcon size={14} /></IconButton>}
+            </div>
+          )}
         </div>
-      )}
+        {calls.map((c) => <CallCard key={c.url} call={c} who={mine ? "You" : name} />)}
+        {!m.deleted && m.files.length > 0 && <Files files={m.files} conversationId={conversationId} onView={onView} />}
+        <span className={`flex flex-wrap items-center gap-x-2 gap-y-1 px-1 ${mine ? "justify-end" : ""}`}>
+          {m.piece && !m.deleted && (
+            <Link href={pieceHref(side, m.piece.id)} className="inline-flex max-w-full items-center rounded-full border border-line px-2 py-0.5 text-[11px] text-muted hover:text-accent">
+              <span className="truncate">About: {m.piece.title}</span>
+            </Link>
+          )}
+          <time dateTime={m.created_at} title={when.toLocaleString()} className="text-[11px] text-subtle">
+            {when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </time>
+          {m.edited && !m.deleted && <span className="text-[11px] text-subtle">edited</span>}
+          {inki && <span className="text-[11px] text-subtle">AI-written. The brand team decides.</span>}
+        </span>
+      </div>
+    </li>
+  );
+}
+
+/** A quiet marker where the day changes, so a long conversation reads in order. */
+function DayMark({ iso }: { iso: string }) {
+  const d = new Date(iso);
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(new Date()) - day(d)) / 86_400_000);
+  const label = diff === 0 ? "Today" : diff === 1 ? "Yesterday"
+    : d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short", year: diff > 300 ? "numeric" : undefined });
+  return (
+    <li aria-hidden className="flex justify-center py-1">
+      <span className="rounded-full bg-sunken px-2.5 py-0.5 text-[11px] text-subtle">{label}</span>
     </li>
   );
 }
@@ -261,15 +290,55 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
   );
 }
 
-function Mentions({ text }: { text: string }) {
-  const parts = text.split(/(@inki\b)/i);
-  return <>{parts.map((p, i) => /^@inki$/i.test(p)
-    ? <span key={i} className="rounded bg-accent/12 px-0.5 font-semibold text-accent">{p}</span> : p)}</>;
+// Meeting services whose links become a Join card, as the API's call links do (api/messages.py CALL_HOSTS).
+const MEETING_HOSTS: Record<string, string> = {
+  "meet.google.com": "Google Meet", "teams.microsoft.com": "Microsoft Teams", "teams.live.com": "Microsoft Teams",
+  "zoom.us": "Zoom", "join.skype.com": "Skype", "meet.jit.si": "Jitsi Meet", "whereby.com": "Whereby",
+};
+const LINK = /https:\/\/[^\s<>"'\\]+/g;
+
+function meetingProvider(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:" || u.username || u.password || u.port) return null;
+    const host = u.hostname.toLowerCase();
+    const known = Object.keys(MEETING_HOSTS).find((h) => host === h || host.endsWith(`.${h}`));
+    return known ? MEETING_HOSTS[known] : null;
+  } catch {
+    return null;
+  }
+}
+
+function meetingLinks(text: string): { url: string; provider: string }[] {
+  const out: { url: string; provider: string }[] = [];
+  for (const raw of text.match(LINK) ?? []) {
+    const url = raw.replace(/[).,;:!?]+$/, "");
+    const provider = meetingProvider(url);
+    if (provider && !out.some((c) => c.url === url)) out.push({ url, provider });
+  }
+  return out;
+}
+
+/** Words with @Inki marked and https links made clickable (opened in a new tab, telling the site nothing). */
+function RichText({ text, mine }: { text: string; mine: boolean }) {
+  const parts = text.split(/(https:\/\/[^\s<>"'\\]+|@inki\b)/i);
+  return <>{parts.map((p, i) => {
+    if (/^@inki$/i.test(p)) {
+      return <span key={i} className={`rounded px-0.5 font-semibold ${mine ? "bg-white/20" : "bg-accent/12 text-accent"}`}>{p}</span>;
+    }
+    if (/^https:\/\//i.test(p)) {
+      const url = p.replace(/[).,;:!?]+$/, "");
+      const tail = p.slice(url.length);
+      return <span key={i}><a href={url} target="_blank" rel="noopener noreferrer nofollow"
+        className="break-all underline underline-offset-2 hover:no-underline">{url}</a>{tail}</span>;
+    }
+    return p;
+  })}</>;
 }
 
 function CallCard({ call, who }: { call: { url: string; provider: string }; who: string }) {
   return (
-    <div className="mt-2 flex w-80 max-w-full items-center gap-3 rounded-xl border border-line bg-raised px-3.5 py-3">
+    <div className="flex w-80 max-w-full items-center gap-3 rounded-xl border border-line bg-raised px-3.5 py-3">
       <span aria-hidden className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent/12 text-accent"><VideoIcon size={16} /></span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium">{call.provider} call</span>
@@ -360,8 +429,6 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
   const [files, setFiles] = useState<Pending[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [calling, setCalling] = useState(false);
-  const [link, setLink] = useState("");
   const [consent, setConsent] = useState<null | { resend: () => Promise<void> }>(null);
   const [inkiOn, setInkiOn] = useState<boolean | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -466,10 +533,6 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
     if (await send({ text: t })) { setText(""); setDraft(""); }
   };
 
-  const shareCall = async () => {
-    const url = link.trim();
-    if (url && await send({ call_url: url })) { setLink(""); setCalling(false); }
-  };
 
   const ask = (q: string) => send({ text: `@${INKI} ${q}` }, true);
   const first = conv.other.name.split(" ")[0];
@@ -488,24 +551,6 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
           </div>
         )}
         {error && <p role="alert" className="mb-2 rounded-lg bg-[var(--vt-blocker-bg)] px-3 py-1.5 text-[13px] text-[var(--vt-blocker)]">{error}</p>}
-        {calling && (
-          <div className="mb-2 rounded-xl border border-line bg-raised p-3">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-[13px] font-medium">Share a call link</p>
-              <button type="button" onClick={() => setCalling(false)} aria-label="Close" className="grid h-6 w-6 place-items-center rounded text-muted hover:text-ink"><CloseIcon size={13} /></button>
-            </div>
-            <p className="mt-0.5 text-xs text-muted">Start a meeting where your company already meets, copy its link and paste it here.</p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {CALL_STARTERS.map((s) => <a key={s.name} href={s.start} target="_blank" rel="noopener noreferrer" className="vt-btn vt-btn-quiet h-8 text-xs">New {s.name}</a>)}
-            </div>
-            <form className="mt-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); void shareCall(); }}>
-              <label className="sr-only" htmlFor={`call-${conv.id}`}>Meeting link</label>
-              <input id={`call-${conv.id}`} value={link} onChange={(e) => setLink(e.target.value)} inputMode="url"
-                placeholder="https://meet.google.com/abc-defg-hij" className="vt-input min-w-0 flex-1 text-sm" />
-              <button type="submit" disabled={!link.trim() || sending} className="vt-btn vt-btn-primary text-sm">Share</button>
-            </form>
-          </div>
-        )}
         <div className="rounded-xl border border-line bg-raised focus-within:border-accent/50">
           {(replyTo || editing) && (
             <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-xs text-muted">
@@ -543,7 +588,7 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
               if (mention && (e.key === "Tab" || e.key === "Enter")) { e.preventDefault(); takeMention(); return; }
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void submit(); }
             }}
-            placeholder={editing ? "Edit your message" : `Reply to ${first}...  Mention @${INKI} to ask the assistant`}
+            placeholder={editing ? "Edit your message" : `Message ${first}. Mention @${INKI} to ask the assistant, or paste a Meet, Teams or Zoom link to talk.`}
             className="block max-h-48 min-h-[3.5rem] w-full resize-none bg-transparent px-3 py-2.5 text-sm outline-none [field-sizing:content]" />
           <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2">
             <span className="hidden items-center gap-1.5 px-1 text-[11px] text-subtle sm:flex">As {me.name}</span>
@@ -552,9 +597,6 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
                 <input ref={picker} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { attach(e.target.files); e.target.value = ""; }} />
                 <button type="button" onClick={() => picker.current?.click()} disabled={files.length >= MAX_FILES}
                   className="vt-btn vt-btn-quiet h-8 px-2 text-xs" title="Images, documents, videos up to 10 minutes"><PaperclipIcon size={14} /> Files</button>
-                <button type="button" onClick={() => setCalling((c) => !c)} aria-expanded={calling} className="vt-btn vt-btn-quiet h-8 px-2 text-xs">
-                  <VideoIcon size={14} /> Call
-                </button>
                 <label className="flex min-w-0 items-center gap-1 text-[11px] text-muted">
                   <span className="sr-only sm:not-sr-only">About</span>
                   <select value={piece ?? ""} onChange={(e) => setPiece(e.target.value ? Number(e.target.value) : null)}
