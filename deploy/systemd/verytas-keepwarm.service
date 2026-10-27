@@ -1,0 +1,25 @@
+[Unit]
+Description=Keep the vision worker awake in judging hours, inside a fixed budget
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=verytas
+WorkingDirectory=/srv/verytas/app/backend
+EnvironmentFile=/srv/verytas/etc/api.env
+Environment=HOME=/srv/verytas
+# 9 AM to 9 PM India time from 31 Oct, last day 13 Nov. About 8.25 USD at the c7g.large on-demand price
+# (0.0491 USD an hour in ap-south-1, Oct 2026); it stops waking the worker for good at 10 USD of warm time.
+Environment=KEEPWARM_START=2026-10-31
+Environment=KEEPWARM_END=2026-11-14
+Environment=KEEPWARM_OPENS=09:00
+Environment=KEEPWARM_CLOSES=21:00
+Environment=KEEPWARM_BUDGET_USD=10
+Environment=KEEPWARM_PRICE_USD_HR=0.0491
+Environment=KEEPWARM_LEDGER=/srv/verytas/data/keepwarm.json
+ExecStart=/srv/verytas/venv/bin/python -m verytas.vision.keepwarm
+ReadWritePaths=/srv/verytas/data
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

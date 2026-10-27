@@ -61,6 +61,7 @@ carry. They run on a second instance (c7g.large, same subnet) that is stopped mo
 | Worker | `verytas-vision.service`: `python -m verytas.vision.worker` on port 8100, as an unprivileged user that can write only its models, cache and state; it starts only after a successful update |
 | Waking | The API starts the instance through its own instance role (`verytas/vision/wake.py`) when a review needs it, and waits for `/health`, which answers only once the models are loaded |
 | Sleeping | `verytas-vision-idle.timer` stops the instance after 20 idle minutes, read from a file the worker touches on every request; never mid-install, and within an hour if the worker never comes up |
+| Judging hours | `verytas-keepwarm.timer` on the API server runs `verytas/vision/keepwarm.py` every five minutes. From 31 Oct to 13 Nov, 9 AM to 9 PM India time, it wakes the worker and touches `/keep-warm` so a judge never waits for a boot. Each tick with the worker up is added to `data/keepwarm.json`; at 10 USD of warm time (on-demand price) it stops for good, and after the end date it does nothing. Expected cost is about 8.25 USD. The dates, hours and cap are in the unit file |
 | Secrets | `/verytas/vision/token` and `/verytas/vision/deploy_key` in SSM Parameter Store. The API reads the same token from `VERYTAS_VISION_WORKER_TOKEN` in `api.env`, beside `VERYTAS_VISION_WORKER_URL` (the worker's private address) and `VERYTAS_VISION_WORKER_INSTANCE_ID` |
 | Network | Its security group admits port 8100 from the API server's group only; it has no public service |
 

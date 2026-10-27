@@ -1,0 +1,9 @@
+[Unit]
+Description=Every five minutes: keep the vision worker warm in judging hours (verytas-keepwarm.service)
+
+[Timer]
+OnCalendar=*:0/5
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

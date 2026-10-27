@@ -152,6 +152,12 @@ def create_app(models_dir: Path, token: str | None, state_dir: Path | None = Non
         touch()
         return {"scenes": scenes, "seconds": round(time.perf_counter() - t, 2)}
 
+    @app.post("/keep-warm")
+    def keep_warm() -> dict:
+        """Counts as use, so the idle stop waits (vision/keepwarm.py keeps the worker up in judging hours)."""
+        touch()
+        return {"status": "ok"}
+
     @app.post("/characters")
     async def characters(body: CharactersIn) -> dict:
         touch()  # at the start too: a long request is never mistaken for idleness
