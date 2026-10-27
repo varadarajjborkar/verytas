@@ -2,13 +2,15 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
-  type ChatMessage, type Contact, type ConversationRow, type LiveEvent, listContacts, listConversations,
-  openConversation,
+  type ChatMessage, type Contact, CONVERSATIONS_SEEN_EVENT, type ConversationRow, type LiveEvent, listContacts,
+  listConversations, openConversation,
 } from "@/lib/conversations-client";
 import { relativeTime, STATUS_LABEL } from "@/lib/review-client";
 import { ROLE_LABEL } from "@/lib/roles";
 import type { ContentStatus } from "@/lib/types";
+import { useModalFocus } from "../Drawer";
 import { ChatIcon, CloseIcon, PlusIcon, SearchIcon } from "../Icons";
 import { INKI, InkiIcon } from "../Inki";
 import { useViewer } from "../Viewer";
@@ -22,6 +24,7 @@ import { Thread } from "./Thread";
 export type Listener = (e: LiveEvent | { type: "resync" }) => void;
 type Tab = "all" | "unread" | "waiting";
 const THINKING_MS = 60_000;
+const FAILED_MS = 8_000;
 // Where each piece status sits in the chips, and its dot.
 const STATUS_ORDER: (ContentStatus | "none")[] = ["changes_requested", "in_review", "draft", "approved", "published",
   "withdrawn", "none"];
@@ -37,14 +40,17 @@ export function ConversationsView() {
   const params = useSearchParams();
   const router = useRouter();
   const [convs, setConvs] = useState<ConversationRow[] | null>(null);
-  const [active, setActive] = useState<number | null>(() => Number(params.get("c")) || null);
+  // The open conversation lives in the URL, so Back closes it on a phone and a link reopens it.
+  const active = Number(params.get("c")) || null;
   const [error, setError] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [tab, setTab] = useState<Tab>("all");
   const [status, setStatus] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  // Conversations where Inki was asked and hasn't answered yet; each clears itself if no answer comes.
-  const [thinking, setThinking] = useState<Record<number, boolean>>({});
+  // Conversations where Inki was asked and hasn't answered, or couldn't. Each state clears itself, on a
+  // timer per conversation, so an older ask can't clear a newer one.
+  const [thinking, setThinking] = useState<Record<number, "thinking" | "failed">>({});
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
   const [live, setLive] = useState<"connecting" | "live" | "retrying">("connecting");
   const listeners = useRef(new Set<Listener>());
   const activeRef = useRef<number | null>(active);
@@ -55,8 +61,7 @@ export function ConversationsView() {
     .catch((e: Error) => setError(e.message)), []);
 
   const choose = useCallback((id: number | null) => {
-    setActive(id);
-    router.replace(id ? `/conversations?c=${id}` : "/conversations", { scroll: false });
+    router.push(id ? `/conversations?c=${id}` : "/conversations", { scroll: false });
   }, [router]);
 
   // Deep links: ?with=<person> opens (or starts) that conversation, ?piece=<id> preselects what it is about,
@@ -65,7 +70,10 @@ export function ConversationsView() {
   useEffect(() => {
     const withId = Number(params.get("with")) || null;
     if (withId) {
-      openConversation(withId).then((row) => { setActive(row.id); load(); }).catch((e: Error) => setError(e.message));
+      openConversation(withId).then((row) => {
+        router.replace(`/conversations?c=${row.id}${piece ? `&piece=${piece}` : ""}`, { scroll: false });
+        load();
+      }).catch((e: Error) => setError(e.message));
     }
     load();
     // Read once on arrival; later choices update the URL themselves.
@@ -76,7 +84,8 @@ export function ConversationsView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, select, [contenteditable]");
-      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey) { e.preventDefault(); search.current?.focus(); }
+      const modal = document.querySelector("[data-vt-modal]");
+      if (e.key === "/" && !typing && !modal && !e.metaKey && !e.ctrlKey) { e.preventDefault(); search.current?.focus(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -87,27 +96,37 @@ export function ConversationsView() {
     let retry: ReturnType<typeof setTimeout> | undefined;
     let closed = false;
     const emit: Listener = (e) => listeners.current.forEach((l) => l(e));
-    const settle = (id: number) => setThinking((t) => { const next = { ...t }; delete next[id]; return next; });
+    const later = (id: number, ms: number) => {
+      clearTimeout(timers.current.get(id));
+      timers.current.set(id, setTimeout(() => {
+        timers.current.delete(id);
+        setThinking((t) => { const next = { ...t }; delete next[id]; return next; });
+      }, ms));
+    };
+    const settle = (id: number) => later(id, 0);
     const connect = () => {
       source = new EventSource("/api/v/conversations/stream");
-      source.addEventListener("ready", () => { setLive("live"); load(); emit({ type: "resync" }); });
+      // After a gap, anything Inki said meanwhile arrives with the reload, so no stale "reading" stays up.
+      source.addEventListener("ready", () => { setLive("live"); setThinking({}); load(); emit({ type: "resync" }); });
       source.onmessage = (ev) => {
         let e: LiveEvent;
         try { e = JSON.parse(ev.data); } catch { return; }
-        if (e.type === "inki" && e.state === "failed") settle(e.conversation_id);
-        if (e.type === "inki" && e.state === "thinking") {
+        if (e.type === "inki") {
           const id = e.conversation_id;
-          setThinking((t) => ({ ...t, [id]: true }));
-          setTimeout(() => settle(id), THINKING_MS);
+          setThinking((t) => ({ ...t, [id]: e.state }));
+          later(id, e.state === "failed" ? FAILED_MS : THINKING_MS);
         }
         if (e.type === "message") {
           const m = e.message;
           if (m.kind === "inki") settle(m.conversation_id);
           setConvs((list) => {
-            if (!list?.some((c) => c.id === m.conversation_id)) { load(); return list; }
-            return list.map((c) => c.id === m.conversation_id ? applyToRow(c, m, me?.id ?? null, activeRef.current) : c)
+            const row = list?.find((c) => c.id === m.conversation_id);
+            // A conversation new to this screen, or a piece whose status isn't known here: ask the server.
+            if (!row || (m.piece && row.topic?.id !== m.piece.id)) { load(); return list; }
+            return list!.map((c) => c.id === m.conversation_id ? applyToRow(c, m, me?.id ?? null, activeRef.current) : c)
               .sort((a, b) => b.last_message_at.localeCompare(a.last_message_at));
           });
+          window.dispatchEvent(new Event(CONVERSATIONS_SEEN_EVENT));
         }
         if (e.type === "read") setConvs((list) => list?.map((c) => c.id === e.conversation_id ? { ...c, unread: 0 } : c) ?? list);
         emit(e);
@@ -119,7 +138,8 @@ export function ConversationsView() {
       };
     };
     connect();
-    return () => { closed = true; clearTimeout(retry); source?.close(); };
+    const pending = timers.current;
+    return () => { closed = true; clearTimeout(retry); source?.close(); pending.forEach(clearTimeout); pending.clear(); };
   }, [load, me?.id]);
 
   const subscribe = useCallback((l: Listener) => {
@@ -158,10 +178,10 @@ export function ConversationsView() {
             <h1 className="flex items-baseline gap-2 text-xl font-semibold tracking-tight">
               Conversations <span className="text-sm font-normal tabular-nums text-subtle">{counts.all}</span>
             </h1>
-            <div role="tablist" aria-label="Show" className="flex rounded-lg border border-line bg-sunken p-0.5 text-[13px]">
+            <div role="group" aria-label="Show" className="flex rounded-lg border border-line bg-sunken p-0.5 text-[13px]">
               {([["all", "All", counts.all], ["unread", "Unread", counts.unread], ["waiting", "Needs reply", counts.waiting]] as const)
                 .map(([key, label, n]) => (
-                  <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
+                  <button key={key} type="button" aria-pressed={tab === key} onClick={() => setTab(key)}
                     className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition ${
                       tab === key ? "bg-raised font-medium text-ink shadow-sm" : "text-muted hover:text-ink"}`}>
                     {label}<span className="tabular-nums text-subtle">{n}</span>
@@ -186,7 +206,7 @@ export function ConversationsView() {
           </div>
           {(chips.length > 0 || counts.all > 0) && (
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex flex-wrap gap-1.5" aria-label="Filter by the piece's status">
+              <div role="group" className="flex flex-wrap gap-1.5" aria-label="Filter by the piece's status">
                 {chips.map(({ status: s, n }) => (
                   <button key={s} type="button" aria-pressed={status === s} onClick={() => setStatus(status === s ? null : s)}
                     className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition ${
@@ -219,10 +239,11 @@ export function ConversationsView() {
           <section aria-label="Conversation" className={`min-h-0 min-w-0 flex-1 flex-col ${active ? "flex" : "hidden md:flex"}`}>
             {current && me ? (
               <Thread key={current.id} conv={current} me={me} side={side} subscribe={subscribe} initialPiece={piece}
-                thinking={Boolean(thinking[current.id])} onBack={() => choose(null)}
+                inki={thinking[current.id] ?? null} onBack={() => choose(null)}
                 onRead={() => setConvs((list) => list?.map((c) => c.id === current.id ? { ...c, unread: 0 } : c) ?? list)} />
             ) : active && convs && !current ? (
-              <Empty title="That conversation isn't here" body="It may belong to someone else, or the link is old." />
+              <Empty title="That conversation isn't here" body="It may belong to someone else, or the link is old."
+                action={<button type="button" onClick={() => choose(null)} className="vt-btn vt-btn-quiet">Back to conversations</button>} />
             ) : auditor ? (
               <Empty title="Conversations are between creators and the brand team"
                 body="Auditors read the record: the audit log notes when a conversation starts and when a call link is shared." />
@@ -250,12 +271,13 @@ export function ConversationsView() {
 /** A live message applied to its row in the list: a new last message, or an edit or deletion of it. */
 function applyToRow(c: ConversationRow, m: ChatMessage, meId: number | null, activeId: number | null): ConversationRow {
   const isNew = !c.last || m.id > c.last.id;
-  if (!isNew) return c.last?.id === m.id ? { ...c, last: m } : c;
-  const mine = m.sender?.id === meId || (m.sender === null && m.asked_by?.id === meId);
+  // An edit or a deletion of the last message: its words change, and a deleted one waits on nobody.
+  if (!isNew) return c.last?.id === m.id ? { ...c, last: m, needs_reply: m.deleted ? false : c.needs_reply } : c;
+  // Counted the way the server counts: anything not written by me, Inki's answers to me included.
+  const mine = m.sender !== null && m.sender.id === meId;
   const fromOther = m.sender?.id === c.other.id || (m.sender === null && m.asked_by?.id === c.other.id);
   return { ...c, last: m, last_message_at: m.created_at, needs_reply: fromOther,
-    unread: mine || activeId === c.id ? c.unread : c.unread + 1,
-    topic: m.piece && c.topic?.id !== m.piece.id ? { ...m.piece, status: c.topic?.status ?? "in_review" } : c.topic };
+    unread: mine || activeId === c.id ? c.unread : c.unread + 1 };
 }
 
 export function initials(name: string) {
@@ -335,12 +357,13 @@ function ConversationList({ convs, shown, active, onPick, meId, loading, filtere
   );
 }
 
-function Empty({ title, body }: { title: string; body: string }) {
+function Empty({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
       <InkiIcon size={44} />
       <p className="text-base font-semibold">{title}</p>
       <p className="max-w-md text-sm leading-6 text-muted">{body}</p>
+      {action}
     </div>
   );
 }
@@ -349,24 +372,22 @@ function PeoplePicker({ onClose, onPick }: { onClose: () => void; onPick: (p: Co
   const [people, setPeople] = useState<Contact[] | null>(null);
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  // Focus stays inside while it is open and goes back where it was after; Escape closes it.
+  useModalFocus(panel, onClose);
   useEffect(() => { listContacts().then(setPeople).catch((e: Error) => setError(e.message)); }, []);
-  useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", esc);
-    return () => window.removeEventListener("keydown", esc);
-  }, [onClose]);
   const shown = people?.filter((p) => p.name.toLowerCase().includes(q.trim().toLowerCase())) ?? [];
-  return (
+  return createPortal(
     <div data-vt-modal className="fixed inset-0 z-50 grid place-items-center p-4">
       <div aria-hidden onClick={onClose} className="vt-backdrop absolute inset-0 bg-[color-mix(in_srgb,var(--vt-bg)_45%,transparent)] backdrop-blur-[6px]" />
-      <div role="dialog" aria-modal="true" aria-label="New conversation"
+      <div ref={panel} role="dialog" aria-modal="true" aria-label="New conversation"
         className="vt-pop relative flex max-h-[min(32rem,calc(100dvh-2rem))] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-line bg-raised shadow-[var(--vt-shadow-pop)]">
         <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
           <h2 className="text-base font-semibold">New conversation</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-lg text-muted hover:bg-sunken hover:text-ink"><CloseIcon size={16} /></button>
         </div>
         <div className="px-4 pt-3">
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name" aria-label="Search people" className="vt-input w-full text-sm" />
+          <input data-autofocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name" aria-label="Search people" className="vt-input w-full text-sm" />
         </div>
         <ul className="min-h-0 flex-1 overflow-y-auto p-2">
           {error && <li role="alert" className="px-2 py-3 text-sm text-[var(--vt-blocker)]">{error}</li>}
@@ -387,6 +408,7 @@ function PeoplePicker({ onClose, onPick }: { onClose: () => void; onPick: (p: Co
           ))}
         </ul>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

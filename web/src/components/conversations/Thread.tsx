@@ -33,10 +33,11 @@ function size(bytes: number) {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function Thread({ conv, me, side, subscribe, thinking, initialPiece, onBack, onRead }: {
+export function Thread({ conv, me, side, subscribe, inki, initialPiece, onBack, onRead }: {
   conv: ConversationRow; me: Me; side: "creator" | "manager"; subscribe: (l: Listener) => () => void;
-  thinking: boolean; initialPiece: number | null; onBack: () => void; onRead: () => void;
+  inki: "thinking" | "failed" | null; initialPiece: number | null; onBack: () => void; onRead: () => void;
 }) {
+  const thinking = inki === "thinking";
   const [msgs, setMsgs] = useState<ChatMessage[] | null>(null);
   const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,21 +56,36 @@ export function Thread({ conv, me, side, subscribe, thinking, initialPiece, onBa
   }), []);
 
   useEffect(() => {
-    listMessages(conv.id).then((m) => { setMsgs(m); setMore(m.length >= PAGE); }).catch((e: Error) => setError(e.message));
-  }, [conv.id]);
+    // Merged, not replaced: a live message that lands while this loads must not be dropped.
+    listMessages(conv.id).then((m) => { merge(m); setMore(m.length >= PAGE); }).catch((e: Error) => setError(e.message));
+  }, [conv.id, merge]);
 
   const lastId = msgs?.at(-1)?.id ?? 0;
   useEffect(() => { lastRef.current = lastId; }, [lastId]);
   useEffect(() => subscribe((e) => {
     if (e.type === "message" && e.message.conversation_id === conv.id) merge([e.message]);
-    if (e.type === "resync") listMessages(conv.id, { after: lastRef.current }).then(merge).catch(() => {});
+    // After a gap: what is new since the last id, and the newest page again, which carries any edits and
+    // deletions made while the stream was down.
+    if (e.type === "resync") {
+      listMessages(conv.id, { after: lastRef.current }).then(merge).catch(() => {});
+      listMessages(conv.id).then(merge).catch(() => {});
+    }
   }), [conv.id, merge, subscribe]);
 
-  // Follow new messages while the reader is at the bottom; leave them be while they read further up.
+  // Follow new messages while the reader is at the bottom; leave them be while they read further up. Pictures
+  // and videos load after the text, so the content's growth is watched too.
+  const content = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = scroller.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [msgs, thinking]);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !content.current) return;
+    const watch = new ResizeObserver(() => { if (stick.current) el.scrollTop = el.scrollHeight; });
+    watch.observe(content.current);
+    return () => watch.disconnect();
+  }, []);
 
   // Seen once shown in a visible tab; the nav badge is told to look again.
   useEffect(() => {
@@ -89,7 +105,13 @@ export function Thread({ conv, me, side, subscribe, thinking, initialPiece, onBa
     if (!first) return;
     const el = scroller.current;
     const from = el ? el.scrollHeight - el.scrollTop : 0;
-    const older = await listMessages(conv.id, { before: first }).catch(() => []);
+    let older: ChatMessage[];
+    try {
+      older = await listMessages(conv.id, { before: first });
+    } catch (e) {
+      setError(`Earlier messages didn't load (${(e as Error).message}). Try again.`);
+      return;
+    }
     setMore(older.length >= PAGE);
     stick.current = false;
     merge(older);
@@ -133,7 +155,7 @@ export function Thread({ conv, me, side, subscribe, thinking, initialPiece, onBa
 
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto"
         onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
-        <div className="mx-auto w-full max-w-3xl px-4 py-5 md:px-8">
+        <div ref={content} className="mx-auto w-full max-w-3xl px-4 py-5 md:px-8">
           <h2 className="text-lg font-semibold leading-snug [overflow-wrap:anywhere]">{conv.topic?.title ?? `You and ${conv.other.name}`}</h2>
           <p className="mt-1 text-xs text-subtle">
             {conv.topic ? "The piece this conversation is about. Change it under the box." : "No piece linked yet: pick one under the box so you both, and Inki, know what you mean."}
@@ -151,6 +173,11 @@ export function Thread({ conv, me, side, subscribe, thinking, initialPiece, onBa
                 onDelete={() => remove(m)} />
             ))}
           </ol>
+          {inki === "failed" && (
+            <p className="flex items-center gap-2 py-3 text-[13px] text-muted" role="status">
+              <InkiIcon size={22} /> {INKI} couldn&apos;t answer this time. Ask again in a moment.
+            </p>
+          )}
           {thinking && (
             <p className="flex items-center gap-2 py-3 text-[13px] text-muted" aria-live="polite">
               <InkiIcon size={22} /> {INKI} is reading the conversation
@@ -216,7 +243,8 @@ function Row({ m, me, side, conversationId, onJump, onView, onReply, onEdit, onD
         )}
       </div>
       {!m.deleted && (
-        <div className="absolute -top-3.5 right-1 z-10 flex gap-0.5 rounded-lg border border-line bg-raised p-0.5 opacity-0 shadow-sm transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        // Floats in on hover with a mouse; on a touch screen there is no hover, so it sits in the row instead.
+        <div className="absolute -top-3.5 right-1 z-10 flex gap-0.5 rounded-lg border border-line bg-raised p-0.5 opacity-0 shadow-sm transition-opacity focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:static [@media(hover:none)]:self-start [@media(hover:none)]:opacity-100 [@media(hover:none)]:shadow-none">
           <IconButton label="Reply" onClick={onReply}><ReplyIcon size={14} /></IconButton>
           {mine && !inki && <IconButton label="Edit" onClick={onEdit}><PencilIcon size={14} /></IconButton>}
           {owner && <IconButton label="Delete for everyone" onClick={onDelete}><TrashIcon size={14} /></IconButton>}
@@ -338,8 +366,11 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
   const [inkiOn, setInkiOn] = useState<boolean | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
-  // One id per message being sent: a retry of the same message reuses it, so it is stored once.
-  const pending = useRef<string | null>(null);
+  // One id per message being sent: a retry of the same message reuses it, so it is stored once. It belongs
+  // to that exact message: change the words, files or reply and it is a new message with a new id.
+  const pending = useRef<{ id: string; of: string } | null>(null);
+  // What was being written when an edit started, given back when the edit ends.
+  const [draft, setDraft] = useState("");
 
   useEffect(() => {
     const creatorId = side === "creator" ? null : conv.other.id;
@@ -352,8 +383,9 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
   // Editing loads the words into the box; leaving edit mode empties it again.
   const [editingId, setEditingId] = useState<number | null>(null);
   if ((editing?.id ?? null) !== editingId) {
+    if (editingId === null) setDraft(text);  // starting an edit: keep the draft aside
     setEditingId(editing?.id ?? null);
-    setText(editing ? editing.text : "");
+    setText(editing ? editing.text : draft);
   }
   useEffect(() => { if (editing || replyTo) box.current?.focus(); }, [editing, replyTo]);
 
@@ -381,28 +413,31 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
     });
   };
 
-  const send = async (body: { text?: string; call_url?: string }): Promise<boolean> => {
+  const send = async (body: { text?: string; call_url?: string }, plain = false): Promise<boolean> => {
     if (sending) return false;
+    // A call link, or a ready question for Inki, goes on its own: no staged files, not as a reply.
+    const alone = plain || Boolean(body.call_url);
+    const ids = alone ? [] : files.filter((f) => f.state === "ready").map((f) => f.file!.id);
+    const message = { ...body, content_id: piece, files: ids, reply_to: alone ? null : replyTo?.id ?? null };
+    const of = JSON.stringify(message);
+    if (pending.current?.of !== of) pending.current = { id: newClientId(), of };
     setSending(true);
     setError(null);
-    pending.current ??= newClientId();
-    const ids = files.filter((f) => f.state === "ready").map((f) => f.file!.id);
-    const attempt = () => sendMessage(conv.id, { ...body, content_id: piece, client_id: pending.current!,
-      files: body.call_url ? [] : ids, reply_to: replyTo?.id ?? null });
+    const attempt = () => sendMessage(conv.id, { ...message, client_id: pending.current!.id });
     try {
       const m = await attempt();
       pending.current = null;
-      if (!body.call_url) setFiles([]);
+      if (!alone) setFiles([]);
       onSent(m);
       return true;
     } catch (e) {
       if (needsInkiConsent(e)) {
         // Asked once, before the first @Inki: agreeing sends the same message; declining sends nothing.
         setConsent({ resend: async () => {
-          await acceptInki();
+          await acceptInki();  // a failure is shown in the dialog, which stays open
           setInkiOn(true);
           setConsent(null);
-          if (await send(body)) setText("");
+          if (await send(body, plain) && !plain) setText("");
         } });
         return false;
       }
@@ -419,7 +454,7 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
     if (editing) {
       if (!t || t === editing.text) { onCancel(); return; }
       setSending(true);
-      try { onSent(await editMessage(conv.id, editing.id, t)); setText(""); }
+      try { onSent(await editMessage(conv.id, editing.id, t)); }
       catch (e) { setError((e as Error).message); }
       finally { setSending(false); }
       return;
@@ -427,7 +462,8 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
     const ready = files.some((f) => f.state === "ready");
     if (!t && !ready) return;
     if (files.some((f) => f.state === "uploading")) { setError("Wait for the files to finish uploading."); return; }
-    if (await send({ text: t })) setText("");
+    if (files.some((f) => f.state === "failed")) { setError("Some files didn't upload. Remove them, or attach them again."); return; }
+    if (await send({ text: t })) { setText(""); setDraft(""); }
   };
 
   const shareCall = async () => {
@@ -435,7 +471,7 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
     if (url && await send({ call_url: url })) { setLink(""); setCalling(false); }
   };
 
-  const ask = async (q: string) => { if (await send({ text: `@${INKI} ${q}` })) setText(""); };
+  const ask = (q: string) => send({ text: `@${INKI} ${q}` }, true);
   const first = conv.other.name.split(" ")[0];
   const canSend = editing ? text.trim().length > 0 : (text.trim().length > 0 || files.some((f) => f.state === "ready"));
 
@@ -489,10 +525,10 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
           {files.length > 0 && (
             <ul className="flex flex-wrap gap-1.5 border-b border-line px-3 py-2">
               {files.map((f) => (
-                <li key={f.key} className={`flex max-w-[14rem] items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${
+                <li key={f.key} className={`flex max-w-[20rem] items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${
                   f.state === "failed" ? "border-[var(--vt-blocker)] text-[var(--vt-blocker)]" : "border-line text-muted"}`} title={f.error}>
                   <span className="truncate">{f.name}</span>
-                  <span className="shrink-0 text-subtle">{f.state === "uploading" ? "uploading" : f.state === "failed" ? "failed" : ""}</span>
+                  <span className="shrink-0 truncate text-subtle">{f.state === "uploading" ? "uploading" : f.state === "failed" ? `failed: ${f.error ?? "try again"}` : ""}</span>
                   <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setFiles((all) => all.filter((p) => p.key !== f.key))}
                     className="shrink-0 hover:text-ink"><CloseIcon size={11} /></button>
                 </li>
@@ -553,6 +589,7 @@ function InkiConsent({ onAccept, onDecline }: { onAccept: () => Promise<void>; o
   const panel = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
   useModalFocus(panel, onDecline);
   return createPortal(
     <div data-vt-modal className="fixed inset-0 z-50 grid place-items-center p-4">
@@ -566,10 +603,16 @@ function InkiConsent({ onAccept, onDecline }: { onAccept: () => Promise<void>; o
           <li><span className="font-medium text-ink">Where it goes:</span> a hosted AI model, with confidential terms hidden first. The other person sees that you asked {INKI}.</li>
           <li>You can turn this off any time, under the message box.</li>
         </ul>
+        {failed && <p role="alert" className="mt-4 rounded-lg bg-[var(--vt-blocker-bg)] px-3 py-2 text-[13px] text-[var(--vt-blocker)]">{failed}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={onDecline} className="vt-btn vt-btn-quiet">Not now</button>
-          <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onAccept(); } finally { setBusy(false); } }}
-            className="vt-btn vt-btn-primary">Allow and send</button>
+          <button type="button" disabled={busy} className="vt-btn vt-btn-primary" onClick={async () => {
+            setBusy(true);
+            setFailed(null);
+            try { await onAccept(); }
+            catch (e) { setFailed(`That didn't save (${(e as Error).message}). Try again.`); }
+            finally { setBusy(false); }
+          }}>Allow and send</button>
         </div>
       </div>
     </div>,
