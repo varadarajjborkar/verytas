@@ -38,6 +38,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from verytas.media import shape
 from verytas.media.files import shrink
 
 GRID = 6
@@ -109,6 +110,8 @@ class PreparedAsset:
     # The artwork flipped left to right, matched only when the artwork itself isn't found, so symmetric
     # artwork (which the unflipped match finds first) is never called mirrored.
     mirror: PreparedAsset | None = None
+    # Present for compact flat artwork (an app icon): what the shape-first fallback needs (see shape.py).
+    outline: shape.ShapeModel | None = None
 
 
 @dataclass
@@ -131,6 +134,11 @@ class AssetMatch:
     shear_deg: float | None = None
     rotation_deg: float | None = None
     mirrored: bool = False
+    # Found by outline alone, because the grey keypoints did not match: the artwork is there in other
+    # colours (or a plain copy the keypoints missed). palette_swap lists (official, found) hex colours for
+    # each region that changed.
+    by_shape: bool = False
+    palette_swap: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def altered(self) -> bool:
@@ -214,7 +222,7 @@ def prepare(asset_id: int, img: Image.Image) -> PreparedAsset:
     mask = _artwork_mask(img.convert("RGBA") if img.mode != "RGBA" else img)
     rgb = np.asarray(_on_white(img))
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-    prepared = PreparedAsset(asset_id, rgb, gray, mask, *_features(rgb, mask))
+    prepared = PreparedAsset(asset_id, rgb, gray, mask, *_features(rgb, mask), outline=shape.build(rgb, mask))
     f_mask = np.ascontiguousarray(mask[:, ::-1])
     f_rgb = np.ascontiguousarray(rgb[:, ::-1])
     f_gray = np.ascontiguousarray(gray[:, ::-1])
@@ -240,6 +248,8 @@ class SceneFeatures:
     # Original pixels per working pixel: matching runs on a copy at most WORK_SIDE wide, and boxes are
     # reported back in the original's pixels, where OCR boxes and the layout already are.
     scale: float = 1.0
+    # Edge-direction fields for the shape fallback, built on first use and shared by every asset.
+    outline: shape.SceneShape | None = None
 
 
 def scene_features(scene_img: Image.Image) -> SceneFeatures:
@@ -296,7 +306,24 @@ def _best(asset: PreparedAsset, feats: SceneFeatures) -> AssetMatch:
             for cell in flipped.altered_cells:
                 cell["col"] = GRID - 1 - cell["col"]
             return flipped
-    return found
+    return found if found.found or asset.outline is None else _by_shape(asset, feats, found)
+
+
+def _by_shape(asset: PreparedAsset, feats: SceneFeatures, miss: AssetMatch) -> AssetMatch:
+    """Fallback for compact flat artwork the keypoints did not find: look for its outline instead, then let
+    the usual comparison judge the colours. A hue swap turns an icon's light regions dark and its dark regions
+    light, which is exactly what keypoints on grey cannot survive and edge directions can."""
+    if feats.outline is None:
+        feats.outline = shape.SceneShape(feats.rgb)
+    placed = shape.locate(asset.outline, asset.rgb, feats.outline)
+    if placed is None:
+        return miss
+    x, y, w, h = placed.box
+    ah, aw = asset.gray.shape
+    H = np.array([[w / aw, 0, x], [0, h / ah, y], [0, 0, 1.0]])
+    got = _from_homography(asset, feats.rgb, H, 0)
+    got.by_shape, got.palette_swap = True, placed.swapped
+    return got
 
 
 def _mirror_sure(m: AssetMatch) -> bool:

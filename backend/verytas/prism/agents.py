@@ -712,6 +712,12 @@ def _changed_areas(cells: list[dict]) -> str:
     return ", and ".join(parts) or "parts of it differ"
 
 
+def _palette_swap(swap: list[tuple[str, str]]) -> str:
+    """The recolouring in words: the shape is the official one, so what a reader needs is which colours moved."""
+    pairs = ", ".join(f"{old} is now {new}" for old, new in swap[:3])
+    return f" The outline matches, but the palette was swapped ({pairs})."
+
+
 def _official_boxes(run: ReviewRun, matches: list[asset_match.AssetMatch]) -> list[tuple[int, int, int, int]]:
     official = {a.id for a in run.assets if a.official}
     return [m.box for m in matches if m.found and m.box and m.asset_id in official]
@@ -825,9 +831,12 @@ def _judge_assets(run: ReviewRun, image_id: str, locator: dict[str, Any],
 
         if found and not exp and m.altered:
             extra = f" The vision model also notes: {'; '.join(v.changes[:3])}." if v and v.changes else ""
-            finding("VIS-ASSET-ALTERED", f"{asset.name} differs from the official artwork",
-                    f"Compared with {label}, {_changed_areas(m.altered_cells)} (marked on the image).{extra}",
-                    0.9, m.box)
+            recoloured = m.by_shape and m.palette_swap
+            finding("VIS-ASSET-ALTERED",
+                    f"{asset.name} is in changed colours" if recoloured
+                    else f"{asset.name} differs from the official artwork",
+                    f"Compared with {label}, {_changed_areas(m.altered_cells)} (marked on the image)."
+                    f"{_palette_swap(m.palette_swap) if recoloured else ''}{extra}", 0.9, m.box)
 
         elif found and not exp and v and v.present == "altered" and v.changes and v.confidence >= 0.7:
             finding("VIS-ASSET-ALTERED", f"{asset.name} may differ from the official artwork",
