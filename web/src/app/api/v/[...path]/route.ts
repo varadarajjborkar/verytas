@@ -38,6 +38,12 @@ const ALLOWED: [string, RegExp][] = [
   ["GET", /^chats\/\d+$/],
   ["PUT", /^chats\/\d+$/],
   ["DELETE", /^chats\/\d+$/],
+  // Conversations between a creator and the brand team; the API checks each one is the caller's.
+  ["GET", /^conversations$/],
+  ["POST", /^conversations$/],
+  ["GET", /^conversations\/(?:people|unread|stream)$/],
+  ["GET", /^conversations\/\d+\/messages$/],
+  ["POST", /^conversations\/\d+\/(?:messages|read)$/],
   // A piece's shared history, comments and the people named in it.
   ["GET", /^contents\/\d+\/timeline$/],
   ["GET", /^contents\/\d+\/comments$/],

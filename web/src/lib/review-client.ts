@@ -13,7 +13,7 @@ export class ApiError extends Error {
   }
 }
 
-async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api/v/${path}`, init);
   const text = await res.text();
   let json: unknown = null;
@@ -32,7 +32,7 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return json as T;
 }
 
-const json = (body: unknown): RequestInit => ({
+export const json = (body: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(body),
