@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer, field_validator, model_validator
 
@@ -299,6 +299,11 @@ class DocumentRefOut(BaseModel):
     media_type: str = "application/pdf"
 
 
+class VideoRefOut(BaseModel):
+    id: str
+    name: str | None = None
+
+
 class VersionOut(ORM):
     id: int
     version_no: int
@@ -307,6 +312,7 @@ class VersionOut(ORM):
     created_by: int
     created_at: datetime
     images: list[ImageRefOut] = []
+    videos: list[VideoRefOut] = []
     documents: list[DocumentRefOut] = []
 
 
@@ -440,6 +446,27 @@ class TransitionIn(BaseModel):
     override_blockers: bool = False
 
 
+_Unit = Annotated[float, Field(ge=0, le=1)]
+
+
+class Stroke(BaseModel):
+    """A pen line drawn over a picture: points as fractions of the frame, width as a fraction of its width."""
+    type: Literal["stroke"]
+    points: list[tuple[_Unit, _Unit]] = Field(min_length=1, max_length=1000)
+    width: float = Field(ge=0.001, le=0.05)
+
+
+class Label(BaseModel):
+    """Words written on the picture where they apply."""
+    type: Literal["text"]
+    x: _Unit
+    y: _Unit
+    text: str = Field(min_length=1, max_length=120)
+
+
+Mark = Annotated[Stroke | Label, Field(discriminator="type")]
+
+
 class CommentIn(BaseModel):
     body: str = Field(min_length=1, max_length=5000)
     version_id: int | None = None
@@ -452,15 +479,19 @@ class CommentIn(BaseModel):
     time_end: float | None = Field(default=None, ge=0, le=86_400)
     box: list[float] | None = Field(default=None, min_length=4, max_length=4,
                                     description="x0, y0, x1, y1 as fractions of the frame")
+    marks: list[Mark] | None = Field(default=None, max_length=60,
+                                     description="Strokes and labels drawn over the image or the paused frame")
 
     @model_validator(mode="after")
     def _pin(self) -> CommentIn:
-        if (self.time_start is not None or self.box is not None) and self.media_id is None:
+        if (self.time_start is not None or self.box is not None or self.marks) and self.media_id is None:
             raise ValueError("a moment or an area is pinned to a media_id")
         if self.media_id is not None and self.version_id is None:
             raise ValueError("a media_id belongs to a version_id")
         if self.time_end is not None and (self.time_start is None or self.time_end < self.time_start):
             raise ValueError("time_end needs a time_start before it")
+        if self.marks and sum(len(m.points) for m in self.marks if isinstance(m, Stroke)) > 4000:
+            raise ValueError("too much drawn in one comment; simplify the strokes")
         if self.box is not None:
             x0, y0, x1, y1 = self.box
             if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
@@ -480,6 +511,7 @@ class CommentOut(ORM):
     time_start: float | None = None
     time_end: float | None = None
     box: list[float] | None = None
+    marks: list[dict[str, Any]] | None = None
     created_at: datetime
 
 

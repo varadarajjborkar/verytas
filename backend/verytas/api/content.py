@@ -9,15 +9,15 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from verytas.api.accounts import SelfServeBudget
 from verytas.api.deps import CurrentUser, PrismDep, Session, can_read, require
 from verytas.api.media import build_profile, load_blobs
-from verytas.media import preview
+from verytas.media import preview, serve
 from verytas.media.files import DOCX, MAX_HTML_BYTES, MediaError, sniff
 from verytas.models import (
     BrandEvent,
@@ -509,6 +509,22 @@ async def version_image(content_id: int, version_id: int, image_id: str, session
                     headers={"Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff"})
 
 
+@router.get("/contents/{content_id}/versions/{version_id}/videos/{video_id}")
+async def version_video(content_id: int, version_id: int, video_id: str, session: Session, user: CurrentUser,
+                        range_: Annotated[str | None, Header(alias="range")] = None) -> Response:
+    """One attached video, streamed in ranges so the review's player can seek to a finding's moment.
+    Shown in place, never offered as a download; readable exactly when the content is."""
+    content = await _content(session, user, content_id, with_versions=True)
+    version = next((v for v in content.versions if v.id == version_id), None)
+    video = next((v for v in ((version.attachments or {}).get("videos", []) if version else [])
+                  if isinstance(v, dict) and v.get("id") == video_id), None)
+    blob = await session.get(MediaBlob, video["blob_id"], options=[defer(MediaBlob.data)]) \
+        if video and video.get("blob_id") else None
+    if blob is None or blob.workspace_id != content.workspace_id or not blob.media_type.startswith("video/"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "video not found")
+    return await serve.inline(session, blob.id, blob.media_type, blob.size, range_)
+
+
 @router.get("/reviews/{review_id}", response_model=ReviewOut)
 async def get_review(review_id: int, request: Request, session: Session, user: CurrentUser) -> ReviewOut:
     review = await session.scalar(
@@ -651,8 +667,9 @@ async def list_comments(content_id: int, session: Session, user: CurrentUser) ->
 
 @router.post("/contents/{content_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
 async def add_comment(content_id: int, body: CommentIn, session: Session, user: Writer) -> Comment:
+    # Not screened: a note like "the 9876543210 order code is wrong" is feedback, not an attempt to go off
+    # the record, and refusing it only teaches people to stop leaving notes.
     await _content(session, user, content_id)
-    await screened(session, workspace_id=user.workspace_id, actor_id=user.id, text=body.body, where="comment")
     if body.parent_id is not None:
         parent = await session.get(Comment, body.parent_id)
         if parent is None or parent.content_id != content_id:

@@ -42,7 +42,7 @@ from verytas.api.accounts import self_serve_budget
 from verytas.api.assistant import _detail
 from verytas.api.content import visible
 from verytas.api.deps import CurrentUser, Session, bearer, current_user
-from verytas.media import storage
+from verytas.media import serve, storage
 from verytas.media.files import MediaError
 from verytas.models import (
     Content,
@@ -82,10 +82,7 @@ INKI_READ_S = 120.0
 # A stream is closed and reopened by the browser now and then, so no proxy idles it out.
 STREAM_S = 50.0
 HEARTBEAT_S = 15.0
-# The most of a file one ranged read returns; a video player asks again for the rest.
-RANGE_CHUNK = 2 * 1024 * 1024
 _INKI = re.compile(r"(?<![\w@])@inki\b", re.IGNORECASE)
-_RANGE = re.compile(r"^bytes=(\d{0,15})-(\d{0,15})$")
 _LIMITS = RateLimit(per_hour=20)
 # Ids in paths and bodies stay inside a database integer; a bigger one is a 422, not an overflow.
 MAX_ID = 2**62
@@ -755,27 +752,7 @@ async def shared_file(conversation_id: Id, blob_id: str, session: Session, user:
     """The file itself, shown in the page rather than saved: inline, never cached, and in ranges so a video
     can be played and sought without sending all of it."""
     blob = await _shared_file(session, user, conversation_id, blob_id)
-    headers = {"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
-               "Content-Disposition": "inline", "Accept-Ranges": "bytes"}
-    # Opened on its own, a file can't run anything; a PDF is left to the browser's viewer, which a
-    # sandboxed response would stop from drawing it.
-    if blob.media_type != "application/pdf":
-        headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self'; media-src 'self'; sandbox"
-    size = blob.size
-    if range_ and (m := _RANGE.match(range_.strip())) and (m.group(1) or m.group(2)):
-        if m.group(1):
-            start = int(m.group(1))
-            end = min(int(m.group(2)) if m.group(2) else size - 1, size - 1, start + RANGE_CHUNK - 1)
-        else:  # the last N bytes
-            start, end = max(0, size - int(m.group(2))), size - 1
-        if start >= size or start > end:
-            return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
-        chunk = await session.scalar(select(func.substr(MediaBlob.data, start + 1, end - start + 1))
-                                     .where(MediaBlob.id == blob.id))
-        return Response(bytes(chunk or b""), status_code=206, media_type=blob.media_type,
-                        headers=headers | {"Content-Range": f"bytes {start}-{end}/{size}"})
-    data = await session.scalar(select(MediaBlob.data).where(MediaBlob.id == blob.id))
-    return Response(bytes(data or b""), media_type=blob.media_type, headers=headers)
+    return await serve.inline(session, blob.id, blob.media_type, blob.size, range_)
 
 
 @router.get("/conversations/{conversation_id}/files/{blob_id}/poster")

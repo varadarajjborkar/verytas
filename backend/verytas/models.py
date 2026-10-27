@@ -264,6 +264,12 @@ class ContentVersion(Base):
                 for i in (self.attachments or {}).get("images", []) if isinstance(i, dict) and i.get("id")]
 
     @property
+    def videos(self) -> list[dict[str, Any]]:
+        """The attached videos by id and name; the bytes are streamed in ranges by the version video route."""
+        return [{"id": v["id"], "name": v.get("name")}
+                for v in (self.attachments or {}).get("videos", []) if isinstance(v, dict) and v.get("id")]
+
+    @property
     def documents(self) -> list[dict[str, Any]]:
         """The attached documents by id, name and type, so a review can title each one; never the bytes."""
         return [{"id": d["id"], "name": d.get("name"), "media_type": d.get("media_type") or "application/pdf"}
@@ -411,6 +417,9 @@ class Comment(Base):
     time_start: Mapped[float | None] = mapped_column(Float)
     time_end: Mapped[float | None] = mapped_column(Float)
     box: Mapped[list[float] | None] = mapped_column(JSON)
+    # What a manager drew on the image or the paused frame: pen strokes and text labels, in the same
+    # fractions of the frame as `box` (schemas.Marks).
+    marks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

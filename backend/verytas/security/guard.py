@@ -4,17 +4,18 @@ Escalation messages, dispute claims, comments and creator notes are written
 by people with a stake in the outcome, and some of them reach a model. Before
 anything is stored or forwarded, it is screened here:
 
-  refused   an offer of money, gifts or favours for a decision; an attempt to
-            move the conversation off the record (personal phone numbers,
-            private email, "WhatsApp me"); instructions aimed at the AI.
-  flagged   accepted, but shown to the brand team with a marker: pressure or
-            threats, links, and contact details that are the company's own
-            public ones (looked up in the public-contacts register).
+  refused   an offer of money, gifts or favours for a decision; instructions
+            aimed at the AI. Both protect the decision itself.
+  flagged   accepted, but shown to the brand team with a marker: what may be
+            a personal phone number or email, "WhatsApp me", pressure or
+            threats, links, and the company's own public contact details
+            (looked up in the public-contacts register).
 
 The screen is deterministic and cheap, so it runs on every write and its
-verdict can be explained word for word. It errs on the side of refusing an
-off-the-record contact: a creator who needs a call can ask for one in plain
-words, and the brand team will reach out through the company's own channels.
+verdict can be explained word for word. Contact details are flagged, not
+refused: a ten-digit number is as often an order code or a price as a phone
+number, and refusing people for what they might mean makes them stop writing.
+The brand team sees the marker and decides.
 """
 
 from __future__ import annotations
@@ -217,22 +218,22 @@ def screen(text: str, contacts: list[ContactView] | None = None) -> GuardResult:
             label = f"names the company's public number ({hit.label or hit.value})"
             result.flagged.append(Flag("public_contact", label, text[start:end] or norm))
         else:
-            result.refused.append(Flag("contact_exchange", "it shares a phone number that is not one of the "
+            result.flagged.append(Flag("contact_exchange", "may share a phone number that is not one of the "
                                        "company's public numbers", text[start:end] or norm))
     # Numbers spelled out ("nine eight two zero...") are a common way around a digit filter.
     if len(_DIGIT_WORDS.findall(folded)) >= 7:
-        result.refused.append(Flag("contact_exchange", "it spells out a phone number", _clip(folded, 0, 40)))
+        result.flagged.append(Flag("contact_exchange", "may spell out a phone number", _clip(folded, 0, 40)))
     for _start, _end, addr in emails_in(text):
         hit = _public("email", addr, contacts)
         if hit:
             result.flagged.append(Flag("public_contact", f"names a company address ({hit.label or hit.value})", addr))
         elif _PERSONAL_MAIL.search(addr) or off_record:
-            result.refused.append(Flag("contact_exchange", "it shares a personal email address", addr))
+            result.flagged.append(Flag("contact_exchange", "shares a personal email address", addr))
         else:
             result.flagged.append(Flag("unlisted_contact", "names an email address that is not in the public register",
                                        addr))
-    if off_record is not None and not any(f.code == "contact_exchange" for f in result.refused):
-        result.refused.append(Flag("contact_exchange", "it asks to move the conversation off the record", off_record))
+    if off_record is not None and not any(f.code == "contact_exchange" for f in result.flagged):
+        result.flagged.append(Flag("contact_exchange", "asks to move the conversation off the record", off_record))
     if (q := first(_PRESSURE)) is not None:
         result.flagged.append(Flag("pressure", "uses pressure or threats", q))
     for m in _URL.finditer(text):

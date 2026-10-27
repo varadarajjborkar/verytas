@@ -51,3 +51,34 @@ def test_pins_must_point_at_something_real(client, world, monkeypatch):  # noqa:
     assert post(media_id="reel", time_start=1.0) == 422  # no version to pin to
     assert post(media_id="reel") == 422  # errcheck 246: a media id alone names no version
     assert post(version_id=vid, media_id="reel", time_start=3.0, time_end=1.0) == 422
+
+
+def test_a_manager_draws_on_the_picture_and_the_creator_sees_it(client, world, monkeypatch):  # noqa: F811
+    cid, vid = _piece(client, world, monkeypatch)
+    marks = [{"type": "stroke", "width": 0.006, "points": [[0.1, 0.1], [0.2, 0.15], [0.3, 0.2]]},
+             {"type": "text", "x": 0.35, "y": 0.2, "text": "Logo too close to the edge"}]
+    res = client.post(f"/contents/{cid}/comments", headers=_auth(world["reviewer"]), json={
+        "body": "See the marks", "version_id": vid, "media_id": "poster", "marks": marks})
+    assert res.status_code == 201, res.text
+    seen = client.get(f"/contents/{cid}/comments", headers=_auth(world["creator"])).json()
+    assert seen[-1]["marks"][1]["text"] == "Logo too close to the edge"
+    # Off the frame, unpinned, or too much drawing are refused.
+    bad = [{"type": "stroke", "width": 0.006, "points": [[1.5, 0.1]]}]
+    assert client.post(f"/contents/{cid}/comments", headers=_auth(world["reviewer"]), json={
+        "body": "x", "version_id": vid, "media_id": "poster", "marks": bad}).status_code == 422
+    assert client.post(f"/contents/{cid}/comments", headers=_auth(world["reviewer"]), json={
+        "body": "x", "marks": marks}).status_code == 422
+    huge = [{"type": "stroke", "width": 0.006, "points": [[0.5, 0.5]] * 1000}] * 5
+    assert client.post(f"/contents/{cid}/comments", headers=_auth(world["reviewer"]), json={
+        "body": "x", "version_id": vid, "media_id": "poster", "marks": huge}).status_code == 422
+
+
+def test_the_review_player_streams_the_video_in_ranges(client, world, monkeypatch):  # noqa: F811
+    cid, vid = _piece(client, world, monkeypatch)
+    detail = client.get(f"/contents/{cid}", headers=_auth(world["creator"])).json()
+    assert [v["id"] for v in detail["versions"][-1]["videos"]] == ["reel"]
+    url = f"/contents/{cid}/versions/{vid}/videos/reel"
+    part = client.get(url, headers=_auth(world["reviewer"]) | {"Range": "bytes=0-99"})
+    assert part.status_code == 206 and len(part.content) == 100 and part.headers["content-disposition"] == "inline"
+    image_as_video = client.get(f"/contents/{cid}/versions/{vid}/videos/poster", headers=_auth(world["reviewer"]))
+    assert image_as_video.status_code == 404
