@@ -57,7 +57,7 @@ const setting = (id: string, icon: IconKey, title: string, sub: string, run: Act
 const CREATOR_PAGES = [
   page("home", "My work", "Your pieces and what each needs next", "/", "home overview"),
   page("reviews", "My reviews", "A new post and every review so far", "/review", "history submit check"),
-  page("ask", "Ask Verytas", "Questions about the brand guidelines", "/ask", "chat assistant help"),
+  page("ask", "Ask Inki", "Questions about the brand guidelines", "/ask", "chat assistant help"),
   page("ai", "How AI is used", "Where models are involved and what they see", "/ai", "disclosure transparency privacy"),
 ];
 const MANAGER_PAGES = [
@@ -67,7 +67,7 @@ const MANAGER_PAGES = [
   page("creators", "Creators", "Everyone writing for the brand", "/creators", "people roster writers"),
   page("library", "Brand library", "Rules, facts, terms, events and artwork", "/library", "guidelines brand book"),
   page("health", "Guideline health", "Rules reviewers keep overriding", "/guidelines", "ambiguity unclear clarify"),
-  page("ask", "Ask Verytas", "Questions about the brand guidelines", "/ask", "chat assistant help"),
+  page("ask", "Ask Inki", "Questions about the brand guidelines", "/ask", "chat assistant help"),
   page("ai", "How AI is used", "Where models are involved and what they see", "/ai", "disclosure transparency privacy"),
 ];
 const LIBRARY_TABS = [
@@ -168,7 +168,7 @@ export function destination(href: string): string {
     case "/escalations": return "Escalations";
     case "/creators": return "Creators";
     case "/guidelines": return "Guideline health";
-    case "/ask": return "Ask Verytas";
+    case "/ask": return "Ask Inki";
     case "/ai": return "How AI is used";
     case "/library": {
       const tab = params.get("tab") ?? "rules";

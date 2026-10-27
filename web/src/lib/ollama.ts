@@ -1,6 +1,6 @@
 import "server-only";
 
-// Ollama Cloud for the routes that stream straight to the browser (Ask Verytas, Summarize). A second
+// Ollama Cloud for the routes that stream straight to the browser (Ask Inki, Summarize). A second
 // account's key, when set, takes over if the first is refused or out of quota, so a long day of development
 // can't leave the live demo without answers. The API side does the same (providers/ollama.py).
 const KEYS = [process.env.OLLAMA_API_KEY, process.env.OLLAMA_API_KEY_FALLBACK].filter((k): k is string => Boolean(k));

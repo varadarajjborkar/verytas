@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { AskVerytas } from "@/components/AskVerytas";
+import { AskInki } from "@/components/AskInki";
 
-export const metadata: Metadata = { title: "Ask Verytas" };
+export const metadata: Metadata = { title: "Ask Inki" };
 
 export default function Page() {
-  return <AskVerytas />;
+  return <AskInki />;
 }

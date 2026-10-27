@@ -314,7 +314,7 @@ flowchart LR
         direction TB
         PG["Server pages<br/>lib/backend.ts"]:::api
         PX["/api/v proxy<br/>allowlist, same-site, 150 MB cap"]:::api
-        CH["/api/chat<br/>Ask Verytas stream"]:::api
+        CH["/api/chat<br/>Ask Inki stream"]:::api
         SS["/api/session · /api/persona<br/>sign-in cookie · view as"]:::sec
     end
 
@@ -388,7 +388,7 @@ flowchart LR
 | Escalations | `POST /findings/{id}/escalations` · `GET /escalations?state=` · `POST /escalations/{id}/resolve` · `POST /escalations/{id}/withdraw` | raise: the piece's author or a reviewer · inbox: the brand team (creators see their own) · resolve: reviewer, approver; clearing a must-fix needs an approver |
 | Brand events | `GET/POST /events` · `PATCH /events/{id}` · `POST /events/{id}/cancel` · `GET /events/{id}/impacts` | read: anyone · write: brand admin; every write runs the update chain |
 | Public contacts | `GET/POST /public-contacts` · `DELETE /public-contacts/{id}` | read: anyone · write: brand admin |
-| Ask Verytas | `POST /assistant/context` (context plus the conversation, redacted with one set of placeholders) · `GET/POST/PUT/DELETE /chats` | anyone; confidential tier left out |
+| Ask Inki | `POST /assistant/context` (context plus the conversation, redacted with one set of placeholders) · `GET/POST/PUT/DELETE /chats` | anyone; confidential tier left out |
 
 Creators see only their own pieces on every content route; the brand team sees all of them within its clearance. Escalation messages, comments, disputes and resolution notes pass the guardrails (`security/guard.py`) before they are stored.
 

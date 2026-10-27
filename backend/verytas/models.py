@@ -553,7 +553,7 @@ class Dispute(Base):
 
 
 class ChatThread(Base):
-    """One Ask Verytas conversation, private to the person who had it.
+    """One Ask Inki conversation, private to the person who had it.
 
     Messages are stored as the client sent them ({role, content, images?});
     image attachments are small data URLs kept for a future vision model.

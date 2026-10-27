@@ -1,4 +1,4 @@
-"""What Ask Verytas may know when it answers one person's question.
+"""What Inki may know when it answers one person's question.
 
 The assistant runs on a hosted model, so everything here leaves Verytas.
 It is assembled on the server, where the rules for that live: confidential

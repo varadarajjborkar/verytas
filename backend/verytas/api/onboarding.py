@@ -155,7 +155,7 @@ async def _admin_steps(session, user: User, lib: dict[str, int]) -> list[Step]:
 
 
 def _ask(asked: bool, detail: str) -> Step:
-    return Step(key="ask", title="Ask Verytas", detail=detail, done=asked, href="/ask")
+    return Step(key="ask", title="Ask Inki", detail=detail, done=asked, href="/ask")
 
 
 async def _creator_steps(session, user: User, asked: bool) -> list[Step]:

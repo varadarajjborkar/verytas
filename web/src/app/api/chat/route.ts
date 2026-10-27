@@ -3,7 +3,7 @@ import { OPENUI_PROMPT } from "@/generated/openui-prompt";
 import { asksForInstructions, fixedAnswer, guardedStream, proseOf } from "@/lib/guard";
 import { ollamaConfigured, ollamaPost } from "@/lib/ollama";
 
-// "Ask Verytas": answers questions about the person's own content and the
+// Ask Inki: answers questions about the person's own content and the
 // workspace's governance data as OpenUI Lang (charts, tables, callouts). The
 // context comes from the API's /assistant/context, redacted there along with the
 // conversation (assistant turns arrive from the browser, so they are only as
@@ -71,7 +71,7 @@ async function governanceContext(messages: ChatMessage[]): Promise<{ data: strin
 
 const VERYTAS_RULES = `
 ## Your role
-You are Verytas, a brand-governance analyst. Answer questions about the person's own content (the
+You are Inki, the brand-governance analyst inside Verytas. Answer questions about the person's own content (the
 "content" list and "content_details": status, versions, review scores, open issues) and the workspace's
 reviews, rules and guideline health using ONLY the JSON in <governance_data>. "mine": true marks their
 own pieces. For progress questions, show how scores and blockers changed across versions. Verytas has no
@@ -94,7 +94,7 @@ const GUARDED = `${proseOf(OPENUI_PROMPT)}\n${VERYTAS_RULES}`;
 
 export async function POST(request: Request) {
   if (!ollamaConfigured) {
-    return Response.json({ error: "Ask Verytas needs OLLAMA_API_KEY on the server." }, { status: 503 });
+    return Response.json({ error: "Inki needs OLLAMA_API_KEY on the server." }, { status: 503 });
   }
   const messages = sanitize(await request.json().catch(() => null));
   if (messages.length === 0 || messages.at(-1)?.role !== "user") {
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
 
   const ctx = await governanceContext(messages);
   if (!ctx) {
-    return Response.json({ error: "Workspace data couldn't be loaded, so Ask Verytas can't answer right now." }, { status: 503 });
+    return Response.json({ error: "Workspace data couldn't be loaded, so Inki can't answer right now." }, { status: 503 });
   }
   const system = `${OPENUI_PROMPT}\n${VERYTAS_RULES}\n<governance_data>\n${ctx.data}\n</governance_data>`;
   const upstream = await ollamaPost(`${OLLAMA_URL}/v1/chat/completions`,

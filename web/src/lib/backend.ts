@@ -62,7 +62,7 @@ export async function getViewer(): Promise<Me | null> {
   }
 }
 
-/** What Ask Verytas may see for this person, plus their conversation redacted with the same
+/** What Inki may see for this person, plus their conversation redacted with the same
  * placeholders. Null when the API isn't reachable. */
 export async function getAssistantContext(messages: string[]): Promise<{ context: Record<string, unknown>; messages: string[] } | null> {
   if (!backendConfigured) return null;

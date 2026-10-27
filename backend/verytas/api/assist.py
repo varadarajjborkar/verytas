@@ -1,12 +1,12 @@
 """The dossier behind "Summarize": one piece, or one escalation, for a manager who has to decide on it.
 
-Like Ask Verytas, this leaves Verytas for a hosted model, so the same rules apply and are enforced here
+Like Ask Inki, this leaves Verytas for a hosted model, so the same rules apply and are enforced here
 rather than in the web app: the caller must be on the brand team's deciding side, anything above the
 caller's clearance is a 404 (as for every other route), confidential-tier material never leaves at all,
 and every string passes the workspace's redactor. Text is redacted before it is cut to length so a cut
 can't leave half a codename behind.
 
-The dossier is one item deep on purpose. Workspace analytics already belong to Ask Verytas; here the
+The dossier is one item deep on purpose. Workspace analytics already belong to Ask Inki; here the
 model should be able to answer only from what the manager is looking at.
 """
 
@@ -44,7 +44,7 @@ from verytas.security.redaction import Redactor
 router = APIRouter(prefix="/assist", tags=["assist"])
 
 # Reviewers and approvers decide on pieces; brand admins can do anything a listed role can (see `require`).
-# Creators have their own checklist and Ask Verytas, and auditors read the record rather than decide on it.
+# Creators have their own checklist and Ask Inki, and auditors read the record rather than decide on it.
 Manager = Annotated[User, Depends(require(Role.reviewer, Role.approver))]
 
 MAX_BODY = 6_000
@@ -269,7 +269,7 @@ def _escalation_out(redactor: Redactor, users: dict[int, User], x: Escalation,
 async def _readable_content(session: Session, user: User, content_id: int) -> Content:
     content = await _content(session, user, content_id)  # workspace, clearance and creator scoping, one 404
     if content.tier is Tier.confidential:
-        # The same line Ask Verytas draws: this text goes to a hosted model, so confidential pieces don't.
+        # The same line Ask Inki draws: this text goes to a hosted model, so confidential pieces don't.
         raise HTTPException(status.HTTP_404_NOT_FOUND, "content not found")
     return content
 

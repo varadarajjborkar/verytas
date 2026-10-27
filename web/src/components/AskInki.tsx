@@ -7,13 +7,13 @@ import { type ChatStore, imageToDataUrl, openChatStore, type StoredMessage, type
 import { usePersistedFlag } from "@/lib/persisted-flag";
 import { readStream } from "@/lib/sse";
 import { Drawer } from "./Drawer";
-import { Logo } from "./Logo";
-import { ArrowRightIcon, ArrowUpIcon, ChatIcon, CloseIcon, HistoryIcon, PanelIcon, PaperclipIcon, PlusIcon, SparkIcon, TrashIcon } from "./Icons";
+import { ArrowRightIcon, ArrowUpIcon, ChatIcon, CloseIcon, HistoryIcon, PanelIcon, PaperclipIcon, PlusIcon, TrashIcon } from "./Icons";
+import { InkiIcon } from "./Inki";
 import { useToast } from "./Toaster";
 import { useViewer } from "./Viewer";
 import { AiInfoButton } from "./AiInfo";
 
-// Ask Verytas, full page. The model answers in OpenUI Lang (charts, tables,
+// Ask Inki, full page. The model answers in OpenUI Lang (charts, tables,
 // callouts) streamed from /api/chat and drawn by OpenUI's renderer in the app's
 // own theme. Conversations are kept per person (lib/chat-store) and listed in a
 // rail, like any chat app. Images can be attached and are stored with the
@@ -66,7 +66,7 @@ function when(iso: string): string {
   return d.toLocaleDateString([], { day: "numeric", month: "short" });
 }
 
-export function AskVerytas() {
+export function AskInki() {
   const { side } = useViewer();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -131,7 +131,7 @@ export function AskVerytas() {
     setImages([]);
     if (box.current) box.current.style.height = "auto";
     setStreaming(true);
-    setStatus("Verytas is answering");
+    setStatus("Inki is answering");
     const write = (fn: (m: Message) => Message) => {
       answer = fn(answer);
       setMessages((all) => all.map((m) => (m.id === answerId ? answer : m)));
@@ -150,7 +150,7 @@ export function AskVerytas() {
       });
       if (!res.ok || !res.body) {
         const detail = await res.json().catch(() => null);
-        throw new Error(detail?.error ?? "Ask Verytas is unavailable right now.");
+        throw new Error(detail?.error ?? "Inki is unavailable right now.");
       }
       await readStream(res, (t) => write((m) => ({ ...m, content: m.content + t })));
       write((m) => (m.content ? m : { ...m, note: "No answer came back. Try asking another way." }));
@@ -295,7 +295,7 @@ export function AskVerytas() {
     // only the conversation does. (Phone: 181px above, 24px below. Desktop: 72px above, 36px below.)
     <div className="flex h-[calc(100dvh-205px)] min-h-[480px] flex-col md:h-[calc(100dvh-108px)]">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h1 className="text-[1.65rem] font-semibold leading-tight tracking-tight">Ask Verytas</h1>
+        <h1 className="flex items-center gap-2.5 text-[1.65rem] font-semibold leading-tight tracking-tight"><InkiIcon size={32} />Ask Inki</h1>
         <div className="flex items-center gap-2 md:hidden">
           <button type="button" onClick={() => setRailOpen(true)} className="vt-btn vt-btn-quiet"><HistoryIcon size={15} /> History</button>
           <button type="button" onClick={newChat} aria-label="New chat" className="vt-btn vt-btn-quiet px-2.5"><PlusIcon size={15} /></button>
@@ -325,7 +325,7 @@ export function AskVerytas() {
             {empty ? (
               <div className="vt-stagger mx-auto flex h-full max-w-2xl flex-col items-center justify-center px-6 py-10 text-center">
                 <h2 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-                  <SparkIcon size={20} className="text-accent" aria-hidden />What would you like to know?
+                  <InkiIcon size={34} />What would you like to know?
                 </h2>
                 <p className="mt-1.5 text-sm text-muted">Ask about your own content or the workspace. Answers come as charts and tables.</p>
                 <div className="mt-8 grid w-full gap-2.5 sm:grid-cols-2">
@@ -449,7 +449,7 @@ function ChatMessage({ message: m, streaming, onAction }: {
   const plain = !streaming && m.content && !parsed?.root;
   return (
     <div className="vt-pop flex gap-3">
-      <Logo size={26} className="mt-0.5 shrink-0" />
+      <InkiIcon size={28} className="mt-0.5" />
       <div className="min-w-0 flex-1 text-sm leading-6">
         {m.error ? (
           <p className="rounded-xl bg-[var(--vt-blocker-bg)] px-3 py-2 text-[var(--vt-blocker)]">{m.content}</p>

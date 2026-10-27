@@ -40,5 +40,5 @@ export const config = {
   // upload proxy: Next keeps only the first 10 MB of a body that passes
   // through here, and uploads go to 150 MB. app/api/v checks the session and
   // origin itself and streams the body under its own cap.
-  matcher: ["/((?!signin|api/session|api/v/|_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png).*)"],
+  matcher: ["/((?!signin|api/session|api/v/|_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|inki.png).*)"],
 };

@@ -6,7 +6,8 @@ import { usePersistedFlag } from "@/lib/persisted-flag";
 import { ROLE_LABEL } from "@/lib/roles";
 import { useEffect, useState } from "react";
 import { countEscalations } from "@/lib/review-client";
-import { BookIcon, DashboardIcon, GaugeIcon, HomeIcon, InboxIcon, PanelIcon, ReviewIcon, SparkIcon, UsersIcon } from "./Icons";
+import { BookIcon, DashboardIcon, GaugeIcon, HomeIcon, InboxIcon, PanelIcon, ReviewIcon, UsersIcon } from "./Icons";
+import { InkiIcon } from "./Inki";
 import { Logo } from "./Logo";
 import { NAME } from "./Wordmark";
 import { SettingsMenu } from "./SettingsMenu";
@@ -15,7 +16,7 @@ import { AiInfoButton } from "./AiInfo";
 
 type NavLink = { href: string; label: string; short?: string; Icon: typeof HomeIcon };
 const REVIEW: NavLink = { href: "/review", label: "Review", Icon: ReviewIcon };
-const ASK: NavLink = { href: "/ask", label: "Ask Verytas", short: "Ask", Icon: SparkIcon };
+const ASK: NavLink = { href: "/ask", label: "Ask Inki", short: "Inki", Icon: InkiIcon };
 // Each side sees only its own screens. Until the viewer is known, only the shared ones show,
 // so a creator never glimpses the brand team's links.
 const LINKS: Record<"creator" | "manager" | "loading", NavLink[]> = {

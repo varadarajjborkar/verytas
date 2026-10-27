@@ -1,4 +1,4 @@
-"""Review history and Ask Verytas threads: what a returning user sees."""
+"""Review history and Ask Inki threads: what a returning user sees."""
 
 from __future__ import annotations
 

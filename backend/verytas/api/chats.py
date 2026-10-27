@@ -1,4 +1,4 @@
-"""Ask Verytas conversation history, private to each person.
+"""Ask Inki conversation history, private to each person.
 
 The answers themselves come from the web app's model route; this only keeps
 the threads so a person can return to them from any browser. Threads are

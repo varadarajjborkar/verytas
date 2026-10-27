@@ -1,4 +1,4 @@
-// Where Ask Verytas conversations are kept: the person's account through the
+// Where Ask Inki conversations are kept: the person's account through the
 // API (/chats, private to them), or this browser when the console runs on demo
 // data with no API behind it.
 

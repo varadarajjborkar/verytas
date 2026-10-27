@@ -4,7 +4,7 @@ import { asksForInstructions, fixedAnswer, guardedStream } from "@/lib/guard";
 import { ollamaConfigured, ollamaPost } from "@/lib/ollama";
 
 // "Summarize" for the brand team: a short brief of one piece or escalation, and a chat about that one
-// item. Same safety model as Ask Verytas (api/chat): the dossier is built, tier-filtered and redacted by
+// item. Same safety model as Ask Inki (api/chat): the dossier is built, tier-filtered and redacted by
 // the API for this person (POST /assist/item-context, which is not on the browser proxy's allowlist, so
 // only this route can call it), and the conversation is redacted with it. The model is on Ollama Cloud.
 // The dossier itself never goes back to the browser; the page only gets the brief or the streamed answer.
