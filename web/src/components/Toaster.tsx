@@ -114,20 +114,20 @@ function ToastCard({ toast: t, onClose, onEnter, onLeave }: {
       onFocus={onEnter}
       onBlur={onLeave}
       title={t.detail ? `${t.title}: ${t.detail}` : t.title}
-      className={`vt-toast pointer-events-auto relative col-start-1 row-start-1 self-end w-[6.4rem] max-w-full overflow-hidden rounded-lg border border-line bg-surface/95 shadow-[0_6px_20px_rgba(0,0,0,0.12)] backdrop-blur ${t.leaving ? "vt-toast-out" : "vt-toast-in"}`}
+      className={`vt-toast pointer-events-auto relative col-start-1 row-start-1 self-end w-[min(28rem,calc(100vw-2rem))] overflow-hidden rounded-full border border-line bg-surface/95 shadow-[0_6px_20px_rgba(0,0,0,0.12)] backdrop-blur ${t.leaving ? "vt-toast-out" : "vt-toast-in"}`}
     >
-      <div className="flex h-[30px] items-center gap-1.5 pl-2 pr-0.5">
-        <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${s.dot}`} />
-        <p className="min-w-0 flex-1 truncate text-[11px] font-medium leading-4">
+      <div className="flex h-[54px] items-center gap-3 pl-5 pr-2">
+        <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
+        <p className="min-w-0 flex-1 truncate text-sm font-medium leading-5">
           <span className="sr-only">{s.label}: </span>{t.title}
           {t.detail && <span className="sr-only">. {t.detail}</span>}
         </p>
         <button type="button" onClick={onClose} aria-label="Dismiss notification"
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-sm leading-none text-muted transition hover:bg-bg hover:text-ink">
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg leading-none text-muted transition hover:bg-bg hover:text-ink">
           ×
         </button>
       </div>
-      <span aria-hidden className={`vt-toast-timer absolute inset-x-0 bottom-0 h-0.5 opacity-60 ${s.dot}`}
+      <span aria-hidden className={`vt-toast-timer absolute inset-x-8 bottom-1 h-0.5 rounded-full opacity-60 ${s.dot}`}
         style={{ animationDuration: `${t.duration}ms` }} />
     </div>
   );
