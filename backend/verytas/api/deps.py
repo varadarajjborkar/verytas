@@ -15,6 +15,8 @@ from verytas.models import Role, Tier, User, utcnow
 from verytas.prism.orchestrator import Prism
 
 _bearer = HTTPBearer(auto_error=False)
+# For a route that authenticates by hand rather than through CurrentUser (api/messages.py stream).
+bearer = _bearer
 
 
 def new_token() -> tuple[str, str]:

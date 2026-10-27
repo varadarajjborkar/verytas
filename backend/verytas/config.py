@@ -88,6 +88,15 @@ class Settings(BaseSettings):
 
     keys_dir: Path = Path(".keys")
 
+    # Conversations (services/messages.py). With Redis, new messages reach open screens through its
+    # pub/sub and the latest page of each conversation is served from its cache; without it, one API
+    # process delivers them itself and every read goes to the database. Either way the database is the
+    # record, so losing Redis loses nothing.
+    redis_url: str | None = None
+    # Prefix for every Redis key and channel, so deployments sharing one Redis stay apart.
+    redis_namespace: str = Field(default="verytas", pattern=r"^[a-z0-9_-]{1,40}$")
+    message_cache_size: int = Field(default=50, ge=0, le=500)
+
     environment: str = "development"
     cors_origins: list[str] = ["http://localhost:3000"]
     # Error monitoring is opt-in; nothing is sent unless a DSN is configured.

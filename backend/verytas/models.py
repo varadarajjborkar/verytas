@@ -725,3 +725,45 @@ class IntakeDraft(Base):
     decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Conversation(Base):
+    """A creator and one member of the brand team talking it through: one thread per pair, like a direct
+    message, with each message free to point at the piece it is about (services/messages.py).
+
+    Each side's read position is the id of the last message they have seen, so unread counts are one
+    comparison and a second device catches up from the same number."""
+
+    __tablename__ = "conversations"
+    __table_args__ = (UniqueConstraint("creator_id", "manager_id", name="one_conversation_per_pair"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    manager_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    creator_read_id: Mapped[int] = mapped_column(Integer, default=0)
+    manager_read_id: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_message_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class Message(Base):
+    """One message in a conversation. The text and any shared call link are sealed together (AES-GCM,
+    bound to the conversation) in `sealed`. The piece it points at stays a plain key, because who may
+    open that piece is checked against it.
+
+    sender_id is None for Inki; asked_by then names the person whose @Inki it answered. client_id makes
+    a resend after a dropped connection land once."""
+
+    __tablename__ = "messages"
+    __table_args__ = (UniqueConstraint("conversation_id", "client_id", name="message_sent_once"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id"), index=True)
+    sender_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    asked_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(String(12), default="text")  # text | call | inki
+    sealed: Mapped[str] = mapped_column(Text)
+    content_id: Mapped[int | None] = mapped_column(ForeignKey("contents.id"))
+    client_id: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

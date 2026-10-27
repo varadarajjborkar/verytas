@@ -21,6 +21,7 @@ from verytas.api import (
     intake,
     knowledge,
     media,
+    messages,
     onboarding,
     people,
     search,
@@ -30,6 +31,7 @@ from verytas.db import Database
 from verytas.intake import pipeline as intake_pipeline
 from verytas.media import storage
 from verytas.prism.orchestrator import Prism
+from verytas.services.messages import MessageHub, MessageSeal
 from verytas.services.workspace import backfill_system_rule_tiers, backfill_system_rules
 
 
@@ -56,6 +58,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     _init_sentry(settings)
     db = Database(settings.database_url)
     prism = Prism(settings, db.sessionmaker)
+    hub = MessageHub(settings.redis_url, settings.message_cache_size, settings.redis_namespace)
+    seal = MessageSeal(settings.keys_dir)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -66,6 +70,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await intake_pipeline.recover(db.sessionmaker)
         await prism.recover()
         sweep = asyncio.create_task(storage.sweep_forever(db.sessionmaker, settings.orphan_upload_ttl_h))
+        seal.ensure_key()
+        await hub.start()
         try:
             yield
         finally:
@@ -73,6 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             sweep.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await sweep
+            await hub.close()
         await prism.drain()
         await db.dispose()
 
@@ -85,6 +92,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.db = db
     app.state.prism = prism
+    app.state.messages = hub
+    app.state.message_seal = seal
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -99,7 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # media before content: /contents/precheck must not be read as a content id.
     routers = (admin, accounts, knowledge, people, media, intake, content, governance, insights, chats, assistant,
-               assist, search, onboarding)
+               assist, search, onboarding, messages)
     for module in routers:
         app.include_router(module.router)
     return app

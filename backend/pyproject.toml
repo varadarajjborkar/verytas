@@ -20,6 +20,7 @@ dependencies = [
     "pypdf>=5.0",
     "python-docx>=1.1",
     "sentry-sdk[fastapi]>=2.0",
+    "redis>=5.2",                   # conversations: live delivery and a recent-message cache, optional
     # Local media stack: nothing here calls out to a service.
     "pypdfium2>=5.0",               # PDF text layers, page renders, embedded images
     "rapidocr>=3.10",               # OCR (PP-OCR models on onnxruntime, CPU)
