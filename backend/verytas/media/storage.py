@@ -24,10 +24,10 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import String, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from verytas.models import Content, ContentVersion, IntakeItem, MediaBlob, utcnow
+from verytas.models import Content, ContentVersion, IntakeItem, MediaBlob, Message, MessageAttachment, utcnow
 
 log = logging.getLogger(__name__)
 _MB = 1024 * 1024
@@ -96,6 +96,9 @@ async def reclaim_orphans(session: AsyncSession, *, older_than: timedelta,
     # Material handed to Intake is kept while its item exists: an asset draft reads its picture from it.
     used |= set((await session.scalars(select(IntakeItem.blob_id).where(
         IntakeItem.workspace_id.in_(workspaces), IntakeItem.blob_id.is_not(None)))).all())
+    # Uploads carried by a message stay while the message does; deleting it releases them.
+    used |= set((await session.scalars(select(MessageAttachment.blob_id).join(
+        Message, Message.id == MessageAttachment.message_id).where(Message.deleted_at.is_(None)))).all())
     stale = [bid for bid, _ in candidates if bid not in used]
     for i in range(0, len(stale), 500):
         await session.execute(delete(MediaBlob).where(MediaBlob.id.in_(stale[i:i + 500])))
@@ -117,3 +120,28 @@ async def sweep_forever(sessionmaker: async_sessionmaker[AsyncSession], ttl_h: f
         except Exception:  # noqa: BLE001, a storage sweep must never take the API down
             log.exception("upload sweep failed")
         await asyncio.sleep(max(0.0, every_s - 60.0))
+
+
+async def release(session: AsyncSession, workspace_id: int, ids: set[str]) -> int:
+    """Deletes these uploads now if nothing else holds them: no content version, Intake item or live
+    message. For a message deleted for everyone, so its files don't wait a day for the sweep."""
+    if not ids:
+        return 0
+    held: set[str] = set()
+    # Only versions whose stored JSON mentions one of these ids can hold them; the rest aren't read.
+    mentions = or_(*(or_(cast(ContentVersion.attachments, String).contains(i),
+                         cast(ContentVersion.creator_notes, String).contains(i)) for i in ids))
+    rows = await session.stream(
+        select(ContentVersion.attachments, ContentVersion.creator_notes)
+        .join(Content, Content.id == ContentVersion.content_id)
+        .where(Content.workspace_id == workspace_id, mentions).execution_options(yield_per=100))
+    async for attachments, notes in rows:
+        held |= blob_ids(attachments, notes)
+    held |= set((await session.scalars(select(IntakeItem.blob_id).where(IntakeItem.blob_id.in_(ids)))).all())
+    held |= set((await session.scalars(select(MessageAttachment.blob_id).join(
+        Message, Message.id == MessageAttachment.message_id)
+        .where(MessageAttachment.blob_id.in_(ids), Message.deleted_at.is_(None)))).all())
+    gone = [i for i in ids if i not in held]
+    if gone:
+        await session.execute(delete(MediaBlob).where(MediaBlob.id.in_(gone), MediaBlob.workspace_id == workspace_id))
+    return len(gone)

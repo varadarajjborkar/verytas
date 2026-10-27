@@ -136,6 +136,8 @@ class User(Base):
     # When a password account's current token was issued (api/accounts.py); it lapses after
     # Settings.account_token_days. None for token-only accounts.
     token_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When this person agreed that Inki may read a conversation they bring it into (api/messages.py).
+    inki_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -765,5 +767,31 @@ class Message(Base):
     kind: Mapped[str] = mapped_column(String(12), default="text")  # text | call | inki
     sealed: Mapped[str] = mapped_column(Text)
     content_id: Mapped[int | None] = mapped_column(ForeignKey("contents.id"))
+    reply_to_id: Mapped[int | None] = mapped_column(ForeignKey("messages.id"))
     client_id: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Deleted for everyone: the sealed body is replaced by an empty one and its uploads are released.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class MessageAttachment(Base):
+    """An upload a message carries. The name and type travel sealed in the message; this row only says
+    which upload belongs to which message, so access can be checked and the storage sweep keeps it."""
+
+    __tablename__ = "message_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"), index=True)
+    blob_id: Mapped[str] = mapped_column(String(64), index=True)
+
+
+class MediaDigest(Base):
+    """What Inki read out of an upload (document text, text in an image, a video's speech and captions),
+    kept so the same file is read once. Goes when the upload goes."""
+
+    __tablename__ = "media_digests"
+
+    blob_id: Mapped[str] = mapped_column(ForeignKey("media_blobs.id", ondelete="CASCADE"), primary_key=True)
+    text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
