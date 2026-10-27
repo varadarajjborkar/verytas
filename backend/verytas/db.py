@@ -79,8 +79,9 @@ def _add_missing_columns(conn) -> None:
 
     There are no migrations yet (Alembic comes with Postgres in deployment), and
     create_all never alters an existing table, so a local database from an
-    earlier build would fail on the first new column. Only additive, nullable
-    columns are handled; anything else still needs a fresh database.
+    earlier build would fail on the first new column. Only additive columns are
+    handled: nullable ones, and NOT NULL ones with a plain default, which existing
+    rows take. Anything else still needs a fresh database.
     """
     import logging
 
@@ -96,14 +97,22 @@ def _add_missing_columns(conn) -> None:
         for column in table.columns:
             if column.name in have or column.primary_key:
                 continue
-            if not column.nullable:
-                log.warning("%s.%s is new and NOT NULL; it can't be added in place. Start from a fresh database.",
-                            table.name, column.name)
-                continue
             kind = column.type.compile(dialect=conn.dialect)
+            fill = ""
+            if not column.nullable:
+                # A NOT NULL column with a plain default (a flag, a count, a fixed word) can be added with that
+                # default written into the existing rows; anything computed still needs a fresh database.
+                value = getattr(column.default, "arg", None)
+                if column.default is None or callable(value) or not isinstance(value, bool | int | float | str):
+                    log.warning("%s.%s is new and NOT NULL without a plain default; it can't be added in place. "
+                                "Start from a fresh database.", table.name, column.name)
+                    continue
+                literal = (str(int(value)) if isinstance(value, bool) else repr(value) if isinstance(value, int | float)
+                           else "'" + value.replace("'", "''") + "'")
+                fill = f" NOT NULL DEFAULT {literal}"
             fk = next(iter(column.foreign_keys), None)
             ref = f' REFERENCES "{fk.column.table.name}"("{fk.column.name}")' if fk is not None else ""
-            conn.exec_driver_sql(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {kind}{ref}')
+            conn.exec_driver_sql(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {kind}{fill}{ref}')
             if column.index:
                 conn.exec_driver_sql(f'CREATE INDEX IF NOT EXISTS "ix_{table.name}_{column.name}" '
                                      f'ON "{table.name}" ("{column.name}")')

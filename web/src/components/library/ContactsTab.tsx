@@ -17,7 +17,7 @@ const KIND: Record<PublicContact["kind"], { label: string; placeholder: string }
 /**
  * The contact details the company publishes. A phone number or address in a post
  * that is not listed here is flagged as private data, and a message to the brand
- * team that offers one is refused: one register serves both checks.
+ * team that carries one is marked for them: one register serves both checks.
  */
 export function ContactsTab({ contacts, editable, onChanged }: { contacts: PublicContact[]; editable: boolean; onChanged: () => void }) {
   const [draft, setDraft] = useState({ kind: "phone" as PublicContact["kind"], value: "", label: "", source_ref: "" });
@@ -43,7 +43,7 @@ export function ContactsTab({ contacts, editable, onChanged }: { contacts: Publi
     <div className="flex flex-col gap-4">
       <p className="max-w-2xl text-xs leading-5 text-muted">
         Only these may appear in a post. Any other phone number or address is treated as someone&apos;s private data: posts are
-        flagged, and messages to the brand team that share one are refused.
+        flagged, and messages to the brand team that share one are marked for you to look at.
       </p>
       {editable && (
         <section className="vt-card grid gap-3 p-5 md:grid-cols-[9rem_1fr_12rem_auto] md:items-end" aria-label="Add a contact">

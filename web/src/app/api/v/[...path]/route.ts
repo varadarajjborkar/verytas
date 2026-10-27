@@ -92,6 +92,15 @@ const ALLOWED: [string, RegExp][] = [
   ["PATCH", /^events\/\d+$/],
   ["POST", /^events\/\d+\/cancel$/],
   ["GET", /^events\/\d+\/impacts$/],
+  // Approved people: who may appear in content, their dates and reference photos (writes are brand admin only).
+  ["GET", /^people$/],
+  ["POST", /^people$/],
+  ["PATCH", /^people\/\d+$/],
+  ["POST", /^people\/\d+\/references$/],
+  ["DELETE", /^people\/\d+\/references\/\d+$/],
+  ["GET", /^people\/\d+\/references\/\d+\/image$/],
+  // A version's video, streamed in ranges for the review player.
+  ["GET", /^contents\/\d+\/versions\/\d+\/videos\/[A-Za-z0-9_-]{1,40}$/],
   ["GET", /^public-contacts$/],
   ["POST", /^public-contacts$/],
   ["DELETE", /^public-contacts\/\d+$/],

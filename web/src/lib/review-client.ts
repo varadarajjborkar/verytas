@@ -2,7 +2,7 @@
 // server proxy (app/api/v), which holds the API token and an allowlist.
 
 import type {
-  BrandAsset, BrandEvent, ContentDetail, CreatorRow, CreatorTrack, EscalationRequest, EventImpact, PublicContact, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
+  ApprovedPerson, BrandAsset, BrandEvent, ContentDetail, CreatorRow, CreatorTrack, EscalationRequest, EventImpact, PublicContact, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
   IntakeBatch, IntakeBatchDetail, IntakeDraft, IntakeItem, IntakeItemIn, Onboarding, SampleKit,
   Review, Rule, RuleClarification, RuleDraft, SearchHit, Term, Timeline, UploadedMedia,
 } from "./types";
@@ -97,6 +97,14 @@ export const eventImpacts = (id: number) => api<EventImpact[]>(`events/${id}/imp
 export const listContacts = () => api<PublicContact[]>("public-contacts");
 export const addContact = (c: Partial<PublicContact>) => api<PublicContact>("public-contacts", json(c));
 export const retireContact = (id: number) => api<null>(`public-contacts/${id}`, send("DELETE"));
+export const listApproved = () => api<ApprovedPerson[]>("people");
+export const addApproved = (p: Record<string, unknown>) => api<ApprovedPerson>("people", json(p));
+export const patchApproved = (id: number, p: Record<string, unknown>) =>
+  api<ApprovedPerson>(`people/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) });
+export const addReference = (id: number, ref: { media_type: string; data_base64: string }) =>
+  api<ApprovedPerson["references"][number]>(`people/${id}/references`, json({ ...ref, source: "upload" }));
+export const removeReference = (id: number, refId: number) => api<null>(`people/${id}/references/${refId}`, send("DELETE"));
+export const referenceUrl = (id: number, refId: number) => `/api/v/people/${id}/references/${refId}/image`;
 
 // --- the brand library (writes are brand-admin only; the API enforces it) ---
 const send = (method: string, body?: unknown): RequestInit => ({

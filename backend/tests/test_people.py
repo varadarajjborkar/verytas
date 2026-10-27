@@ -83,3 +83,15 @@ def test_agreement_notes_are_for_the_brand_team(client, world):  # noqa: F811
     assert seen["Riya Sen"]["notes"] is None
     admin_seen = {p["name"]: p for p in client.get("/people", headers=_auth(world["admin"])).json()}
     assert admin_seen["Riya Sen"]["notes"] == "Fee 40 lakh"
+
+
+def test_the_same_person_entered_twice_is_one_person(client):
+    from tests.test_media import _auth
+
+    admin = client.post("/bootstrap", json={"workspace_name": "Acme", "admin_email": "a@acme.io",
+                                            "admin_name": "Ada"}).json()["token"]
+    body = {"name": "Riya Kapoor", "kind": "ambassador", "valid_from": "2026-10-01"}
+    assert client.post("/people", headers=_auth(admin), json=body).status_code == 201
+    again = client.post("/people", headers=_auth(admin), json=body | {"name": " riya kapoor "})
+    assert again.status_code == 409
+    assert len(client.get("/people", headers=_auth(admin)).json()) == 1

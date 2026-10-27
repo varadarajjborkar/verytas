@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, listAssets, listContacts, listEvents, listFacts, listRules, listTerms } from "@/lib/review-client";
+import { ApiError, listApproved, listAssets, listContacts, listEvents, listFacts, listRules, listTerms } from "@/lib/review-client";
 import { canEditLibrary } from "@/lib/roles";
-import type { BrandAsset, BrandEvent, Fact, PublicContact, Rule, Term } from "@/lib/types";
+import type { ApprovedPerson, BrandAsset, BrandEvent, Fact, PublicContact, Rule, Term } from "@/lib/types";
 import { tabKeys } from "../ui";
 import { useViewer } from "../Viewer";
 import { AssetsTab } from "./AssetsTab";
@@ -13,14 +13,16 @@ import { ContactsTab } from "./ContactsTab";
 import { EventsTab } from "./EventsTab";
 import { FactsTab } from "./FactsTab";
 import { IntakeTab } from "./IntakeTab";
+import { PeopleTab } from "./PeopleTab";
 import { ListSkeleton, ReadOnlyNote, today } from "./parts";
 import { RulesTab } from "./RulesTab";
 import { TermsTab } from "./TermsTab";
 import { useOnRefresh } from "@/lib/refresh";
 
-type Tab = "rules" | "facts" | "events" | "contacts" | "terms" | "assets" | "import";
-const TABS: Tab[] = ["rules", "facts", "events", "contacts", "terms", "assets", "import"];
-type Data = { rules: Rule[]; facts: Fact[]; terms: Term[] | null; assets: BrandAsset[]; events: BrandEvent[]; contacts: PublicContact[] };
+type Tab = "rules" | "facts" | "events" | "people" | "contacts" | "terms" | "assets" | "import";
+const TABS: Tab[] = ["rules", "facts", "events", "people", "contacts", "terms", "assets", "import"];
+type Data = { rules: Rule[]; facts: Fact[]; terms: Term[] | null; assets: BrandAsset[]; events: BrandEvent[];
+  contacts: PublicContact[]; people: ApprovedPerson[] };
 
 /**
  * Everything a review checks against, in one place: the rules, the facts posts
@@ -41,9 +43,10 @@ export function LibraryView() {
 
   const load = useCallback(() => {
     // Terms are admin-only on the API; asking as anyone else would only earn a 403.
-    Promise.all([listRules(), listFacts(), admin ? listTerms() : Promise.resolve(null), listAssets(), listEvents(), listContacts()])
-      .then(([rules, facts, terms, assets, events, contacts]) => {
-        setData({ rules, facts, terms, assets, events, contacts });
+    Promise.all([listRules(), listFacts(), admin ? listTerms() : Promise.resolve(null), listAssets(), listEvents(), listContacts(),
+      listApproved()])
+      .then(([rules, facts, terms, assets, events, contacts, people]) => {
+        setData({ rules, facts, terms, assets, events, contacts, people });
         setError(null);
       })
       .catch((err) => setError(err instanceof ApiError && err.status === 503
@@ -68,6 +71,8 @@ export function LibraryView() {
     { k: "facts", label: "Facts", count: data.facts.filter((f) => f.approved && f.valid_from <= on && (!f.valid_to || f.valid_to > on)).length,
       hint: "valid today" },
     { k: "events", label: "Events", count: data.events.filter((e) => e.live).length, hint: "running" },
+    { k: "people", label: "Approved people", count: data.people.filter((p) => p.active && p.valid_from <= on && (!p.valid_to || p.valid_to > on)).length,
+      hint: "agreements in force" },
     { k: "contacts", label: "Public contacts", count: data.contacts.filter((c) => c.active).length, hint: "listed" },
     ...(data.terms ? [{ k: "terms" as const, label: "Confidential terms", count: data.terms.filter((t) => !t.embargo_until || t.embargo_until > on).length,
       hint: "guarded" }] : []),
@@ -102,6 +107,7 @@ export function LibraryView() {
         {tab === "rules" && <RulesTab key={`${params.get("state")}-${params.get("q")}`} rules={data.rules.filter((r) => r.event_id == null)}
           editable={admin} onChanged={load} initialState={params.get("state")} initialQuery={params.get("q")} />}
         {tab === "events" && <EventsTab events={data.events} editable={admin} onChanged={load} />}
+        {tab === "people" && <PeopleTab people={data.people} events={data.events} editable={admin} onChanged={load} />}
         {tab === "contacts" && <ContactsTab contacts={data.contacts} editable={admin} onChanged={load} />}
         {tab === "facts" && <FactsTab facts={data.facts} editable={admin} onChanged={load} />}
         {tab === "terms" && data.terms && <TermsTab terms={data.terms} onChanged={load} />}

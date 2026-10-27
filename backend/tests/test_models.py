@@ -83,3 +83,29 @@ def test_fact_valid_on_is_half_open():
     assert f.valid_on(date(2026, 1, 1))
     assert f.valid_on(date(2026, 6, 30))
     assert not f.valid_on(date(2026, 7, 1))
+
+
+def test_an_older_database_gains_new_columns_including_flags_with_defaults(tmp_path):
+    import asyncio
+    import sqlite3
+
+    from verytas.db import Database
+
+    path = tmp_path / "old.db"
+    db = sqlite3.connect(path)
+    # A person_references table from before the "approved" flag existed.
+    db.execute("CREATE TABLE person_references (id INTEGER PRIMARY KEY, person_id INTEGER, media_type VARCHAR(40), "
+               "data_base64 TEXT, source VARCHAR(20), source_url VARCHAR(500), created_at DATETIME)")
+    db.execute("INSERT INTO person_references (person_id, media_type, data_base64, source) "
+               "VALUES (1, 'image/jpeg', 'x', 'upload')")
+    db.commit()
+
+    async def upgrade():
+        d = Database(f"sqlite+aiosqlite:///{path}")
+        await d.create_all()
+        await d.dispose()
+
+    asyncio.run(upgrade())
+    cols = {r[1]: r for r in db.execute("PRAGMA table_info(person_references)")}
+    assert "approved" in cols and cols["approved"][3] == 1  # NOT NULL
+    assert db.execute("SELECT approved FROM person_references").fetchone()[0] == 0

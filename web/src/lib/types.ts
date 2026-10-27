@@ -455,3 +455,11 @@ export type SearchHit = { type: SearchHitType; id: number; title: string; subtit
 export type OnboardingStep = { key: string; title: string; detail: string; done: boolean; href: string | null };
 export type Onboarding = { role: string; company: string; self_serve: boolean; steps: OnboardingStep[]; sample_kit: boolean };
 export type SampleKit = { rules: number; facts: number; terms: number; contacts: number; assets: number };
+
+/** Someone the brand may show in its content, on the terms and dates of their agreement (GET /people). */
+export type ApprovedPerson = {
+  id: number; name: string; aliases: string[]; kind: "celebrity" | "ambassador" | "creator" | "staff" | "other";
+  user_id: number | null; channels: string[]; event_ids: number[]; valid_from: string; valid_to: string | null;
+  notes: string | null; tier: "public" | "internal" | "confidential"; active: boolean; created_at: string;
+  references: { id: number; media_type: string; source: string; source_url: string | null; approved: boolean; created_at: string }[];
+};
