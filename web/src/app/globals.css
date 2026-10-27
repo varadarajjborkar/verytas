@@ -483,3 +483,11 @@ body:has(.vt-dock) .vt-toasts { padding-bottom: 5.25rem; }
 .vt-tabs::-webkit-scrollbar { display: none; }
 /* The strip clips anything outside it, so a tab's focus ring is drawn inside the tab. */
 .vt-tabs [role="tab"]:focus-visible { outline-offset: -2px; }
+
+/* A message jumped to from a reply quote, so the eye finds it. */
+.vt-flash { animation: vt-flash 1.2s ease-out; }
+@keyframes vt-flash {
+  from { background: color-mix(in srgb, var(--vt-accent) 18%, transparent); }
+  to { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .vt-flash { animation: none; } }

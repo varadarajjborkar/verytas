@@ -120,13 +120,14 @@ export async function submitForReview(input: { title: string; channel: string; b
 
 /** Raw pass-through for the browser proxy (app/api/v). Status and body are relayed unchanged. */
 export async function forward(method: string, path: string, body: ReadableStream<Uint8Array> | undefined,
-  contentType: string | null, token: string): Promise<Response> {
+  contentType: string | null, token: string, range: string | null = null): Promise<Response> {
   return fetch(`${API_URL}${path}`, {
     method,
     body,
     // Streamed through rather than buffered: an upload can be 150 MB.
     ...(body ? { duplex: "half" } : {}),
-    headers: { Authorization: `Bearer ${token}`, ...(contentType ? { "Content-Type": contentType } : {}) },
+    headers: { Authorization: `Bearer ${token}`, ...(contentType ? { "Content-Type": contentType } : {}),
+      ...(range && /^bytes=\d*-\d*$/.test(range) ? { Range: range } : {}) },
     cache: "no-store",
     // Reviews with video or many pages take a while; the client polls rather than waiting here.
     signal: AbortSignal.timeout(180_000),

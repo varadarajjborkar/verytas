@@ -117,3 +117,11 @@ export const ImageIcon = (p: IconProps) => (
     <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></Icon>
 );
 export const EnterIcon = (p: IconProps) => <Icon {...p}><path d="M20 4v7a4 4 0 0 1-4 4H4" /><path d="m9 10-5 5 5 5" /></Icon>;
+export const ReplyIcon = (p: IconProps) => <Icon {...p}><path d="M9 17 4 12l5-5" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></Icon>;
+export const PencilIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></Icon>
+);
+export const ExternalIcon = (p: IconProps) => <Icon {...p}><path d="M7 17 17 7" /><path d="M8 7h9v9" /></Icon>;
+export const FileIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></Icon>
+);

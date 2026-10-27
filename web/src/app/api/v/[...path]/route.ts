@@ -41,9 +41,15 @@ const ALLOWED: [string, RegExp][] = [
   // Conversations between a creator and the brand team; the API checks each one is the caller's.
   ["GET", /^conversations$/],
   ["POST", /^conversations$/],
-  ["GET", /^conversations\/(?:people|unread|stream)$/],
+  ["GET", /^conversations\/(?:people|unread|stream|inki-consent)$/],
+  ["POST", /^conversations\/inki-consent$/],
+  ["DELETE", /^conversations\/inki-consent$/],
   ["GET", /^conversations\/\d+\/messages$/],
   ["POST", /^conversations\/\d+\/(?:messages|read)$/],
+  ["PATCH", /^conversations\/\d+\/messages\/\d+$/],
+  ["DELETE", /^conversations\/\d+\/messages\/\d+$/],
+  // Files shared in a conversation, shown in place (ranged, so a video can be sought) and their previews.
+  ["GET", /^conversations\/\d+\/files\/[0-9a-f]{32}(?:\/poster)?$/],
   // A piece's shared history, comments and the people named in it.
   ["GET", /^contents\/\d+\/timeline$/],
   ["GET", /^contents\/\d+\/comments$/],
@@ -137,7 +143,8 @@ async function handle(request: Request, ctx: { params: Promise<{ path: string[] 
   const tripped = () => body?.tripped() ?? false;
   const query = new URL(request.url).search;
   try {
-    const res = await forward(request.method, `/${path}${query}`, body?.stream, request.headers.get("content-type"), token);
+    const res = await forward(request.method, `/${path}${query}`, body?.stream, request.headers.get("content-type"), token,
+      request.headers.get("range"));
     if (tripped()) return tooLarge;
     if (res.status === 401) {
       return Response.json({ error: "Your session has expired. Sign in again." }, { status: 401 });
@@ -147,6 +154,11 @@ async function handle(request: Request, ctx: { params: Promise<{ path: string[] 
     const cache = res.headers.get("cache-control");
     if (cache?.startsWith("private")) headers["cache-control"] = cache;
     if (res.headers.get("x-content-type-options")) headers["x-content-type-options"] = "nosniff";
+    // A conversation's files are played and shown in place: ranges pass through, and they stay inline.
+    for (const h of ["accept-ranges", "content-range", "content-length", "content-disposition", "content-security-policy"]) {
+      const v = res.headers.get(h);
+      if (v) headers[h] = v;
+    }
     return new Response(res.status === 204 ? null : res.body, { status: res.status, headers });
   } catch (err) {
     if (tripped()) return tooLarge;

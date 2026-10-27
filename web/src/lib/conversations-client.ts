@@ -1,9 +1,17 @@
 // Conversations between a creator and the brand team (backend api/messages.py), through the same proxy.
 
-import { api, json } from "./review-client";
+import { ApiError, api, json } from "./review-client";
 
 export type Party = { id: number; name: string; role: string };
 export type Contact = Party & { conversation_id: number | null };
+export type SharedFile = {
+  id: string;
+  kind: "image" | "video" | "document";
+  name: string;
+  media_type: string;
+  bytes: number;
+  duration?: number | null;
+};
 
 export type ChatMessage = {
   id: number;
@@ -11,11 +19,15 @@ export type ChatMessage = {
   kind: "text" | "call" | "inki";
   text: string;
   call: { url: string; provider: string } | null;
+  files: SharedFile[];
   piece: { id: number; title: string } | null;
+  reply_to: { id: number; sender: string; excerpt: string; deleted: boolean } | null;
   /** null: Inki. */
   sender: Party | null;
   asked_by: Party | null;
   created_at: string;
+  edited: boolean;
+  deleted: boolean;
 };
 
 export type ConversationRow = {
@@ -23,6 +35,9 @@ export type ConversationRow = {
   other: Party;
   last: ChatMessage | null;
   unread: number;
+  /** The other person spoke last: the ball is in this person's court. */
+  needs_reply: boolean;
+  topic: { id: number; title: string; status: string } | null;
   last_message_at: string;
 };
 
@@ -44,18 +59,35 @@ export function listMessages(conversationId: number, cursor: { before?: number; 
   return api<ChatMessage[]>(`conversations/${conversationId}/messages${s ? `?${s}` : ""}`);
 }
 
-export const sendMessage = (conversationId: number,
-  body: { text?: string; call_url?: string; content_id?: number | null; client_id: string }) =>
+export type Outgoing = {
+  text?: string; call_url?: string; content_id?: number | null; files?: string[]; reply_to?: number | null;
+  client_id: string;
+};
+export const sendMessage = (conversationId: number, body: Outgoing) =>
   api<ChatMessage>(`conversations/${conversationId}/messages`, json(body));
-
+export const editMessage = (conversationId: number, id: number, text: string) =>
+  api<ChatMessage>(`conversations/${conversationId}/messages/${id}`,
+    { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+export const deleteMessage = (conversationId: number, id: number) =>
+  api<ChatMessage>(`conversations/${conversationId}/messages/${id}`, { method: "DELETE" });
 export const markRead = (conversationId: number, lastId: number) =>
   api<null>(`conversations/${conversationId}/read`, json({ last_id: lastId }));
+
+export const inkiConsent = () => api<{ accepted_at: string | null }>("conversations/inki-consent");
+export const acceptInki = () => api<{ accepted_at: string }>("conversations/inki-consent", json({ accept: true }));
+export const withdrawInki = () => api<null>("conversations/inki-consent", { method: "DELETE" });
+/** The API's answer when @Inki is used before agreeing to it reading the conversation. */
+export const needsInkiConsent = (e: unknown) =>
+  e instanceof ApiError && e.status === 428 && (e.detail as { code?: string })?.code === "inki_consent_required";
+
+export const fileUrl = (conversationId: number, fileId: string) => `/api/v/conversations/${conversationId}/files/${fileId}`;
+export const posterUrl = (conversationId: number, fileId: string) => `${fileUrl(conversationId, fileId)}/poster`;
 
 /** A fresh id per message, so a resend after a dropped connection is stored once. */
 export const newClientId = () =>
   (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`).replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
 
-export const MESSAGES_SEEN_EVENT = "vt:messages-seen";
+export const CONVERSATIONS_SEEN_EVENT = "vt:conversations-seen";
 
 /** Meeting services the API accepts for a call card, with where to start a new meeting on each. */
 export const CALL_STARTERS = [
@@ -63,3 +95,7 @@ export const CALL_STARTERS = [
   { name: "Microsoft Teams", start: "https://teams.microsoft.com/l/meeting/new" },
   { name: "Zoom", start: "https://zoom.us/start/videomeeting" },
 ];
+
+/** What a conversation accepts as a file, checked again by the API. */
+export const ACCEPT = "image/*,video/*,application/pdf,.docx,.pptx,.xlsx";
+export const MAX_FILES = 6;

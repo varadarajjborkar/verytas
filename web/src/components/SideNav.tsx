@@ -6,7 +6,7 @@ import { usePersistedFlag } from "@/lib/persisted-flag";
 import { ROLE_LABEL } from "@/lib/roles";
 import { useEffect, useState } from "react";
 import { countEscalations } from "@/lib/review-client";
-import { MESSAGES_SEEN_EVENT, unreadMessages } from "@/lib/messages-client";
+import { CONVERSATIONS_SEEN_EVENT, unreadMessages } from "@/lib/conversations-client";
 import { BookIcon, ChatIcon, DashboardIcon, GaugeIcon, HomeIcon, InboxIcon, PanelIcon, ReviewIcon, UsersIcon } from "./Icons";
 import { InkiIcon } from "./Inki";
 import { Logo } from "./Logo";
@@ -18,17 +18,17 @@ import { AiInfoButton } from "./AiInfo";
 type NavLink = { href: string; label: string; short?: string; Icon: typeof HomeIcon };
 const REVIEW: NavLink = { href: "/review", label: "Review", Icon: ReviewIcon };
 const ASK: NavLink = { href: "/ask", label: "Ask Inki", short: "Inki", Icon: InkiIcon };
-const MESSAGES: NavLink = { href: "/messages", label: "Messages", short: "Chat", Icon: ChatIcon };
+const CONVERSATIONS: NavLink = { href: "/conversations", label: "Conversations", short: "Talk", Icon: ChatIcon };
 // Each side sees only its own screens. Until the viewer is known, only the shared ones show,
 // so a creator never glimpses the brand team's links.
 const LINKS: Record<"creator" | "manager" | "loading", NavLink[]> = {
   creator: [{ href: "/", label: "My work", short: "Home", Icon: HomeIcon },
-    { href: "/review", label: "My reviews", short: "Reviews", Icon: ReviewIcon }, MESSAGES, ASK],
+    { href: "/review", label: "My reviews", short: "Reviews", Icon: ReviewIcon }, CONVERSATIONS, ASK],
   manager: [
     { href: "/", label: "Dashboard", Icon: DashboardIcon },
     { href: "/review", label: "Review queue", short: "Queue", Icon: ReviewIcon },
     { href: "/escalations", label: "Escalations", short: "Asks", Icon: InboxIcon },
-    MESSAGES,
+    CONVERSATIONS,
     { href: "/creators", label: "Creators", Icon: UsersIcon },
     { href: "/library", label: "Brand library", short: "Library", Icon: BookIcon },
     { href: "/guidelines", label: "Guideline health", short: "Health", Icon: GaugeIcon },
@@ -97,7 +97,7 @@ export function SideNav() {
                   {/* Short labels on phones so the tabs fit on one line. */}
                   <span className="md:hidden">{short ?? label}</span>
                   <span className={`hidden md:inline ${collapsed ? "md:sr-only" : ""}`}>{label}</span>
-                  {href === "/messages" && unread > 0 && (
+                  {href === "/conversations" && unread > 0 && (
                     <span aria-label={`${unread} unread`} className={`ml-auto rounded-full bg-accent px-1.5 text-[11px] font-semibold tabular-nums text-accent-ink ${
                       collapsed ? "md:absolute md:right-1.5 md:top-1 md:ml-0 md:px-1 md:text-[10px]" : ""}`}>{unread}</span>
                   )}
@@ -168,7 +168,7 @@ function useOpenEscalations(enabled: boolean): number {
   return enabled ? count : 0;
 }
 
-/** Unread messages for the nav badge: on load, on focus, every half minute, and when a thread is read. */
+/** Unread conversation messages for the nav badge: on load, on focus, every half minute, and when a thread is read. */
 function useUnreadMessages(enabled: boolean): number {
   const [count, setCount] = useState(0);
   useEffect(() => {
@@ -181,12 +181,12 @@ function useUnreadMessages(enabled: boolean): number {
     check();
     const t = setInterval(check, 30_000);
     window.addEventListener("focus", check);
-    window.addEventListener(MESSAGES_SEEN_EVENT, check);
+    window.addEventListener(CONVERSATIONS_SEEN_EVENT, check);
     return () => {
       live = false;
       clearInterval(t);
       window.removeEventListener("focus", check);
-      window.removeEventListener(MESSAGES_SEEN_EVENT, check);
+      window.removeEventListener(CONVERSATIONS_SEEN_EVENT, check);
     };
   }, [enabled]);
   return enabled ? count : 0;

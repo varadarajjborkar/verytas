@@ -8,7 +8,7 @@ import { canDecide } from "@/lib/roles";
 import type { EscalationRequest, FactCitation, RuleCitation } from "@/lib/types";
 import { CheckIcon, ChevronIcon } from "../Icons";
 import { SummarizeButton } from "../assist/SummarizeButton";
-import { TalkCard } from "../messages/TalkCard";
+import { TalkCard } from "../conversations/TalkCard";
 import { PriorityPill } from "../review/Checklist";
 import { REASONS } from "../review/DecisionControls";
 import { useToast } from "../Toaster";

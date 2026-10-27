@@ -7,7 +7,7 @@ import type { ContentRow, Person, TimelineItem } from "@/lib/types";
 import { ArrowRightIcon, ChatIcon, PlusIcon } from "../Icons";
 import { StageDots } from "../Journey";
 import { useViewer } from "../Viewer";
-import { TalkCard } from "../messages/TalkCard";
+import { TalkCard } from "../conversations/TalkCard";
 import { Panel } from "../ui";
 import { useOnRefresh } from "@/lib/refresh";
 

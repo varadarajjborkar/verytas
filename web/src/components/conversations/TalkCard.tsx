@@ -8,7 +8,7 @@ import { INKI } from "../Inki";
 const COPY = {
   creator: {
     title: "Talk it through with the brand team",
-    lead: `Message the person reviewing your work about a piece, ask @${INKI} where it stands, or share a Meet or Teams link to talk.`,
+    lead: `Talk to the person reviewing your work about a piece, ask @${INKI} where it stands, or share a Meet or Teams link to talk.`,
   },
   manager: {
     title: "Talk it through with a creator",
@@ -28,7 +28,7 @@ export function TalkCard({ side, className = "" }: { side: "creator" | "manager"
           <p className="mt-1 text-[13px] leading-5 text-muted">{copy.lead}</p>
         </div>
       </div>
-      <Link href="/messages" className="vt-btn vt-btn-quiet shrink-0 self-start sm:self-center">Open messages</Link>
+      <Link href="/conversations" className="vt-btn vt-btn-quiet shrink-0 self-start sm:self-center">Open conversations</Link>
     </section>
   );
 }
