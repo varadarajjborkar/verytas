@@ -30,7 +30,7 @@ MODELS = Path(__file__).resolve().parents[2] / ".models"
 
 
 def run(data: Path, out: Path, device: str, resume: bool = False) -> None:
-    from verytas.media.fidelity import compare
+    from verytas.media.maskcheck import judge
     from verytas.vision.chain import Chain, iou
 
     manifest = json.loads((data / "manifest.json").read_text())
@@ -74,7 +74,7 @@ def run(data: Path, out: Path, device: str, resume: bool = False) -> None:
                     vec = chain.embed(crop)
                     # Fidelity against the scene's own mascot, whatever likeness says: identity and
                     # fidelity are scored apart.
-                    fid = compare(refs[case["mascot"]].fidelity, (rgb, mask))
+                    fid = judge(refs[case["mascot"]].fidelity, rgb, mask)  # what production runs
                     row |= {"likeness": {m: round(float(vec @ r.vector), 4) for m, r in refs.items()},
                             "differences": [{"kind": d.kind, "text": d.text} for d in fid.differences]}
                 row |= {"found": True, "score": round(score, 3), "iou": round(iou(box, case["box"]), 3)}

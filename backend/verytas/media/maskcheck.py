@@ -38,8 +38,14 @@ from verytas.media import fidelity, maskgeom
 STRETCH_RATIO = 1.20
 # ... and only when the artwork, mapped that way, overlaps the cut-out at least this well (IoU). Below it the
 # moments describe a bad cut-out or a new pose as much as the character: on the benchmark no acceptable
-# scene, posed scene or other defect passes 0.88 with a ratio over 1.15, and 19 of 30 stretched ones do.
+# scene, posed scene or other defect passes 0.88 with a ratio over 1.15, and 19 of 30 stretched ones do (18 with the
+# spread check below).
 STRETCH_FIT = 0.88
+# ... and only when the ratio of the silhouette's own two spreads changed by at least this much. A turn or a
+# resize leaves that ratio exactly as it was, so this is what keeps a symmetric body (an oval, a square
+# robot) shown at another angle from reading as stretched: the rotation search cannot tell which way such a
+# body faces, and a wrong guess looks like a stretch. It costs one stretched body of 30 on the benchmark.
+STRETCH_SPREAD = 1.05
 
 # A palette-coloured shape beside the mask is taken as part of the character when it is no bigger than this
 # share of the mask: a tail piece, a hat, a limb. Anything bigger is a background region that happens to
@@ -69,23 +75,30 @@ def reclaim(rgb: np.ndarray, mask: np.ndarray, palette: list) -> np.ndarray:
     ys, xs = np.nonzero(mask)
     if not len(ys):
         return mask
-    pad = int(LOOK_MARGIN * max(ys.max() - ys.min(), xs.max() - xs.min()))
+    side = max(ys.max() - ys.min(), xs.max() - xs.min())
+    pad = int(LOOK_MARGIN * side)
     h, w = mask.shape
     y0, y1 = max(0, ys.min() - pad), min(h, ys.max() + 1 + pad)
     x0, x1 = max(0, xs.min() - pad), min(w, xs.max() + 1 + pad)
-    window = np.zeros_like(mask)
-    window[y0:y1, x0:x1] = True
-    labels = fidelity._assign(rgb, window, palette, fidelity.COUNT_DE)
-    candidate = (labels >= 0) & ~mask
-    reach = max(TOUCH_PX, int(REACH * max(ys.max() - ys.min(), xs.max() - xs.min())))
-    near = cv2.dilate(mask.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1,) * 2)
+    # Only the window is read: a 4K scene costs what its character's neighbourhood costs.
+    sub = mask[y0:y1, x0:x1]
+    labels = fidelity._assign(rgb[y0:y1, x0:x1], np.ones(sub.shape, bool), palette, fidelity.COUNT_DE)
+    candidate = (labels >= 0) & ~sub
+    reach = max(TOUCH_PX, int(REACH * side))
+    near = cv2.dilate(sub.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1,) * 2)
                       ).astype(bool)
     n, comp, stats, _ = cv2.connectedComponentsWithStats(candidate.astype(np.uint8), connectivity=8)
     out = mask.copy()
     area = float(mask.sum())
+    sh, sw = sub.shape
     for i in range(1, n):
-        if MIN_ADDED_SHARE * area <= stats[i, cv2.CC_STAT_AREA] <= MAX_ADDED_SHARE * area and near[comp == i].any():
-            out |= comp == i
+        x, y, cw, ch, size = (int(v) for v in stats[i])
+        # A shape that runs into the edge of the window, where the window is not the frame's edge, carries on
+        # past where we looked: a wall or a sign, however little of it shows here.
+        if (x == 0 < x0) or (y == 0 < y0) or (x + cw == sw and x1 < w) or (y + ch == sh and y1 < h):
+            continue
+        if MIN_ADDED_SHARE * area <= size <= MAX_ADDED_SHARE * area and near[comp == i].any():
+            out[y0:y1, x0:x1] |= comp == i
     return out
 
 
@@ -97,10 +110,14 @@ def stretch(official_mask: np.ndarray, mask: np.ndarray) -> fidelity.Difference 
         return None  # too few pixels for moments
     if fit.anisotropy < STRETCH_RATIO or fit.fit < STRETCH_FIT:
         return None
-    way = "wider" if fit.wider else "taller"
-    return fidelity.Difference(
-        "shape", f"stretched: {fit.anisotropy - 1:.0%} {way} for its size than the artwork", None,
-        min(1.0, fit.anisotropy - 1))
+    if maskgeom.eigenvalue_stretch(official_mask, mask) < STRETCH_SPREAD:
+        return None
+    if 30 < fit.direction < 60:
+        text = f"stretched {fit.anisotropy - 1:.0%} along a diagonal, out of the artwork's proportions"
+    else:
+        way = "wider" if fit.wider else "taller"
+        text = f"stretched: {fit.anisotropy - 1:.0%} {way} for its size than the artwork"
+    return fidelity.Difference("shape", text, None, min(1.0, fit.anisotropy - 1))
 
 
 def judge(official: tuple[np.ndarray, np.ndarray], rgb: np.ndarray, mask: np.ndarray) -> fidelity.Fidelity:
@@ -121,6 +138,8 @@ def judge(official: tuple[np.ndarray, np.ndarray], rgb: np.ndarray, mask: np.nda
             if repaired is not None:
                 short = {d.colour for d in repaired.differences if d.shortfall}
                 out.differences = [d for d in out.differences if not d.shortfall or d.colour in short]
-    if (shape := stretch(official[1], mask)) is not None:
-        out.differences.append(shape)
+    # First, so a list cut to its first few lines keeps it; not on a cut-out too small to count parts on,
+    # whose outline is as rough as its parts.
+    if out.parts_checked and (shape := stretch(official[1], mask)) is not None:
+        out.differences.insert(0, shape)
     return out

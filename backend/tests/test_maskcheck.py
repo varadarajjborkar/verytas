@@ -153,3 +153,44 @@ def test_a_mask_too_small_for_moments_says_nothing(kit):
     tiny = np.zeros((40, 40), bool)
     tiny[10:14, 10:14] = True
     assert maskcheck.stretch(official[1], tiny) is None
+
+
+def test_a_symmetric_body_turned_is_not_stretched():
+    # An oval's rotation search cannot tell which way it faces; the unchanged ratio of its spreads says no.
+    art = np.zeros((300, 300), np.uint8)
+    cv2.ellipse(art, (150, 150), (100, 70), 0, 0, 360, 1, -1)
+    for turn in (90, 30):
+        cand = np.zeros((300, 300), np.uint8)
+        cv2.ellipse(cand, (150, 150), (100, 70), turn, 0, 360, 1, -1)
+        assert maskcheck.stretch(art.astype(bool), cand.astype(bool)) is None, turn
+    wide = np.zeros((300, 400), np.uint8)
+    cv2.ellipse(wide, (200, 150), (135, 70), 0, 0, 360, 1, -1)  # the same oval pulled 1.35x wider
+    assert "wider" in maskcheck.stretch(art.astype(bool), wide.astype(bool)).text
+
+
+def test_background_that_runs_out_of_view_is_not_reclaimed():
+    rgb, mask = scene(400, 400)
+    rgb[:, :] = GREY
+    cv2.circle(rgb, (200, 200), 60, RED, -1)
+    rgb[190:215, 255:] = YELLOW  # a yellow stripe touching the body that runs on far past the look window
+    assert maskcheck.reclaim(rgb, mask_at(400, 400), PALETTE).sum() == mask_at(400, 400).sum()
+
+
+def mask_at(h, w):
+    m = np.zeros((h, w), np.uint8)
+    cv2.circle(m, (200, 200), 60, 1, -1)
+    return m.astype(bool)
+
+
+def test_judge_withdraws_only_the_shortfall_clipping_explains(kit):
+    from PIL import Image
+
+    img, official = kit
+    a = np.array(img).astype(int)
+    blue = (a[..., 2] > 120) & (a[..., 0] < 100) & (a[..., 3] > 0)
+    a[blue, :3] = (200, 40, 40)  # a real recolour: the brand blue is gone
+    rgb, mask = _on_page(Image.fromarray(a.astype("uint8"), "RGBA"))
+    found = maskcheck.judge(official, rgb, _clip_tail(rgb, mask)).differences
+    assert any(d.kind == "colour_missing" for d in found)  # the recolour stays
+    assert not any(d.kind == "parts" and d.shortfall and _orange(np.array([[d.colour]], np.uint8))[0, 0]
+                   for d in found)  # the clipped tail does not
