@@ -71,7 +71,7 @@ export function LibraryView() {
     { k: "facts", label: "Facts", count: data.facts.filter((f) => f.approved && f.valid_from <= on && (!f.valid_to || f.valid_to > on)).length,
       hint: "valid today" },
     { k: "events", label: "Events", count: data.events.filter((e) => e.live).length, hint: "running" },
-    { k: "people", label: "Approved people", count: data.people.filter((p) => p.active && p.valid_from <= on && (!p.valid_to || p.valid_to > on)).length,
+    { k: "people", label: "Approved people", count: data.people.filter((p) => p.active && p.valid_from <= on && (!p.valid_to || p.valid_to >= on)).length,
       hint: "agreements in force" },
     { k: "contacts", label: "Public contacts", count: data.contacts.filter((c) => c.active).length, hint: "listed" },
     ...(data.terms ? [{ k: "terms" as const, label: "Confidential terms", count: data.terms.filter((t) => !t.embargo_until || t.embargo_until > on).length,

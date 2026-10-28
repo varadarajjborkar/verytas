@@ -118,9 +118,10 @@ function ToastCard({ toast: t, onClose, onEnter, onLeave }: {
     >
       <div className="flex h-[54px] items-center gap-3 pl-5 pr-2">
         <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
-        <p className="min-w-0 flex-1 truncate text-sm font-medium leading-5">
-          <span className="sr-only">{s.label}: </span>{t.title}
-          {t.detail && <span className="sr-only">. {t.detail}</span>}
+        {/* The reason is shown, not only read out: on a phone there is no hover to reveal a tooltip. */}
+        <p className="min-w-0 flex-1 leading-tight">
+          <span className="block truncate text-sm font-medium"><span className="sr-only">{s.label}: </span>{t.title}</span>
+          {t.detail && <span className="block truncate text-xs text-muted"><span className="sr-only">. </span>{t.detail}</span>}
         </p>
         <button type="button" onClick={onClose} aria-label="Dismiss notification"
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg leading-none text-muted transition hover:bg-bg hover:text-ink">

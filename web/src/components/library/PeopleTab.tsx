@@ -17,7 +17,8 @@ type Standing = { label: string; tone: "ok" | "warning" | "blocker" | "muted" };
 function standing(p: ApprovedPerson, on: string): Standing {
   if (!p.active) return { label: "Turned off", tone: "muted" };
   if (p.valid_from > on) return { label: "Starts later", tone: "warning" };
-  if (p.valid_to && p.valid_to <= on) return { label: "Ended", tone: "blocker" };
+  // valid_to is the last day the agreement covers, as the likeness check reads it.
+  if (p.valid_to && p.valid_to < on) return { label: "Ended", tone: "blocker" };
   return { label: "In force", tone: "ok" };
 }
 
@@ -54,19 +55,21 @@ export function PeopleTab({ people, events, editable, onChanged }: {
 
   const add = async () => {
     setBusy("add");
+    let made: ApprovedPerson | null = null;
     try {
-      const made = await addApproved({
+      made = await addApproved({
         name: draft.name.trim(), kind: draft.kind, channels: toList(draft.channels), valid_from: draft.valid_from,
         valid_to: draft.valid_to || null, notes: draft.notes.trim() || null,
       });
       if (photo) await addReference(made.id, await shrink(photo));
       toast({ kind: "success", title: `${made.name} added`, detail: photo ? "Their photo is what faces in posts are compared with." : "Add a photo so faces in posts can be matched to them." });
-      setDraft(blank);
-      setPhoto(null);
-      onChanged();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't add them", detail: (err as Error).message });
+      // The person may exist even though the photo failed: say so and show them, so nobody adds them twice.
+      toast(made
+        ? { kind: "warning", title: `${made.name} added, photo not saved`, detail: `${(err as Error).message}. Add it from their card.` }
+        : { kind: "error", title: "Couldn't add them", detail: (err as Error).message });
     } finally {
+      if (made) { setDraft(blank); setPhoto(null); onChanged(); }
       setBusy(null);
     }
   };

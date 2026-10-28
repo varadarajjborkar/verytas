@@ -147,6 +147,8 @@ function useDemoSignin(): boolean {
 /** Back to the demo's picker: the session ends, the work done as this person stays. */
 export async function switchAccount() {
   await fetch("/api/session", { method: "DELETE" }).catch(() => null);
+  // A full load on purpose: a client push would keep the last person's cached views alive in memory.
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
   window.location.assign("/signin");
 }
 
