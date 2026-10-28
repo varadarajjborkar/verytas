@@ -11,6 +11,12 @@ class Base(DeclarativeBase):
     pass
 
 
+# Execution options on the reader engine: READ begins deferred; READ_GUARD (tests) also refuses writes, so a
+# GET route that writes is caught by the suite instead of meeting a lock it can't upgrade in production.
+READ = "verytas_read"
+READ_GUARD = "verytas_read_guard"
+
+
 def make_engine(url: str) -> AsyncEngine:
     sqlite = url.startswith("sqlite")
     # Background reviews write while requests write. SQLite's default is to
@@ -41,17 +47,31 @@ def make_engine(url: str) -> AsyncEngine:
         # one at a time. That is acceptable because SQLite is the local and demo
         # store, every transaction here is short (none spans a model call), and
         # Postgres in deployment never takes this path.
+        #
+        # Reads that will not write are the exception: a GET's session is bound with READ (see Database.reader)
+        # and begins deferred. Under WAL a deferred reader takes no lock at all and sees a consistent snapshot,
+        # so page loads stop queueing behind each other and behind a review being written.
         @event.listens_for(engine.sync_engine, "begin")
         def _begin_immediate(conn):  # pragma: no cover - driver hook
-            conn.exec_driver_sql("BEGIN IMMEDIATE")
+            options = conn.get_execution_options()
+            if options.get(READ):
+                if options.get(READ_GUARD):
+                    conn.exec_driver_sql("PRAGMA query_only=ON")
+                conn.exec_driver_sql("BEGIN")
+            else:
+                conn.exec_driver_sql("PRAGMA query_only=OFF")
+                conn.exec_driver_sql("BEGIN IMMEDIATE")
 
     return engine
 
 
 class Database:
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, *, guard_reads: bool = False) -> None:
         self.engine = make_engine(url)
         self.sessionmaker = async_sessionmaker(self.engine, expire_on_commit=False)
+        # Same pool, read-only use: requests that only read (GET) take their session from here.
+        reads = self.engine.execution_options(**{READ: True, READ_GUARD: guard_reads})
+        self.reader = async_sessionmaker(reads, expire_on_commit=False)
 
     async def create_all(self) -> None:
         # Imported for its side effect of registering every table on Base.

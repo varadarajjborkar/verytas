@@ -15,6 +15,7 @@ def settings(tmp_path) -> Settings:
         keys_dir=tmp_path / "keys",
         # The face models are fetched on first use; the suite stays offline (tests/test_faces.py opts in).
         faces_enabled=False,
+        db_guard_reads=True,
     )
 
 

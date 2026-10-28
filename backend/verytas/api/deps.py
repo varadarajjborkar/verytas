@@ -45,8 +45,17 @@ def hash_token(token: str) -> str:
 
 
 async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
-    async with request.app.state.db.sessionmaker() as session:
+    # A GET only reads, so it takes a session that doesn't hold SQLite's write lock (db.py, Database.reader).
+    db = request.app.state.db
+    route = getattr(request.scope.get("route"), "path", None)
+    maker = db.reader if request.method in ("GET", "HEAD") and route not in WRITING_GETS else db.sessionmaker
+    async with maker() as session:
         yield session
+
+
+# GET routes (by their path template) that record something as they answer; they keep the writer's session.
+# Kept by the suite: in tests a reader session refuses writes, so a GET that starts writing fails there first.
+WRITING_GETS: frozenset[str] = frozenset()
 
 
 def get_prism(request: Request) -> Prism:

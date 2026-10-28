@@ -63,7 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     _init_sentry(settings)
-    db = Database(settings.database_url)
+    db = Database(settings.database_url, guard_reads=settings.db_guard_reads)
     prism = Prism(settings, db.sessionmaker)
     hub = MessageHub(settings.redis_url, settings.message_cache_size, settings.redis_namespace)
     seal = MessageSeal(settings.keys_dir)

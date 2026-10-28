@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="VERYTAS_", env_file=".env", extra="ignore")
 
     database_url: str = "sqlite+aiosqlite:///./verytas.db"
+    # Tests only: a GET's read-only session refuses writes (db.py READ_GUARD), so a GET that writes is found.
+    db_guard_reads: bool = False
 
     # "live" talks to the hosted models. "offline" swaps in deterministic local
     # providers so the whole pipeline runs in tests and demos without keys.
