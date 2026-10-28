@@ -75,11 +75,12 @@ def load_features(sam, path: Path) -> tuple[int, int]:
     return tuple(d["hw"])
 
 
-def build(data: Path, cache: Path, models: Path, device: str, resume: bool) -> None:
+def build(data: Path, cache: Path, models: Path, device: str, resume: bool,
+          manifest_name: str = "manifest.json") -> None:
     from verytas.vision.chain import Chain
 
     (cache / "feats").mkdir(parents=True, exist_ok=True)
-    manifest = json.loads((data / "manifest.json").read_text())
+    manifest = json.loads((data / manifest_name).read_text())
     chain = Chain(models, device)
     t0 = time.perf_counter()
     todo = [c for c in manifest["cases"]
@@ -130,8 +131,9 @@ def main() -> None:
     p.add_argument("--models", type=Path, required=True)
     p.add_argument("--device", default="cpu")
     p.add_argument("--resume", action="store_true")
+    p.add_argument("--manifest", default="manifest.json", help="poses.json caches the posed scenes")
     a = p.parse_args()
-    build(a.data, a.cache, a.models, a.device, a.resume)
+    build(a.data, a.cache, a.models, a.device, a.resume, a.manifest)
 
 
 if __name__ == "__main__":

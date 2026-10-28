@@ -71,3 +71,16 @@ def pick(bench: Bench, case: dict, e: dict) -> tuple[np.ndarray | None, str]:
 def pick_holes(bench: Bench, case: dict, e: dict) -> tuple[np.ndarray | None, str]:
     m, s = pick(bench, case, e)
     return fill_holes(m, 0.03), s
+
+
+def palette(bench: Bench, case: dict, mask: np.ndarray) -> list:
+    from verytas.media import fidelity
+
+    return fidelity.palette_for(bench.refs[case["mascot"]], (bench.rgb(case), mask))
+
+
+def reclaim(bench: Bench, case: dict, e: dict) -> tuple[np.ndarray | None, str]:
+    from verytas.media import maskcheck
+
+    m = e["one"]["masks"][0]
+    return maskcheck.reclaim(bench.rgb(case), m, palette(bench, case, m)), "ok"

@@ -44,10 +44,10 @@ def iou(a: np.ndarray, b: np.ndarray) -> float:
 class Bench:
     """The scenes, their official artwork and cached SAM outputs, loaded once."""
 
-    def __init__(self, data: Path, cache: Path) -> None:
+    def __init__(self, data: Path, cache: Path, manifest: str = "manifest.json") -> None:
         self.data, self.cache = data, cache
         # Only scenes already cached, so a half-built cache can be analysed (it holds whole mascots).
-        self.cases = [c for c in json.loads((data / "manifest.json").read_text())["cases"]
+        self.cases = [c for c in json.loads((data / manifest).read_text())["cases"]
                       if (cache / f"{c['file']}.npz").is_file()]
         self.refs = {m: official_reference(Image.open(data / f"{m}_official.png"))
                      for m in sorted({c["mascot"] for c in self.cases})}

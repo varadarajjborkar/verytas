@@ -54,6 +54,7 @@ class Spec:
     tail: int = 0
     outline: bool = True
     stretch: float = 1.0
+    pose: int = 0  # 0 as registered, 1 arms raised, 2 wide stance: a different pose, not a different body
     removed: list[str] = field(default_factory=list)
 
 
@@ -120,10 +121,13 @@ def draw(s: Spec) -> Image.Image:
             y = 300 - i * 26
             d.polygon([(300, y), (345 + (i % 2) * 10, y - 12), (300, y - 22)], fill=s.accent)
     # Arms: left, right, then a second right one (the "extra limb" defect).
+    arm_dx, arm_dy, leg_dx = {0: (0, 0, 0), 1: (8, -95, 0), 2: (34, 20, 34)}[s.pose]
     for side, y in [(-1, 185), (1, 185), (1, 240)][:s.arms]:
-        d.ellipse((cx + side * 108 - 22, y, cx + side * 108 + 22, y + 44), fill=s.limb)
+        d.ellipse((cx + side * (108 + arm_dx) - 22, y + arm_dy, cx + side * (108 + arm_dx) + 22, y + arm_dy + 44),
+                  fill=s.limb)
     for side in ([-1, 1] if s.legs >= 2 else [-1] if s.legs == 1 else []):
-        d.rounded_rectangle((cx + side * 45 - 18, 285, cx + side * 45 + 18, 340), radius=12, fill=s.limb)
+        d.rounded_rectangle((cx + side * (45 + leg_dx) - 18, 285, cx + side * (45 + leg_dx) + 18, 340), radius=12,
+                            fill=s.limb)
     _body(d, s, box)
     if s.accessory == "hat":
         d.polygon([(cx - 45, top + 12), (cx + 45, top + 12), (cx, top - 70)], fill=s.accent)
@@ -274,6 +278,31 @@ def generate(out: Path, count: int, seed: int = 7) -> dict:
     return manifest
 
 
+def generate_poses(out: Path, count: int, seed: int = 7) -> dict:
+    """The same mascots in other poses, as extra acceptable scenes beside the main set.
+
+    A pose changes the silhouette without changing the body, so a stretch test that reads any silhouette
+    difference as a stretch fails here. It is its own manifest (poses.json) and draws from its own random
+    stream, so the main benchmark's scenes are not disturbed."""
+    rows = []
+    for m in range(count):
+        s = random_spec(seed * 1000 + m)
+        if not (s.arms or s.legs):
+            continue
+        name = f"m{m:02d}"
+        rnd = random.Random(s.seed + 20_000)
+        for pose, label in ((1, "armsup"), (2, "wide")):
+            scene, box, truth = place(draw(replace(s, pose=pose)), rnd, busy=bool(m % 2))
+            file = f"{name}_{label}.png"
+            scene.save(out / file)
+            truth.save(out / f"{name}_{label}_truth.png")
+            rows.append({"mascot": name, "variant": label, "expect": "ok", "file": file, "box": box,
+                         "busy": bool(m % 2)})
+    manifest = {"seed": seed, "count": count, "cases": rows}
+    (out / "poses.json").write_text(json.dumps(manifest, indent=1))
+    return manifest
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="evals.mascots.generate")
     p.add_argument("--out", type=Path, required=True)
@@ -281,7 +310,8 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=7)
     args = p.parse_args()
     m = generate(args.out, args.count, args.seed)
-    print(f"{args.count} mascots, {len(m['cases'])} scenes in {args.out}")
+    poses = generate_poses(args.out, args.count, args.seed)
+    print(f"{args.count} mascots, {len(m['cases'])} scenes and {len(poses['cases'])} posed scenes in {args.out}")
 
 
 if __name__ == "__main__":
