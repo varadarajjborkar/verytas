@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "eslint",
     "gen:prompt": "node scripts/gen-openui-prompt.mjs",
+    "welcome:css": "npx -y tailwindcss@3.4.16 -c welcome/tailwind.config.cjs -i welcome/in.css -o public/welcome/landing.css --minify",
     "predev": "node scripts/gen-openui-prompt.mjs",
     "predev:manager": "node scripts/gen-openui-prompt.mjs",
     "predev:creator": "node scripts/gen-openui-prompt.mjs",

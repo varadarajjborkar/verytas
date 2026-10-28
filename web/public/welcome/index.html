@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verytas · Brand reviews that keep up with your creators</title>
+<meta name="description" content="Verytas checks every caption, image and video against your brand's rules, facts and artwork before it goes live. Creators get answers in seconds; your team only sees what needs a human.">
+<link rel="canonical" href="https://verytas.pages.dev/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Verytas · Every post, on brand before it ships">
+<meta property="og:description" content="Brand governance for teams that work with creators: rules, claims, confidential terms, artwork and faces, checked before anything goes live.">
+<meta property="og:url" content="https://verytas.pages.dev/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#eceef2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0e13" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  // Theme before first paint, so a dark reader never sees a white flash.
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem("vt-landing-theme"); } catch (e) {}
+    if (!t) t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    if (t === "dark") document.documentElement.classList.add("dark");
+  })();
+</script>
+<link rel="stylesheet" href="/welcome/landing.css">
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<style>
+  html { scroll-behavior: smooth; }
+  /* The app's own palette and backdrop (web/src/app/globals.css), so the page and the product read as one. */
+  body { font-family: Geist, ui-sans-serif, system-ui; -webkit-font-smoothing: antialiased;
+    background: radial-gradient(60rem 28rem at 85% -10%, rgba(26, 95, 209, 0.07), transparent 70%), #eceef2;
+    background-attachment: fixed; color: #1b1e26; }
+  .dark body { background: radial-gradient(60rem 28rem at 85% -10%, rgba(76, 155, 255, 0.06), transparent 70%), #0c0e13;
+    background-attachment: fixed; color: #e4e7ed; }
+  /* The sign in panel's accent glow and dot grid, carried onto the hero. */
+  .hero-wash { background:
+      radial-gradient(40rem 26rem at 0% 0%, color-mix(in srgb, #1a5fd1 16%, transparent), transparent 70%),
+      radial-gradient(circle at 1px 1px, color-mix(in srgb, #1b1e26 9%, transparent) 1px, transparent 0) 0 0 / 18px 18px;
+    -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent); mask-image: linear-gradient(to bottom, #000 60%, transparent); }
+  .dark .hero-wash { background:
+      radial-gradient(40rem 26rem at 0% 0%, color-mix(in srgb, #4c9bff 16%, transparent), transparent 70%),
+      radial-gradient(circle at 1px 1px, color-mix(in srgb, #e4e7ed 9%, transparent) 1px, transparent 0) 0 0 / 18px 18px; }
+  .logo-ink { fill: #10141c; } .logo-paper { fill: #ffffff; }
+  .dark .logo-ink { fill: #eef2f8; } .dark .logo-paper { fill: #0c0e13; }
+  .hero-title { background: linear-gradient(180deg, #000 0%, #666 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .dark .hero-title { background: linear-gradient(180deg, #FFF 0%, #9B9B9B 100%); -webkit-background-clip: text; background-clip: text; }
+  .reveal { opacity: 0; transform: translateY(16px); transition: opacity 700ms cubic-bezier(0.22,1,0.36,1), transform 700ms cubic-bezier(0.22,1,0.36,1); }
+  .reveal.in { opacity: 1; transform: none; }
+  .tag-word { opacity: 0.16; transition: opacity 400ms cubic-bezier(0.22,1,0.36,1); }
+  .tag-word.on { opacity: 1; }
+  .menu-link { opacity: 0; transform: translateY(12px); transition: opacity 500ms cubic-bezier(0.22,1,0.36,1), transform 500ms cubic-bezier(0.22,1,0.36,1); }
+  .menu-open .menu-link { opacity: 1; transform: none; }
+  .faq-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 400ms cubic-bezier(0.22,1,0.36,1); }
+  .faq-open .faq-body { grid-template-rows: 1fr; }
+  .faq-open .faq-icon { transform: rotate(45deg); }
+  .faq-icon { transition: transform 400ms cubic-bezier(0.22,1,0.36,1); }
+  mark.hit { background: transparent; border-bottom: 2px solid currentColor; padding: 0 2px; }
+  mark.must { color: #c2261b; } .dark mark.must { color: #ff7a6e; }
+  mark.should { color: #a35b00; } .dark mark.should { color: #f5b14c; }
+
+  /* Tints that drift as the page scrolls, behind everything (the body background paints on the canvas). */
+  #tints { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  #tints span { position: absolute; left: 0; top: 0; width: 44rem; height: 44rem; border-radius: 9999px; will-change: transform;
+    background: radial-gradient(closest-side, rgba(26, 95, 209, 0.13), transparent); }
+  #tints span.soft { width: 30rem; height: 30rem; background: radial-gradient(closest-side, rgba(56, 132, 255, 0.10), transparent); }
+  .dark #tints span { background: radial-gradient(closest-side, rgba(76, 155, 255, 0.10), transparent); }
+  .dark #tints span.soft { background: radial-gradient(closest-side, rgba(120, 170, 255, 0.07), transparent); }
+  /* Inki: leans in with a little overshoot, closes its open eye for a beat, and settles. */
+  .inki { position: relative; display: inline-block; flex-shrink: 0; cursor: pointer; outline: none;
+    transition: transform 520ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .inki:hover, .inki:focus-visible { transform: scale(1.18) rotate(-8deg); }
+  /* At rest both eyes are open: the artwork's wink is covered by a copy of its open eye. On hover that eye
+     shuts, the cover fades and the wink shows through; leaving, the cover returns with the eye shut, then
+     it opens. Positions are the artwork's own pixels as fractions of its 256px square. */
+  .inki-patch, .inki-eye { position: absolute; pointer-events: none; }
+  .inki-patch { left: 57.4%; top: 47.3%; width: 14.1%; height: 16.4%; border-radius: 28%; background: rgb(206, 241, 253); }
+  .inki-eye { left: 59%; top: 47.7%; width: 10.9%; height: 17.2%; transform-origin: 50% 55%; }
+  .inki-patch, .inki-eye { transition: opacity 200ms ease-out 0ms; }
+  .inki-eye { transition: opacity 200ms ease-out 0ms, transform 180ms cubic-bezier(0.22, 1, 0.36, 1) 220ms; }
+  .inki:hover .inki-eye, .inki:focus-visible .inki-eye { transform: scaleY(0.08);
+    transition: transform 150ms ease-in 0ms, opacity 160ms ease-out 130ms; opacity: 0; }
+  .inki:hover .inki-patch, .inki:focus-visible .inki-patch { opacity: 0; transition: opacity 160ms ease-out 130ms; }
+  /* Scrolls without a bar; while more sits below, the bottom edge fades to say so. */
+  .quiet-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+  .quiet-scroll::-webkit-scrollbar { display: none; }
+  .quiet-scroll.more { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent); }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .reveal, .tag-word, .menu-link, .faq-body, .faq-icon, .inki { transition: none !important; }
+    .inki-eye, .inki-patch { transition: none !important; }
+    .reveal { opacity: 1; transform: none; }
+    .tag-word { opacity: 1; }
+  }
+</style>
+</head>
+<body class="">
+<div id="tints" aria-hidden="true"></div>
+<a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-accent focus:px-4 focus:py-2 focus:text-white">Skip to content</a>
+
+<!-- Floating nav pill -->
+<header class="fixed inset-x-0 top-4 z-40 px-4">
+  <nav aria-label="Main" class="mx-auto flex max-w-5xl items-center justify-between rounded-full border border-line/80 bg-raised/70 py-2 pl-4 pr-2 shadow-sm backdrop-blur-xl dark:border-ink-3 dark:bg-ink-1/70">
+    <a href="#top" class="flex items-center gap-2 text-sm font-semibold"><svg viewBox="0 0 778 815" class="h-6 w-6" aria-hidden="true" focusable="false"><g transform="translate(0 815) scale(0.1 -0.1)"><path class="logo-ink" d="M2946 8019 c-66 -16 -174 -79 -217 -128 -71 -79 -55 -40 -354 -906 -59 -170 -110 -314 -114 -318 -4 -4 -196 24 -426 64 -496 84 -545 86 -658 31 -148 -73 -196 -152 -297 -482 -260 -857 -254 -833 -226 -953 34 -145 75 -191 314 -354 103 -70 227 -154 275 -187 49 -34 85 -62 80 -63 -4 -1 -66 -11 -138 -22 -167 -26 -764 -174 -832 -207 -113 -54 -200 -174 -223 -305 -7 -44 -10 -272 -8 -714 4 -726 1 -695 78 -814 51 -80 235 -230 518 -421 45 -30 81 -61 82 -67 0 -7 -18 -77 -40 -155 -63 -223 -63 -309 0 -435 53 -106 120 -157 820 -625 244 -163 890 -572 957 -606 139 -71 304 -68 425 8 27 16 52 30 55 30 4 0 72 -44 152 -99 310 -210 294 -208 923 -75 249 52 518 108 597 124 168 34 229 61 299 131 77 77 93 112 216 462 176 498 188 531 196 541 5 4 187 -35 407 -88 264 -64 417 -96 454 -96 123 0 255 66 329 163 48 65 485 970 536 1109 51 143 5 322 -107 421 -26 23 -202 146 -392 272 -191 127 -346 232 -347 235 0 3 89 3 197 2 332 -6 761 40 915 98 107 40 204 151 241 278 25 89 33 463 19 977 -16 574 -10 563 -452 850 -144 94 -264 175 -266 181 -3 6 47 145 109 310 64 165 117 323 121 352 14 110 -29 243 -105 324 -45 48 -769 536 -839 566 -19 8 -170 61 -335 117 -165 57 -379 131 -475 164 -225 79 -283 89 -384 67 -121 -27 -237 -117 -296 -228 -14 -27 -29 -48 -33 -48 -7 0 -261 170 -322 216 -83 63 -148 81 -630 179 -732 150 -706 146 -799 124z"/><path class="logo-paper" d="M2992 7573 c-51 -140 -278 -804 -366 -1070 -65 -194 -102 -293 -111 -293 -8 0 -274 43 -591 95 -317 53 -581 94 -587 92 -7 -2 -75 -219 -153 -483 l-141 -479 26 -12 c105 -49 833 -272 977 -299 19 -3 34 -12 34 -18 0 -7 -49 -147 -109 -311 -59 -165 -121 -337 -137 -381 l-28 -81 -221 -6 c-282 -7 -382 -24 -913 -153 l-152 -37 0 -608 0 -609 23 5 c239 56 607 135 654 141 98 10 233 -4 233 -25 0 -16 -178 -728 -273 -1094 l-44 -167 91 -63 c327 -226 833 -553 841 -546 2 3 128 371 279 818 151 447 278 816 281 819 3 3 152 -23 331 -59 l325 -64 -5 -25 c-3 -14 -35 -137 -71 -275 -136 -520 -344 -1349 -340 -1354 6 -6 197 34 530 111 143 33 342 77 443 98 101 21 185 40 187 42 2 2 65 174 140 383 180 502 276 770 279 772 1 1 42 -7 91 -18 383 -84 997 -210 1012 -207 9 2 40 60 75 143 33 77 123 284 200 460 77 176 146 334 154 351 l13 31 -162 61 c-211 80 -361 133 -697 248 -251 87 -275 97 -274 117 1 24 262 768 273 778 3 3 69 -3 146 -14 108 -15 201 -19 405 -21 293 -1 384 9 627 66 l131 31 8 126 c6 105 -3 1101 -10 1108 -1 1 -63 -4 -139 -12 -312 -33 -727 -41 -727 -15 0 12 223 638 419 1179 39 107 71 200 71 207 0 7 -19 19 -42 28 -107 39 -895 306 -904 306 -15 0 -302 -593 -576 -1190 -76 -167 -141 -306 -142 -308 -5 -4 -639 118 -646 124 -5 5 35 160 175 684 167 625 188 711 179 719 -9 8 -1026 211 -1056 211 -9 0 -23 -23 -36 -57z m691 -2148 c204 -35 388 -132 633 -333 173 -142 421 -414 411 -452 -2 -9 -56 -95 -120 -191 -790 -1200 -1294 -1452 -1984 -996 -179 119 -429 349 -543 500 l-43 58 18 32 c32 56 280 429 350 527 369 514 710 796 1033 854 102 19 143 19 245 1z M3376 4829 c-340 -80 -520 -642 -289 -899 210 -234 580 -48 679 340 24 94 15 273 -17 355 -62 158 -214 241 -373 204z"/></g></svg>Verytas</a>
+    <div class="hidden items-center gap-6 text-sm text-neutral-600 dark:text-neutral-400 md:flex">
+      <a href="#try" class="transition hover:text-neutral-900 dark:hover:text-white">Try it</a>
+      <a href="#features" class="transition hover:text-neutral-900 dark:hover:text-white">Features</a>
+      <a href="#how" class="transition hover:text-neutral-900 dark:hover:text-white">How it works</a>
+      <a href="#faq" class="transition hover:text-neutral-900 dark:hover:text-white">FAQ</a>
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" data-theme-toggle aria-label="Switch theme" class="flex h-8 w-8 items-center justify-center rounded-full text-neutral-600 transition hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-ink-3">
+        <i class="ph ph-moon dark:hidden" aria-hidden="true"></i><i class="ph ph-sun hidden dark:inline" aria-hidden="true"></i>
+      </button>
+      <a href="/signin/account" class="hidden rounded-full px-4 py-2 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-ink-3 sm:inline-block">Sign up</a>
+      <a href="/signin" class="hidden rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-[#1752b8] dark:bg-accent-dark dark:text-[#06101e] dark:hover:bg-[#6aacff] sm:inline-block">Open the demo</a>
+      <button type="button" id="menu-btn" aria-label="Open menu" aria-expanded="false" aria-controls="menu" class="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-neutral-100 dark:hover:bg-ink-3 md:hidden">
+        <i class="ph ph-list text-lg" aria-hidden="true"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+
+<!-- Mobile menu: full height, links stagger in -->
+<div id="menu" class="pointer-events-none fixed inset-0 z-50 flex flex-col bg-raised opacity-0 transition-opacity duration-300 ease-out dark:bg-ink-0" aria-hidden="true">
+  <div class="flex items-center justify-between px-6 pt-6">
+    <span class="flex items-center gap-2 text-sm font-semibold"><svg viewBox="0 0 778 815" class="h-6 w-6" aria-hidden="true" focusable="false"><g transform="translate(0 815) scale(0.1 -0.1)"><path class="logo-ink" d="M2946 8019 c-66 -16 -174 -79 -217 -128 -71 -79 -55 -40 -354 -906 -59 -170 -110 -314 -114 -318 -4 -4 -196 24 -426 64 -496 84 -545 86 -658 31 -148 -73 -196 -152 -297 -482 -260 -857 -254 -833 -226 -953 34 -145 75 -191 314 -354 103 -70 227 -154 275 -187 49 -34 85 -62 80 -63 -4 -1 -66 -11 -138 -22 -167 -26 -764 -174 -832 -207 -113 -54 -200 -174 -223 -305 -7 -44 -10 -272 -8 -714 4 -726 1 -695 78 -814 51 -80 235 -230 518 -421 45 -30 81 -61 82 -67 0 -7 -18 -77 -40 -155 -63 -223 -63 -309 0 -435 53 -106 120 -157 820 -625 244 -163 890 -572 957 -606 139 -71 304 -68 425 8 27 16 52 30 55 30 4 0 72 -44 152 -99 310 -210 294 -208 923 -75 249 52 518 108 597 124 168 34 229 61 299 131 77 77 93 112 216 462 176 498 188 531 196 541 5 4 187 -35 407 -88 264 -64 417 -96 454 -96 123 0 255 66 329 163 48 65 485 970 536 1109 51 143 5 322 -107 421 -26 23 -202 146 -392 272 -191 127 -346 232 -347 235 0 3 89 3 197 2 332 -6 761 40 915 98 107 40 204 151 241 278 25 89 33 463 19 977 -16 574 -10 563 -452 850 -144 94 -264 175 -266 181 -3 6 47 145 109 310 64 165 117 323 121 352 14 110 -29 243 -105 324 -45 48 -769 536 -839 566 -19 8 -170 61 -335 117 -165 57 -379 131 -475 164 -225 79 -283 89 -384 67 -121 -27 -237 -117 -296 -228 -14 -27 -29 -48 -33 -48 -7 0 -261 170 -322 216 -83 63 -148 81 -630 179 -732 150 -706 146 -799 124z"/><path class="logo-paper" d="M2992 7573 c-51 -140 -278 -804 -366 -1070 -65 -194 -102 -293 -111 -293 -8 0 -274 43 -591 95 -317 53 -581 94 -587 92 -7 -2 -75 -219 -153 -483 l-141 -479 26 -12 c105 -49 833 -272 977 -299 19 -3 34 -12 34 -18 0 -7 -49 -147 -109 -311 -59 -165 -121 -337 -137 -381 l-28 -81 -221 -6 c-282 -7 -382 -24 -913 -153 l-152 -37 0 -608 0 -609 23 5 c239 56 607 135 654 141 98 10 233 -4 233 -25 0 -16 -178 -728 -273 -1094 l-44 -167 91 -63 c327 -226 833 -553 841 -546 2 3 128 371 279 818 151 447 278 816 281 819 3 3 152 -23 331 -59 l325 -64 -5 -25 c-3 -14 -35 -137 -71 -275 -136 -520 -344 -1349 -340 -1354 6 -6 197 34 530 111 143 33 342 77 443 98 101 21 185 40 187 42 2 2 65 174 140 383 180 502 276 770 279 772 1 1 42 -7 91 -18 383 -84 997 -210 1012 -207 9 2 40 60 75 143 33 77 123 284 200 460 77 176 146 334 154 351 l13 31 -162 61 c-211 80 -361 133 -697 248 -251 87 -275 97 -274 117 1 24 262 768 273 778 3 3 69 -3 146 -14 108 -15 201 -19 405 -21 293 -1 384 9 627 66 l131 31 8 126 c6 105 -3 1101 -10 1108 -1 1 -63 -4 -139 -12 -312 -33 -727 -41 -727 -15 0 12 223 638 419 1179 39 107 71 200 71 207 0 7 -19 19 -42 28 -107 39 -895 306 -904 306 -15 0 -302 -593 -576 -1190 -76 -167 -141 -306 -142 -308 -5 -4 -639 118 -646 124 -5 5 35 160 175 684 167 625 188 711 179 719 -9 8 -1026 211 -1056 211 -9 0 -23 -23 -36 -57z m691 -2148 c204 -35 388 -132 633 -333 173 -142 421 -414 411 -452 -2 -9 -56 -95 -120 -191 -790 -1200 -1294 -1452 -1984 -996 -179 119 -429 349 -543 500 l-43 58 18 32 c32 56 280 429 350 527 369 514 710 796 1033 854 102 19 143 19 245 1z M3376 4829 c-340 -80 -520 -642 -289 -899 210 -234 580 -48 679 340 24 94 15 273 -17 355 -62 158 -214 241 -373 204z"/></g></svg>Verytas</span>
+    <button type="button" id="menu-close" aria-label="Close menu" class="flex h-10 w-10 items-center justify-center rounded-full hover:bg-neutral-100 dark:hover:bg-ink-3"><i class="ph ph-x text-xl" aria-hidden="true"></i></button>
+  </div>
+  <nav aria-label="Mobile" class="flex flex-1 flex-col justify-center gap-6 px-8 text-3xl font-semibold">
+    <a class="menu-link" style="transition-delay:40ms" href="#try">Try it</a>
+    <a class="menu-link" style="transition-delay:90ms" href="#features">Features</a>
+    <a class="menu-link" style="transition-delay:140ms" href="#how">How it works</a>
+    <a class="menu-link" style="transition-delay:190ms" href="#faq">FAQ</a>
+    <div class="menu-link mt-8 flex flex-col gap-3 text-base" style="transition-delay:240ms">
+      <a href="/signin" class="rounded-full bg-accent px-6 py-3 text-center font-medium text-white hover:bg-[#1752b8] dark:bg-accent-dark dark:text-[#06101e] dark:hover:bg-[#6aacff]">Open the demo</a>
+      <a href="/signin/account" class="rounded-full border border-neutral-300 px-6 py-3 text-center font-medium dark:border-ink-4">Sign up</a>
+    </div>
+  </nav>
+</div>
+
+<main id="main">
+  <!-- Hero -->
+  <section id="top" class="relative px-4 pb-20 pt-40 sm:pt-48">
+    <div class="hero-wash pointer-events-none absolute inset-x-0 top-0 h-[44rem]" aria-hidden="true"></div>
+    <div class="relative mx-auto max-w-[680px] text-center">
+      <h1 class="hero-title reveal text-5xl font-semibold tracking-tight sm:text-6xl">Every post, on brand before it ships.</h1>
+      <p class="reveal mx-auto mt-6 max-w-[680px] text-lg text-neutral-600 dark:text-neutral-400">Verytas checks captions, images and video against your rules, facts and artwork. Creators get answers in seconds. Your team only sees what needs a human, and every decision is signed and kept.</p>
+      <div class="reveal mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <a href="/signin" class="inline-flex w-full items-center justify-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-medium text-white transition hover:bg-[#1752b8] dark:bg-accent-dark dark:text-[#06101e] dark:hover:bg-[#6aacff] sm:w-auto">Open the live demo <i class="ph ph-arrow-right" aria-hidden="true"></i></a>
+        <a href="#try" class="inline-flex w-full items-center justify-center gap-2 rounded-full border border-neutral-300 px-6 py-3 text-sm font-medium transition hover:bg-surface dark:border-ink-4 dark:hover:bg-ink-2 sm:w-auto">Try a check here</a>
+      </div>
+      <p class="reveal mt-4 text-xs text-neutral-500">No sign up needed for the demo. Pick a person and look around.</p>
+    </div>
+
+    <!-- Product preview: a review card, drawn in markup so it stays crisp in both themes -->
+    <div class="reveal relative mx-auto mt-16 max-w-4xl rounded-3xl border border-line bg-surface p-2 shadow-xl shadow-neutral-200/60 dark:border-ink-3 dark:bg-ink-1 dark:shadow-none">
+      <div class="rounded-2xl border border-line bg-raised p-6 dark:border-ink-3 dark:bg-ink-2">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-xs text-neutral-500">Review · Launch announcement · version 2</p>
+            <p class="mt-1 font-semibold">Instagram reel by Dev Sharma</p>
+          </div>
+          <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"><i class="ph ph-warning" aria-hidden="true"></i>2 to fix before posting</span>
+        </div>
+        <div class="mt-6 grid gap-4 md:grid-cols-[1.3fr_1fr]">
+          <p class="rounded-xl bg-surface p-4 text-sm leading-6 text-neutral-700 dark:bg-ink-3 dark:text-neutral-300">
+            Meet the new Aurora app: <mark class="hit must">guaranteed</mark> to double your savings in a week, <mark class="hit should">40% faster</mark> than anything out there. Link in bio!
+          </p>
+          <ul class="space-y-3 text-sm">
+            <li class="flex gap-3"><i class="ph ph-x-circle mt-0.5 text-red-600 dark:text-red-400" aria-hidden="true"></i><span><span class="font-medium">Promise of results.</span> <span class="text-neutral-500">Your rules ban guarantees on savings.</span></span></li>
+            <li class="flex gap-3"><i class="ph ph-question mt-0.5 text-amber-600 dark:text-amber-400" aria-hidden="true"></i><span><span class="font-medium">Speed claim with no source.</span> <span class="text-neutral-500">Your facts say 25% faster, measured in March.</span></span></li>
+            <li class="flex gap-3"><i class="ph ph-check-circle mt-0.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true"></i><span><span class="font-medium">Logo and mascot used as agreed.</span> <span class="text-neutral-500">Checked in 14 frames.</span></span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Try a check -->
+  <section id="try" class="px-4 py-24">
+    <div class="mx-auto max-w-5xl">
+      <div class="reveal max-w-[680px]">
+        <p class="text-sm font-medium text-accent dark:text-accent-dark">Try it</p>
+        <h2 class="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Paste a caption. See what a reviewer would say.</h2>
+        <p class="mt-4 text-neutral-600 dark:text-neutral-400">This runs in your browser against a small sample brand. The real product checks your own rules, your facts, your confidential terms and the pictures too.</p>
+      </div>
+      <div class="reveal mt-10 grid gap-6 lg:grid-cols-2">
+        <div class="bg-raised rounded-2xl border border-line p-4 dark:border-ink-3 dark:bg-ink-1">
+          <label for="caption" class="text-sm font-medium">Caption</label>
+          <textarea id="caption" rows="7" maxlength="1200" class="mt-2 w-full resize-none rounded-xl border border-line bg-raised p-4 text-sm leading-6 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 dark:border-ink-4 dark:bg-ink-2 dark:focus:border-accent-dark">Our new Aurora app is guaranteed to double your savings! 40% faster than every other bank app. Sneak peek of Project Nimbus coming soon 👀</textarea>
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap gap-2" role="group" aria-label="Sample captions">
+              <button type="button" data-sample="0" class="rounded-full border border-line px-3 py-1 text-xs transition hover:bg-surface dark:border-ink-4 dark:hover:bg-ink-3">Risky</button>
+              <button type="button" data-sample="1" class="rounded-full border border-line px-3 py-1 text-xs transition hover:bg-surface dark:border-ink-4 dark:hover:bg-ink-3">Nearly there</button>
+              <button type="button" data-sample="2" class="rounded-full border border-line px-3 py-1 text-xs transition hover:bg-surface dark:border-ink-4 dark:hover:bg-ink-3">Clean</button>
+            </div>
+            <button type="button" id="run" class="inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 dark:bg-accent-dark dark:text-black"><i class="ph ph-magnifying-glass" aria-hidden="true"></i>Check it</button>
+          </div>
+        </div>
+        <!-- Side by side, the caption box alone sets the height (size containment gives this one no say), so the
+             pair never grows; a long list scrolls inside. Stacked on a phone, one fixed height for every sample. -->
+        <div class="bg-raised flex h-80 flex-col rounded-2xl border border-line p-4 dark:border-ink-3 dark:bg-ink-1 lg:h-auto lg:[contain:size]" aria-live="polite">
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-medium">What Verytas found</p>
+            <span id="verdict" class="rounded-full px-3 py-1 text-xs font-medium"></span>
+          </div>
+          <div id="found-scroll" class="quiet-scroll mt-3 min-h-0 flex-1 overflow-y-auto overscroll-contain" tabindex="0" aria-label="Findings">
+            <p id="marked" class="rounded-xl bg-surface p-4 text-sm leading-6 dark:bg-ink-2"></p>
+            <ul id="findings" class="mt-4 space-y-3 pb-1 text-sm"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Benefits bento -->
+  <section id="features" class="px-4 py-24">
+    <div class="mx-auto max-w-5xl">
+      <div class="reveal max-w-[680px]">
+        <p class="text-sm font-medium text-accent dark:text-accent-dark">What it checks</p>
+        <h2 class="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Your brand book, read by something that never gets tired.</h2>
+      </div>
+      <div class="mt-12 grid gap-4 md:grid-cols-3">
+        <article class="bg-raised reveal rounded-2xl border border-line p-6 dark:border-ink-3 dark:bg-ink-1 md:col-span-2">
+          <i class="ph ph-scroll text-2xl text-accent dark:text-accent-dark" aria-hidden="true"></i>
+          <h3 class="mt-4 font-semibold">Rules that read like your guidelines</h3>
+          <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">Write them the way your team already does. Banned words, tone, disclosures, channel by channel. Each finding quotes the rule it broke, so nobody argues with a black box.</p>
+        </article>
+        <article class="bg-raised reveal rounded-2xl border border-line p-6 dark:border-ink-3 dark:bg-ink-1">
+          <i class="ph ph-seal-check text-2xl text-accent dark:text-accent-dark" aria-hidden="true"></i>
+          <h3 class="mt-4 font-semibold">Claims meet your facts</h3>
+          <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">Numbers and promises are compared with the facts you keep, with their dates and sources.</p>
+        </article>
+        <article class="bg-raised reveal rounded-2xl border border-line p-6 dark:border-ink-3 dark:bg-ink-1">
+          <i class="ph ph-lock-key text-2xl text-accent dark:text-accent-dark" aria-hidden="true"></i>
+          <h3 class="mt-4 font-semibold">Secrets stay secret</h3>
+          <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">Code names and unreleased dates are caught before a creator posts them, even inside a screenshot.</p>
+        </article>
+        <article class="bg-raised reveal rounded-2xl border border-line p-6 dark:border-ink-3 dark:bg-ink-1">
+          <i class="ph ph-image-square text-2xl text-accent dark:text-accent-dark" aria-hidden="true"></i>
+          <h3 class="mt-4 font-semibold">Logos, mascots and packaging</h3>
+          <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">Artwork is found in images and video frames, then checked for colour, stretch and crop.</p>
+        </article>
+        <article class="bg-raised reveal rounded-2xl border border-line p-6 dark:border-ink-3 dark:bg-ink-1">
+          <i class="ph ph-user-focus text-2xl text-accent dark:text-accent-dark" aria-hidden="true"></i>
+          <h3 class="mt-4 font-semibold">Faces with an agreement</h3>
+          <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">People in a post are matched to the ambassadors you approved, with their dates and channels.</p>
+        </article>
+        <article class="bg-raised reveal rounded-2xl border border-line p-6 dark:border-ink-3 dark:bg-ink-1 md:col-span-3">
+          <div class="flex flex-col gap-6 md:flex-row md:items-center">
+            <span class="inki" tabindex="0" aria-label="Inki, the Verytas assistant"><img src="/inki-wink.png" alt="" class="h-16 w-16"><span class="inki-patch" aria-hidden="true"></span><img class="inki-eye" src="/inki-eye.png" alt="" aria-hidden="true"></span>
+            <div>
+              <h3 class="font-semibold">Conversations, with Inki on call</h3>
+              <p class="mt-2 max-w-[680px] text-sm text-neutral-600 dark:text-neutral-400">Creators and reviewers talk next to the piece in question: files, replies, edits, meeting links. Mention @Inki and it answers from the record, only after you have said it may read along.</p>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section id="how" class="px-4 py-24">
+    <div class="mx-auto max-w-5xl">
+      <div class="reveal max-w-[680px]">
+        <p class="text-sm font-medium text-accent dark:text-accent-dark">How it works</p>
+        <h2 class="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Three steps, and the middle one takes seconds.</h2>
+      </div>
+      <ol class="mt-12 grid gap-8 md:grid-cols-3">
+        <li class="reveal">
+          <h3 class="text-lg font-semibold">Teach it your brand</h3>
+          <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">Upload the brand book, facts sheet and artwork. Verytas drafts the rules; a person approves each one.</p>
+        </li>
+        <li class="reveal">
+          <h3 class="text-lg font-semibold">Creators submit</h3>
+          <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">A caption, a carousel or a reel. Findings come back with the reason and a suggested fix.</p>
+        </li>
+        <li class="reveal">
+          <h3 class="text-lg font-semibold">Your team decides</h3>
+          <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">Only what needs judgement reaches the queue. Every approval is signed and lands in an audit trail.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Tagline reveal -->
+  <section id="tagline" class="px-4 py-32" aria-label="What we believe">
+    <p id="tagline-text" class="mx-auto max-w-4xl text-center text-3xl font-semibold leading-tight tracking-tight sm:text-5xl">Creators should hear yes faster. Brands should never find out from the comments. Verytas sits in between, so both get what they need before anything goes live.</p>
+  </section>
+
+  <!-- Two sides -->
+  <section class="px-4 pb-24">
+    <div class="mx-auto grid max-w-5xl gap-4 md:grid-cols-2">
+      <article class="bg-raised reveal rounded-2xl border border-line p-8 dark:border-ink-3 dark:bg-ink-1">
+        <p class="text-sm font-medium text-neutral-500">For brand teams</p>
+        <ul class="mt-6 space-y-4 text-sm">
+          <li class="flex gap-3"><i class="ph ph-funnel mt-0.5" aria-hidden="true"></i>A queue that holds only what needs a person</li>
+          <li class="flex gap-3"><i class="ph ph-chart-line-up mt-0.5" aria-hidden="true"></i>Guideline health: which rules cause the most rework</li>
+          <li class="flex gap-3"><i class="ph ph-signature mt-0.5" aria-hidden="true"></i>Signed decisions you can show a regulator</li>
+        </ul>
+      </article>
+      <article class="bg-raised reveal rounded-2xl border border-line p-8 dark:border-ink-3 dark:bg-ink-1">
+        <p class="text-sm font-medium text-neutral-500">For creators</p>
+        <ul class="mt-6 space-y-4 text-sm">
+          <li class="flex gap-3"><i class="ph ph-lightning mt-0.5" aria-hidden="true"></i>Feedback in seconds, not in a week of emails</li>
+          <li class="flex gap-3"><i class="ph ph-pencil-simple-line mt-0.5" aria-hidden="true"></i>A suggested rewrite next to every finding</li>
+          <li class="flex gap-3"><i class="ph ph-chats-circle mt-0.5" aria-hidden="true"></i>One place to talk to the brand, with every file</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <!-- Trust -->
+  <section class="px-4 py-24">
+    <div class="mx-auto grid max-w-5xl gap-12 md:grid-cols-[1fr_1.2fr] md:items-center">
+      <div class="reveal">
+        <p class="text-sm font-medium text-accent dark:text-accent-dark">Trust</p>
+        <h2 class="mt-2 text-3xl font-semibold tracking-tight">Built so you can check our work.</h2>
+        <p class="mt-4 text-neutral-600 dark:text-neutral-400">Measured on a 1,200 scene benchmark that ships with the source, not on a demo we picked.</p>
+      </div>
+      <dl class="reveal grid grid-cols-2 gap-4">
+        <div class="bg-raised rounded-2xl border border-line p-6 dark:border-ink-3 dark:bg-ink-1"><dt class="text-xs text-neutral-500">Brand problems caught</dt><dd class="mt-2 text-3xl font-semibold">92.9%</dd></div>
+        <div class="bg-raised rounded-2xl border border-line p-6 dark:border-ink-3 dark:bg-ink-1"><dt class="text-xs text-neutral-500">False alarms</dt><dd class="mt-2 text-3xl font-semibold">4.7%</dd></div>
+        <div class="bg-raised rounded-2xl border border-line p-6 dark:border-ink-3 dark:bg-ink-1"><dt class="text-xs text-neutral-500">Messages at rest</dt><dd class="mt-2 text-lg font-semibold">Encrypted</dd></div>
+        <div class="bg-raised rounded-2xl border border-line p-6 dark:border-ink-3 dark:bg-ink-1"><dt class="text-xs text-neutral-500">Every decision</dt><dd class="mt-2 text-lg font-semibold">Signed and chained</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="px-4 py-24">
+    <div class="mx-auto max-w-3xl">
+      <h2 class="reveal text-3xl font-semibold tracking-tight sm:text-4xl">Questions people ask</h2>
+      <div id="faq-list" class="mt-10 flex flex-col gap-2"></div>
+    </div>
+  </section>
+
+  <!-- Final call to action -->
+  <section class="px-4 pb-24">
+    <div class="reveal mx-auto max-w-5xl rounded-3xl border border-line bg-surface px-6 py-16 text-center dark:border-ink-3 dark:bg-ink-1">
+      <h2 class="mx-auto max-w-[680px] text-3xl font-semibold tracking-tight sm:text-4xl">See a review from both sides in two minutes.</h2>
+      <p class="mx-auto mt-4 max-w-[680px] text-neutral-600 dark:text-neutral-400">The demo has a brand team and creators already set up. Pick anyone and start.</p>
+      <div class="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <a href="/signin" class="inline-flex w-full items-center justify-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-medium text-white transition hover:bg-[#1752b8] dark:bg-accent-dark dark:text-[#06101e] dark:hover:bg-[#6aacff] sm:w-auto">Open the live demo <i class="ph ph-arrow-right" aria-hidden="true"></i></a>
+        <a href="/signin/account" class="inline-flex w-full items-center justify-center rounded-full border border-neutral-300 px-6 py-3 text-sm font-medium transition hover:bg-white dark:border-ink-4 dark:hover:bg-ink-2 sm:w-auto">Create an account</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="px-4 py-12 text-sm text-neutral-500">
+  <div class="mx-auto flex max-w-5xl flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+    <span class="flex items-center gap-2"><svg viewBox="0 0 778 815" class="h-5 w-5" aria-hidden="true" focusable="false"><g transform="translate(0 815) scale(0.1 -0.1)"><path class="logo-ink" d="M2946 8019 c-66 -16 -174 -79 -217 -128 -71 -79 -55 -40 -354 -906 -59 -170 -110 -314 -114 -318 -4 -4 -196 24 -426 64 -496 84 -545 86 -658 31 -148 -73 -196 -152 -297 -482 -260 -857 -254 -833 -226 -953 34 -145 75 -191 314 -354 103 -70 227 -154 275 -187 49 -34 85 -62 80 -63 -4 -1 -66 -11 -138 -22 -167 -26 -764 -174 -832 -207 -113 -54 -200 -174 -223 -305 -7 -44 -10 -272 -8 -714 4 -726 1 -695 78 -814 51 -80 235 -230 518 -421 45 -30 81 -61 82 -67 0 -7 -18 -77 -40 -155 -63 -223 -63 -309 0 -435 53 -106 120 -157 820 -625 244 -163 890 -572 957 -606 139 -71 304 -68 425 8 27 16 52 30 55 30 4 0 72 -44 152 -99 310 -210 294 -208 923 -75 249 52 518 108 597 124 168 34 229 61 299 131 77 77 93 112 216 462 176 498 188 531 196 541 5 4 187 -35 407 -88 264 -64 417 -96 454 -96 123 0 255 66 329 163 48 65 485 970 536 1109 51 143 5 322 -107 421 -26 23 -202 146 -392 272 -191 127 -346 232 -347 235 0 3 89 3 197 2 332 -6 761 40 915 98 107 40 204 151 241 278 25 89 33 463 19 977 -16 574 -10 563 -452 850 -144 94 -264 175 -266 181 -3 6 47 145 109 310 64 165 117 323 121 352 14 110 -29 243 -105 324 -45 48 -769 536 -839 566 -19 8 -170 61 -335 117 -165 57 -379 131 -475 164 -225 79 -283 89 -384 67 -121 -27 -237 -117 -296 -228 -14 -27 -29 -48 -33 -48 -7 0 -261 170 -322 216 -83 63 -148 81 -630 179 -732 150 -706 146 -799 124z"/><path class="logo-paper" d="M2992 7573 c-51 -140 -278 -804 -366 -1070 -65 -194 -102 -293 -111 -293 -8 0 -274 43 -591 95 -317 53 -581 94 -587 92 -7 -2 -75 -219 -153 -483 l-141 -479 26 -12 c105 -49 833 -272 977 -299 19 -3 34 -12 34 -18 0 -7 -49 -147 -109 -311 -59 -165 -121 -337 -137 -381 l-28 -81 -221 -6 c-282 -7 -382 -24 -913 -153 l-152 -37 0 -608 0 -609 23 5 c239 56 607 135 654 141 98 10 233 -4 233 -25 0 -16 -178 -728 -273 -1094 l-44 -167 91 -63 c327 -226 833 -553 841 -546 2 3 128 371 279 818 151 447 278 816 281 819 3 3 152 -23 331 -59 l325 -64 -5 -25 c-3 -14 -35 -137 -71 -275 -136 -520 -344 -1349 -340 -1354 6 -6 197 34 530 111 143 33 342 77 443 98 101 21 185 40 187 42 2 2 65 174 140 383 180 502 276 770 279 772 1 1 42 -7 91 -18 383 -84 997 -210 1012 -207 9 2 40 60 75 143 33 77 123 284 200 460 77 176 146 334 154 351 l13 31 -162 61 c-211 80 -361 133 -697 248 -251 87 -275 97 -274 117 1 24 262 768 273 778 3 3 69 -3 146 -14 108 -15 201 -19 405 -21 293 -1 384 9 627 66 l131 31 8 126 c6 105 -3 1101 -10 1108 -1 1 -63 -4 -139 -12 -312 -33 -727 -41 -727 -15 0 12 223 638 419 1179 39 107 71 200 71 207 0 7 -19 19 -42 28 -107 39 -895 306 -904 306 -15 0 -302 -593 -576 -1190 -76 -167 -141 -306 -142 -308 -5 -4 -639 118 -646 124 -5 5 35 160 175 684 167 625 188 711 179 719 -9 8 -1026 211 -1056 211 -9 0 -23 -23 -36 -57z m691 -2148 c204 -35 388 -132 633 -333 173 -142 421 -414 411 -452 -2 -9 -56 -95 -120 -191 -790 -1200 -1294 -1452 -1984 -996 -179 119 -429 349 -543 500 l-43 58 18 32 c32 56 280 429 350 527 369 514 710 796 1033 854 102 19 143 19 245 1z M3376 4829 c-340 -80 -520 -642 -289 -899 210 -234 580 -48 679 340 24 94 15 273 -17 355 -62 158 -214 241 -373 204z"/></g></svg>Verytas</span>
+    <nav aria-label="Footer" class="flex flex-wrap gap-6">
+      <a href="/privacy" class="hover:text-neutral-900 dark:hover:text-white">Privacy</a>
+      <a href="/terms" class="hover:text-neutral-900 dark:hover:text-white">Terms</a>
+      <a href="https://github.com/varadarajjborkar/verytas" class="hover:text-neutral-900 dark:hover:text-white">Source</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  // Theme toggle, remembered per browser when storage is available.
+  document.querySelectorAll("[data-theme-toggle]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var dark = document.documentElement.classList.toggle("dark");
+      try { localStorage.setItem("vt-landing-theme", dark ? "dark" : "light"); } catch (e) {}
+    });
+  });
+
+
+  // Tints: each sits at its own depth and drifts up the screen, slower than the page, swaying sideways,
+  // so new ones keep arriving from below the whole way down.
+  (function () {
+    var field = document.getElementById("tints");
+    var still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // x is across the screen; at is how far down the page (0 top, 1 bottom) the tint crosses the middle.
+    var SPOTS = [
+      { x: 0.82, at: 0.0, d: 0.22 }, { x: 0.06, at: 0.08, d: 0.34, soft: true },
+      { x: 0.62, at: 0.2, d: 0.28 }, { x: 0.1, at: 0.32, d: 0.4 },
+      { x: 0.88, at: 0.44, d: 0.3, soft: true }, { x: 0.35, at: 0.56, d: 0.42 },
+      { x: 0.75, at: 0.68, d: 0.34, soft: true }, { x: 0.04, at: 0.8, d: 0.38 },
+      { x: 0.55, at: 0.92, d: 0.32 }, { x: 0.9, at: 1.0, d: 0.4, soft: true }
+    ];
+    var els = SPOTS.map(function (spot) {
+      var el = document.createElement("span");
+      if (spot.soft) el.className = "soft";
+      field.appendChild(el);
+      return el;
+    });
+    var queued = false;
+    function paint() {
+      queued = false;
+      var vh = innerHeight, vw = innerWidth, y = scrollY;
+      var range = Math.max(1, document.documentElement.scrollHeight - vh);
+      SPOTS.forEach(function (spot, i) {
+        var size = els[i].offsetWidth;
+        // Mid screen when the reader is at its point of the page; it rises as they scroll past.
+        var top = vh * 0.5 + (spot.at * range - y) * spot.d;
+        var sway = still ? 0 : Math.sin(y / 700 + i * 1.7) * vw * 0.06;
+        els[i].style.transform = "translate3d(" + (spot.x * vw - size / 2 + sway) + "px," + (top - size / 2) + "px,0)";
+      });
+    }
+    addEventListener("scroll", function () { if (!queued) { queued = true; requestAnimationFrame(paint); } }, { passive: true });
+    addEventListener("resize", paint);
+    paint();
+  })();
+
+  // Mobile menu: focus moves in, Escape and links close it.
+  var menu = document.getElementById("menu"), btn = document.getElementById("menu-btn");
+  function setMenu(open) {
+    menu.classList.toggle("menu-open", open);
+    menu.classList.toggle("opacity-0", !open);
+    menu.classList.toggle("pointer-events-none", !open);
+    menu.setAttribute("aria-hidden", String(!open));
+    btn.setAttribute("aria-expanded", String(open));
+    document.body.style.overflow = open ? "hidden" : "";
+    (open ? document.getElementById("menu-close") : btn).focus();
+  }
+  btn.addEventListener("click", function () { setMenu(true); });
+  document.getElementById("menu-close").addEventListener("click", function () { setMenu(false); });
+  menu.querySelectorAll("a").forEach(function (a) { a.addEventListener("click", function () { setMenu(false); }); });
+  addEventListener("keydown", function (e) { if (e.key === "Escape" && menu.classList.contains("menu-open")) setMenu(false); });
+
+  // Scroll reveals.
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+  }, { rootMargin: "0px 0px -10% 0px" });
+  document.querySelectorAll(".reveal").forEach(function (el, i) {
+    el.style.transitionDelay = (i % 3) * 60 + "ms";
+    io.observe(el);
+  });
+
+  // Tagline: words light up as the section scrolls through the middle of the screen.
+  var tag = document.getElementById("tagline-text");
+  tag.innerHTML = tag.textContent.trim().split(/\s+/).map(function (w) { return '<span class="tag-word">' + w + "</span>"; }).join(" ");
+  var words = tag.querySelectorAll(".tag-word"), ticking = false;
+  function paintTagline() {
+    ticking = false;
+    var r = tag.getBoundingClientRect(), vh = innerHeight;
+    var p = Math.min(1, Math.max(0, (vh * 0.85 - r.top) / (r.height + vh * 0.35)));
+    var lit = Math.round(p * words.length);
+    words.forEach(function (w, i) { w.classList.toggle("on", i < lit); });
+  }
+  addEventListener("scroll", function () { if (!ticking) { ticking = true; requestAnimationFrame(paintTagline); } }, { passive: true });
+  paintTagline();
+
+  // FAQ accordion.
+  var FAQ = [
+    ["Who is Verytas for?", "Brand and marketing teams that work with creators, agencies or partners, and the creators themselves. One side sets the rules; the other gets fast, specific answers."],
+    ["Does it replace our reviewers?", "No. It clears what is plainly fine and explains what is plainly wrong, so your reviewers spend their time on the calls that need judgement. A person makes every final decision."],
+    ["What can it read?", "Captions, scripts, images, carousels and video. Text inside pictures is read too, and artwork such as logos and mascots is found frame by frame."],
+    ["How does it know our rules?", "You upload your brand book and facts. Verytas drafts rules from them, and nothing is enforced until someone on your team approves it."],
+    ["Is our content used to train models?", "No. Your rules, posts and conversations stay in your workspace. Inki only reads a conversation after the person asking has agreed to it."],
+    ["What happens when it is unsure?", "It says so. Unsure findings go to your queue with the reason, instead of being guessed into a pass or a fail."],
+    ["Can creators talk to the brand in it?", "Yes. Conversations sit next to each piece, with files, replies and meeting links, and are encrypted at rest."],
+    ["How do I try it?", "Open the live demo and pick a person. The brand team and the creators are already set up, so you can see both sides of a review."]
+  ];
+  var list = document.getElementById("faq-list");
+  FAQ.forEach(function (f, i) {
+    var item = document.createElement("div");
+    item.className = "reveal rounded-2xl bg-raised/80 px-6 backdrop-blur dark:bg-ink-1/80";
+    item.innerHTML =
+      '<h3><button type="button" class="flex w-full items-center justify-between gap-6 py-4 text-left font-medium" aria-expanded="false" aria-controls="faq-' + i + '" id="faq-q-' + i + '">' +
+      '<span></span><i class="ph ph-plus faq-icon shrink-0 text-neutral-500" aria-hidden="true"></i></button></h3>' +
+      '<div class="faq-body" id="faq-' + i + '" role="region" aria-labelledby="faq-q-' + i + '"><div class="overflow-hidden"><p class="pb-4 text-sm text-neutral-600 dark:text-neutral-400"></p></div></div>';
+    item.querySelector("span").textContent = f[0];
+    item.querySelector("p").textContent = f[1];
+    var b = item.querySelector("button");
+    b.addEventListener("click", function () {
+      var open = item.classList.toggle("faq-open");
+      b.setAttribute("aria-expanded", String(open));
+    });
+    list.appendChild(item);
+    io.observe(item);
+  });
+
+  // The sample brand behind "Try it": a handful of the checks the product runs, in miniature.
+  var SAMPLES = [
+    "Our new Aurora app is guaranteed to double your savings! 40% faster than every other bank app. Sneak peek of Project Nimbus coming soon 👀",
+    "Loving the new Aurora app, it made budgeting feel easy this month. 25% faster transfers too. Try it from the link in my bio.",
+    "Paid partnership with Aurora. Loving the new app, it made budgeting feel easy this month. Transfers are 25% faster, per Aurora's March test. #ad"
+  ];
+  var BANNED = [/\bguarantee(d|s)?\b/i, /\bdouble your\b/i, /\brisk free\b/i, /\bbest ever\b/i, /\bmiracle\b/i];
+  var SECRETS = [/\bproject nimbus\b/i, /\bnimbus\b/i];
+  var FACT = { pct: 25, text: "Aurora's facts say transfers are 25% faster, measured in March." };
+
+  function escapeHtml(s) { return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+
+  function check(text) {
+    var hits = [], findings = [];
+    function hit(re, sev) { var m = re.exec(text); if (m) hits.push({ start: m.index, end: m.index + m[0].length, sev: sev }); return m; }
+    // One rule, one finding: every banned phrase is marked, but they are reported together.
+    var promised = BANNED.map(function (re) { return hit(re, "must"); }).filter(Boolean).map(function (m) { return "“" + m[0] + "”"; });
+    if (promised.length) findings.push({ sev: "must", title: "Promise of results: " + promised.join(", "), why: "The brand rules ban guarantees about money." });
+    var secret = null;
+    SECRETS.some(function (re) { secret = hit(re, "must"); return secret; });
+    if (secret) findings.push({ sev: "must", title: "Confidential name: “" + secret[0] + "”", why: "This code name is on the brand's confidential list until launch." });
+    var pct = /(\d{1,3})\s?%\s?(faster|cheaper|more|better)/i.exec(text);
+    if (pct) {
+      hits.push({ start: pct.index, end: pct.index + pct[0].length, sev: Number(pct[1]) === FACT.pct ? "ok" : "should" });
+      if (Number(pct[1]) !== FACT.pct) findings.push({ sev: "should", title: "Claim does not match the facts: “" + pct[0] + "”", why: FACT.text });
+      else if (!/\bper\b|\bmeasured\b|\btest\b|\bsource\b/i.test(text)) findings.push({ sev: "should", title: "Right number, no source", why: "Say where it comes from, for example “per Aurora's March test”." });
+    }
+    if (!/#ad\b|#sponsored\b|paid partnership/i.test(text)) findings.push({ sev: "should", title: "No paid partnership label", why: "Posts made with the brand need #ad or a paid partnership label." });
+    return { hits: hits, findings: findings };
+  }
+
+  function render() {
+    var text = document.getElementById("caption").value.slice(0, 1200);
+    var r = check(text);
+    r.hits.sort(function (a, b) { return a.start - b.start; });
+    var html = "", at = 0;
+    r.hits.forEach(function (h) {
+      if (h.start < at) return;
+      html += escapeHtml(text.slice(at, h.start));
+      var cls = h.sev === "ok" ? "hit text-emerald-700 dark:text-emerald-400" : "hit " + h.sev;
+      html += '<mark class="' + cls + '">' + escapeHtml(text.slice(h.start, h.end)) + "</mark>";
+      at = h.end;
+    });
+    html += escapeHtml(text.slice(at));
+    document.getElementById("marked").innerHTML = html || '<span class="text-neutral-500">Type or paste a caption to check it.</span>';
+
+    var must = r.findings.filter(function (f) { return f.sev === "must"; }).length;
+    var v = document.getElementById("verdict");
+    if (!text.trim()) { v.textContent = ""; v.className = "rounded-full px-3 py-1 text-xs font-medium"; }
+    else if (must) { v.textContent = must + " to fix before posting"; v.className = "rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-800 dark:bg-red-500/15 dark:text-red-300"; }
+    else if (r.findings.length) { v.textContent = "Worth a second look"; v.className = "rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"; }
+    else { v.textContent = "Ready to post"; v.className = "rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"; }
+
+    var ul = document.getElementById("findings");
+    ul.innerHTML = "";
+    if (text.trim() && !r.findings.length) r.findings.push({ sev: "ok", title: "Nothing to fix", why: "Rules, facts, confidential terms and the disclosure all check out." });
+    r.findings.forEach(function (f) {
+      var li = document.createElement("li");
+      li.className = "flex gap-3";
+      var icon = { must: "ph-x-circle text-red-600 dark:text-red-400", should: "ph-question text-amber-600 dark:text-amber-400", ok: "ph-check-circle text-emerald-600 dark:text-emerald-400" }[f.sev];
+      li.innerHTML = '<i class="ph ' + icon + ' mt-0.5" aria-hidden="true"></i><span><span class="font-medium"></span> <span class="text-neutral-500"></span></span>';
+      li.querySelector(".font-medium").textContent = f.title + ".";
+      li.querySelector(".text-neutral-500").textContent = f.why;
+      ul.appendChild(li);
+    });
+  }
+  var found = document.getElementById("found-scroll");
+  function edge() { found.classList.toggle("more", found.scrollHeight - found.scrollTop - found.clientHeight > 4); }
+  found.addEventListener("scroll", edge, { passive: true });
+  addEventListener("resize", edge);
+  document.getElementById("run").addEventListener("click", function () { render(); found.scrollTop = 0; edge(); });
+  document.getElementById("caption").addEventListener("keydown", function (e) { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") render(); });
+  document.querySelectorAll("[data-sample]").forEach(function (b) {
+    b.addEventListener("click", function () { document.getElementById("caption").value = SAMPLES[Number(b.dataset.sample)]; render(); found.scrollTop = 0; edge(); });
+  });
+  render();
+  edge();
+</script>
+</body>
+</html>

@@ -25,11 +25,18 @@ export function proxy(request: NextRequest) {
       return NextResponse.json({ error: "cross-site request refused" }, { status: 403 });
     }
   }
+  // The public pages (public/welcome): privacy and terms for anyone.
+  if (pathname === "/privacy" || pathname === "/terms") {
+    return NextResponse.rewrite(new URL(`/welcome${pathname}.html`, request.url));
+  }
   // Demo mode has no accounts to sign in to; there is nothing behind the gate.
   if (!signinRequired || !backendConfigured || devAutologin || request.cookies.get(SESSION_COOKIE)?.value) {
     return NextResponse.next();
   }
   if (api) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+  // Someone arriving at the front door without a session sees the landing page, which leads to the demo
+  // and to sign up; any deeper link still goes to sign in and comes back.
+  if (pathname === "/") return NextResponse.rewrite(new URL("/welcome/index.html", request.url));
   const signin = new URL("/signin", request.url);
   signin.searchParams.set("next", pathname + request.nextUrl.search);
   return NextResponse.redirect(signin);
@@ -40,5 +47,5 @@ export const config = {
   // upload proxy: Next keeps only the first 10 MB of a body that passes
   // through here, and uploads go to 150 MB. app/api/v checks the session and
   // origin itself and streams the body under its own cap.
-  matcher: ["/((?!signin|api/session|api/v/|_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|inki.png|inki-wink.png|inki-eye.png).*)"],
+  matcher: ["/((?!signin|api/session|api/v/|_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|inki.png|inki-wink.png|inki-eye.png|welcome/).*)"],
 };
