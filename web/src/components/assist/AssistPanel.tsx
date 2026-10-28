@@ -5,7 +5,8 @@ import { createPortal } from "react-dom";
 import { type AssistKind, type Brief, NEXT_LABEL, plainText, readable, splitFollowUps } from "@/lib/assist";
 import { readStream } from "@/lib/sse";
 import { useModalFocus } from "../Drawer";
-import { ArrowUpIcon, ChevronIcon, CloseIcon, RefreshIcon, SparkIcon } from "../Icons";
+import { ArrowUpIcon, ChevronIcon, CloseIcon, RefreshIcon } from "../Icons";
+import { INKI, InkiIcon } from "../Inki";
 
 type Phase = "loading" | "ready" | "error";
 type Turn = { role: "user" | "assistant"; content: string; failed?: boolean };
@@ -21,8 +22,8 @@ async function errorOf(res: Response): Promise<string> {
 }
 
 /**
- * The manager's side panel for one piece or escalation: a short brief at the top, and a chat below it that
- * is grounded in that one item only. The server builds and redacts what the model sees (see api/assist);
+ * The manager's side panel for one piece or escalation, in Inki's voice: Inki's short brief at the top, and a
+ * chat with Inki below it that is grounded in that one item only. The server builds and redacts what the model sees (see api/assist);
  * the panel never holds the dossier, only the brief and the conversation.
  */
 export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id: number; title: string; onClose: () => void }) {
@@ -107,7 +108,7 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
   // answer suggests, never one already asked. Written by the model from the item's own data, in the same call.
   const asked = new Set(turns.filter((t) => t.role === "user").map((t) => t.content.trim().toLowerCase()));
   const latest = [...turns].reverse().find((t) => t.role === "assistant" && !t.failed && t.content);
-  const fromAnswer = latest && !sending ? splitFollowUps(latest.content).followUps : [];
+  const fromAnswer = latest && !sending ? splitFollowUps(latest.content).followUps.map(plainText) : [];
   // The model can repeat itself; one button per distinct question keeps the list (and its keys) unique.
   const shownAlready = new Set(asked);
   const suggestions = (fromAnswer.length ? fromAnswer : brief?.follow_ups ?? []).filter((q) => {
@@ -127,12 +128,12 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
       <div ref={panel} role="dialog" aria-modal="true" aria-labelledby={titleId}
         className="vt-pop absolute inset-y-0 right-0 flex w-full flex-col overflow-hidden border-l border-line bg-raised shadow-[var(--vt-shadow-pop)] sm:inset-y-3 sm:right-3 sm:w-[min(32rem,calc(100vw-1.5rem))] sm:rounded-2xl sm:border">
         <div className="flex items-start gap-3 border-b border-line px-4 py-3.5 sm:px-5">
-          <span aria-hidden className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-sunken text-accent"><SparkIcon size={16} /></span>
+          <InkiIcon size={32} className="shrink-0" />
           <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="text-sm font-semibold">{kind === "escalation" ? "Escalation brief" : "Summary"}</h2>
+            <h2 id={titleId} className="text-sm font-semibold">{INKI}&apos;s {kind === "escalation" ? "brief on this escalation" : "summary"}</h2>
             <p className="truncate text-xs text-muted" title={readable(title)}>{readable(title)}</p>
           </div>
-          <button type="button" onClick={refresh} disabled={phase === "loading"} title="Write the summary again from the latest data"
+          <button type="button" onClick={refresh} disabled={phase === "loading"} title={`${INKI} writes the summary again from the latest data`}
             className="vt-btn vt-btn-quiet vt-btn-sm">
             <RefreshIcon size={13} className={phase === "loading" ? "animate-spin" : ""} />
             <span className="hidden sm:inline">Refresh summary</span>
@@ -146,23 +147,32 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
           {phase === "loading" ? <BriefSkeleton />
             : phase === "error" ? (
               <div role="alert" className="rounded-xl bg-[var(--vt-blocker-bg)] px-4 py-3.5 text-sm">
-                <p className="font-medium text-[var(--vt-blocker)]">Couldn&apos;t write the summary</p>
+                <p className="font-medium text-[var(--vt-blocker)]">{INKI} couldn&apos;t write the summary</p>
                 <p className="mt-1 text-[13px] leading-5 text-muted">{error}</p>
                 <button type="button" onClick={refresh} className="vt-btn vt-btn-quiet mt-3">Try again</button>
               </div>
-            ) : brief ? <BriefView brief={brief} />
-              : <FallbackView text={fallback ?? ""} />}
+            ) : (
+              // Inki's words sit in Inki's tinted card, as its answers do in a conversation.
+              <div className="vt-pop rounded-2xl rounded-tl-md border border-accent/25 bg-accent/[0.07] px-4 py-3.5">
+                {brief ? <BriefView brief={brief} /> : <FallbackView text={fallback ?? ""} />}
+              </div>
+            )}
 
-          <section aria-label="Ask about this item" className="mt-6 border-t border-line pt-5">
-            <h3 className="text-[11px] font-medium uppercase tracking-wide text-subtle">Ask about this item</h3>
+          <section aria-label={`Ask ${INKI} about this item`} className="mt-6 border-t border-line pt-5">
+            <h3 className="text-[11px] font-medium uppercase tracking-wide text-subtle">Ask {INKI} about this item</h3>
             <p role="status" className="sr-only">{announced}</p>
             {turns.length > 0 && (
               <ul className="mt-3 flex flex-col gap-3">
-                {turns.map((t, i) => (
-                  <li key={i} className={t.role === "user" ? "ml-8 self-end rounded-xl bg-sunken px-3 py-2 text-[13px] leading-5"
-                    : `text-[13px] leading-6 ${t.failed ? "text-[var(--vt-blocker)]" : ""}`}>
-                    {t.role === "assistant" && !t.content ? <Thinking />
-                      : <Prose text={t.role === "assistant" ? plainText(splitFollowUps(t.content).body) : t.content} />}
+                {turns.map((t, i) => t.role === "user" ? (
+                  <li key={i} className="ml-8 self-end rounded-2xl rounded-br-md bg-sunken px-3 py-2 text-[13px] leading-5">
+                    <Prose text={t.content} />
+                  </li>
+                ) : (
+                  <li key={i} className="flex gap-2.5">
+                    <InkiIcon size={24} className="mt-0.5 shrink-0" />
+                    <div className={`min-w-0 flex-1 text-[13px] leading-6 ${t.failed ? "text-[var(--vt-blocker)]" : ""}`}>
+                      {!t.content ? <Thinking /> : <Prose text={plainText(splitFollowUps(t.content).body)} />}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -188,14 +198,14 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
           onSubmit={(e) => { e.preventDefault(); void send(draft); }}>
           <div className="flex items-end gap-2">
             <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={1} maxLength={2000}
-              aria-label="Your question about this item" placeholder="Ask about this item…"
+              aria-label={`Your question for ${INKI} about this item`} placeholder={`Ask ${INKI} about this item…`}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(draft); } }}
               className="vt-input max-h-32 min-h-10 flex-1 resize-none py-2.5 text-[13px]" />
             <button type="submit" disabled={sending || !draft.trim()} aria-label="Send question"
               className="vt-btn vt-btn-primary h-10 w-10 shrink-0 px-0"><ArrowUpIcon size={16} /></button>
           </div>
           <p className="mt-2 text-[11px] leading-4 text-subtle">
-            AI-assisted, from this item&apos;s record only. It can be wrong: you decide.
+            {INKI} is AI and reads this item&apos;s record only. It can be wrong: you decide.
           </p>
         </form>
       </div>
@@ -207,7 +217,7 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
 function BriefSkeleton() {
   return (
     <div aria-busy="true" role="status" className="flex animate-pulse flex-col gap-4">
-      <span className="sr-only">Reading this item and writing the summary</span>
+      <span className="sr-only">{INKI} is reading this item and writing the summary</span>
       <div className="h-16 rounded-xl bg-sunken" />
       <div className="h-24 rounded-xl bg-sunken" />
       <div className="h-4 w-2/3 rounded bg-sunken" />
@@ -219,9 +229,12 @@ function BriefSkeleton() {
 
 function Thinking() {
   return (
-    <span role="status" className="inline-flex items-center gap-2 text-xs text-muted">
-      <span aria-hidden className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-      Reading the record…
+    <span role="status" className="inline-flex items-center gap-2 py-1 text-xs text-muted">
+      {INKI} is reading the record
+      <span aria-hidden className="vt-typing inline-flex gap-1">
+        <span className="h-1.5 w-1.5 rounded-full bg-subtle" /><span className="h-1.5 w-1.5 rounded-full bg-subtle" />
+        <span className="h-1.5 w-1.5 rounded-full bg-subtle" />
+      </span>
     </span>
   );
 }

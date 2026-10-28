@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { AssistKind } from "@/lib/assist";
-import { SparkIcon } from "../Icons";
+import { INKI, InkiIcon } from "../Inki";
 import { useViewer } from "../Viewer";
 import { AssistPanel } from "./AssistPanel";
 
@@ -10,7 +10,8 @@ import { AssistPanel } from "./AssistPanel";
 // decides whether the button is worth showing. Creators and auditors never see it.
 const ROLES = new Set(["reviewer", "approver", "brand_admin"]);
 
-/** "Summarize" for the brand team on a piece or an escalation. Renders nothing for anyone else. */
+/** "Summarize" for the brand team on a piece or an escalation: Inki reads the item and briefs them. Renders nothing
+ * for anyone else. */
 export function SummarizeButton({ kind, id, title, className = "vt-btn vt-btn-quiet" }: {
   kind: AssistKind; id: number; title: string; className?: string;
 }) {
@@ -20,8 +21,8 @@ export function SummarizeButton({ kind, id, title, className = "vt-btn vt-btn-qu
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className={className} aria-haspopup="dialog"
-        title="A short brief of this item, and a chat about it">
-        <SparkIcon size={14} className="text-accent" />Summarize
+        title={`${INKI} briefs you on this item, and answers questions about it`}>
+        <InkiIcon size={16} />Summarize
       </button>
       {open && <AssistPanel kind={kind} id={id} title={title} onClose={() => setOpen(false)} />}
     </>

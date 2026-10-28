@@ -30,7 +30,8 @@ export type AssistKind = "content" | "escalation";
 /** Em and en dashes read as machine prose and are not allowed in this product's text; the prompt asks
  * the model not to write them and this catches the ones that slip through. */
 export function plainText(s: string): string {
-  return s.replace(/\s*[\u2013\u2014]\s*/g, ", ").replace(/\u2212/g, "-");
+  // A model writing JSON sometimes escapes a quote twice, so "you\'ll" reaches the page with its backslash.
+  return s.replace(/\s*[\u2013\u2014]\s*/g, ", ").replace(/\u2212/g, "-").replace(/\\(['"])/g, "$1");
 }
 
 /** Hidden terms arrive as [[TERM_1]]; the manager sees them as a labelled blank rather than markup. */
