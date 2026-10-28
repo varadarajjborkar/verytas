@@ -26,6 +26,10 @@ to match. For those, step 1 falls back to multi-scale template matching on
 the artwork mask, which finds unrotated copies at any size; steps 2 and 3
 are the same.
 
+Compact flat artwork (an app icon) has a second fallback, for when none of that finds it: a hue swap
+reverses the light and dark of its regions, which destroys the grey pattern both steps rely on. It is
+then located by outline (media/shape.py) and verified by palette, and step 2 judges its colours.
+
 Thresholds were set on synthetic tests (resized, recompressed and recoloured
 copies); calibrate them per brand from reviewer decisions.
 """
