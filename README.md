@@ -39,6 +39,8 @@ A brand works with dozens of creators and agencies who post every day, in many l
 | **Fixes, not just flags** | It swaps a phrase, rewrites a sentence or removes a dig, whichever the rule needs, and a judge that knows the rule checks the offer and call to action survive. One click applies it. |
 | **Keeps people in charge** | Creators can dispute a reading; the brand team walks through the issues one by one (asking for a fix, keeping it as is with a reason, or escalating), then approves or sends the piece back with the fixes it asked for, and every override needs a written reason. |
 | **Easy to pick up** | A guided tour on the first visit to each side, plain-word summaries of any piece, and every status, score and empty page explained where it appears. Shaped by [user testing](docs/research/user-testing.md) with three first-time users. |
+| **Talks it through** | *Conversations* between a creator and the brand team, next to the piece in question: replies, edits, deletes, files with previews, and meeting links that become a Join card. Encrypted at rest, live over Redis (it falls back to one process without it). Mention **@Inki** and the assistant answers from the record, only after the person asking has agreed that it may read the conversation. |
+| **Marks the exact spot** | Videos play in the review with each issue on the timeline; drag along it to comment on a stretch, at 0.5x to 2x, with no download. Images take a marker, an eraser and text, saved with the comment, so the creator sees what to change in place. |
 | **Learns from decisions** | Rules that reviewers keep overriding are surfaced as unclear, and model-judged rules tune how confident they must be before flagging. |
 
 ## Try it in 60 seconds
@@ -243,9 +245,9 @@ method and the full results.
 
 ## What comes next
 
-- **One-on-one meetings.** A creator asks the manager who looks after them for a meeting by chat, voice or video; the manager accepts or proposes another time or way. Calls go through temporary masked numbers, the way delivery apps connect a rider and a customer, and only the time, the way and an outcome note go on the record. It is designed and previewed in both apps (marked *Planned*), not built: in a demo one person plays both sides, and masked calling needs a paid telephony provider.
-- **Managing it all from the console:** an approved-people tab in the Library, a video player with findings on its timeline, and managers marking moments and areas with comments (the API supports all three today).
-- **Sharper visual checks on busy backgrounds**, where a mascot's cut-out still takes in some background and raises false alarms, and on recoloured app icons (caught in a third of cases); a better Hindi speech model, since the general one still mishears much of it; and a GPU for the language and vision models once AWS grants the quota.
+- **Sharper visual checks on busy backgrounds**, where a mascot's cut-out still takes in some background and raises false alarms: a mask quality gate, point prompts and picking the cut-out by silhouette.
+- **Performance after posting:** the live link and its numbers captured back onto the piece, so a rule's cost can be weighed against what the post earned.
+- **A GPU** for the language, vision and Hindi speech models once AWS grants the quota; the general speech model still mishears much Hindi.
 
 ## Run it locally
 
@@ -253,7 +255,7 @@ method and the full results.
 # Backend on :8000 (tests need no keys)
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-cp .env.example .env                 # add OLLAMA_API_KEY for live models
+cp .env.example .env                 # add OLLAMA_API_KEY for live models; VERYTAS_REDIS_URL is optional
 .venv/bin/pytest -q
 .venv/bin/python -m verytas.cli seed-showcase --db showcase.db --write-env ../web/.env.local
 VERYTAS_DATABASE_URL=sqlite+aiosqlite:///./showcase.db .venv/bin/uvicorn verytas.main:app
