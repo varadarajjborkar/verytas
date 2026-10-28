@@ -31,6 +31,11 @@ export function ViewerProvider({ children, app }: { children: ReactNode; app: Si
 
   useEffect(() => {
     let live = true;
+    // Nobody is signed in on the sign-in pages (and they leave by a full load), so there is no one to ask about.
+    if (window.location.pathname.startsWith("/signin")) {
+      queueMicrotask(() => { if (live) setLoading(false); });
+      return () => { live = false; };
+    }
     Promise.all([
       getMe().catch(() => null),
       fetch("/api/persona").then((r) => (r.ok ? r.json() : null)).catch(() => null),

@@ -41,7 +41,7 @@ export function SideNav() {
   const { me, side, app, loading } = useViewer();
   // A one-sided app knows its links before anyone is loaded; a shared server waits for the account.
   const links = LINKS[loading && !app ? "loading" : side];
-  const waiting = useOpenEscalations(side === "manager" && !(loading && !app));
+  const waiting = useOpenEscalations(Boolean(me) && side === "manager" && !(loading && !app));
   const unread = useUnreadMessages(Boolean(me) && me?.role !== "auditor");
   // Desktop only: on phones the nav is already a single row of tabs.
   const [collapsed, setCollapsed] = usePersistedFlag("vt-nav-collapsed", false);
