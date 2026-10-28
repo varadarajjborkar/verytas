@@ -207,6 +207,19 @@ flowchart LR
 | **Infra and delivery** | AWS EC2, Caddy, systemd, Cloudflare Pages, GitHub Actions (pinned to commit SHAs), gitleaks, pip-audit, pnpm audit |
 | **Testing** | pytest (offline, no keys needed), a black-box simulator that tests only through the public API |
 
+## Accessibility
+
+**In what it reviews.** Built-in rules, on for every brand: images without alt text, text below WCAG
+contrast, hashtags not written in CamelCase (screen readers read them as one word), long runs in capitals,
+links described only as "click here", paragraphs too long to read easily, video speech without captions,
+and runs of emoji (each is read aloud by name). Missing alt text and low contrast must be fixed before
+approval; the rest are suggestions.
+
+**In the app itself.** Every control is reachable by keyboard with a visible focus ring, a skip link leads to
+the content, icon buttons carry labels, toasts and progress are announced through live regions, animation is
+turned off for anyone who asks their system for less motion, both apps have a light and a dark theme, and the
+page language is declared. It has not been audited against WCAG by an outside tester.
+
 ## Trust and security
 
 - **Every finding is signed** when it is made, so an edited verdict shows as tampered.
@@ -223,6 +236,25 @@ flowchart LR
 - **Audited.** A security review with the Cloudflare security-audit method ran on this codebase; its confirmed findings and the leads it raised are fixed, each with a regression test. The [security report](docs/security/README.md) lists every item, the commit that fixed it, and what is still open.
 - **Locked dependencies.** The backend and the vision worker install from hashed lock files, and model files are pinned by SHA-256, so production runs exactly what the tests ran.
 - **The live site is reviewed too.** Role checks, cross-site refusals, the browser-only route allowlist, cookie flags and the shipped bundles were checked against the deployed demo; what it found is fixed and listed in the security report.
+
+## Round 3: what changed
+
+The three improvements committed to after Round 2, and where each stands.
+
+| Improvement | Built | Not built, and why |
+|---|---|---|
+| **Creators and managers talk it through** | *Conversations* beside the piece in question: replies, edits, files with previews, unread counts, and Meet, Teams or Zoom links that become a Join card. Each exchange is kept with its time, beside the piece, so the meeting's record is the conversation itself. | Voice through masked temporary phone numbers. Telephony is a separate, paid infrastructure; for a prototype it would cost money every month and add little over the free meeting apps people already use. |
+| **Sharper vision and speech** | Recoloured app icons found by outline: 33% to 100%. Mascots: a part the cut-out clipped no longer reads as missing, and a stretched body is named (false alarms 64 to 50 of 180, stretched 0 to 18 of 30). The vision worker wakes on demand and is kept warm in judging hours inside a 10 USD cap. Before and after are published for each ([artwork](backend/evals/results/assets.md), [mascots](backend/evals/results/mascots.md)). | A GPU, and with it a stronger Hindi speech model: AWS refused the GPU quota twice, so the models run on CPU. Hindi is helped instead by matching codenames by sound. |
+| **The Brand Console runs it** | An approved-people tab with agreement dates; videos with each finding as a mark on the timeline, range comments and 0.5x to 2x; images marked up with a marker, eraser and text, which the creator sees in place. | |
+
+Also added in Round 3: performance feedback (a live post's link and numbers on the piece, compared per rule in
+Guideline health), a personal-token MCP endpoint, a landing page, and Redis behind conversations.
+
+**Reliability.** A test sends every API route the inputs nobody should send (ids that overflow, wrong types,
+empty and oversized bodies) as each role, and fails on any server error; it found and fixed a class of 500s.
+The live site is crawled as every demo person, every page loaded and refreshed, with console and server
+errors recorded. Every batch of changes is reviewed for bugs before it is committed, and each finding is
+fixed or answered with a reason in the project ledger.
 
 ## Quality
 
@@ -245,6 +277,19 @@ method and the full results.
 - **Over 700 backend tests** run offline on every push, including a sweep that sends every API route input nobody should send and fails on any server error, with type checks, lint and a production build for the web apps.
 - **Tried by people.** Three first-time users outside the team used the live demo and wrote up what confused them. Each point has a shipped change, listed in the [user testing report](docs/research/user-testing.md).
 - **Tested from the outside.** [`blackbox/`](blackbox/README.md) knows Verytas only through its API: it invents brands and posts with planted violations and steers each round toward what Verytas misses.
+
+## Known limits
+
+- **Measured on generated sets.** Every benchmark above is generated or hand-labelled, not live traffic, and
+  some thresholds were set on the same sets, so real figures will be lower.
+- **Mascots on busy backgrounds** still raise false alarms (50 of 180 acceptable scenes); most come from the
+  cut-out, not the comparison.
+- **Hindi speech** is transcribed with much error on CPU; codenames are caught by sound, other Hindi claims
+  less reliably.
+- **Post numbers are typed or imported**, not read from the platforms.
+- **No voice calls inside Verytas**; meetings run on the apps people already use.
+- **Open security items** (a script nonce, token rotation, per-user limits on Ask Inki) are listed in the
+  [security report](docs/security/README.md#hardening-notes).
 
 ## What comes next
 

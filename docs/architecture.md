@@ -431,7 +431,7 @@ Reviewer notifications use a plain **Slack incoming webhook**, which is simpler 
 
 ## 16. Accessibility of Verytas itself
 
-The brief asks us to *check* accessibility, so our own UI has to pass it too. That means WCAG 2.2 AA, full keyboard navigation in the review screen, findings announced through ARIA live regions, colour never used alone to signal severity (icon + text label too), visible focus, reduced-motion support, and an axe-core check in CI.
+The brief asks us to *check* accessibility, so our own UI should pass the same bar. As built: every control is reachable by keyboard with a visible focus ring, a skip link leads to the content, icon buttons carry labels, toasts and review progress are announced through ARIA live regions, severity is shown by icon and words as well as colour, motion is turned off under `prefers-reduced-motion`, both apps have light and dark themes, and the page language is declared. Not yet done: an automated axe-core check in CI and a WCAG 2.2 AA audit by an outside tester, so no conformance level is claimed.
 
 ---
 
@@ -486,10 +486,10 @@ How the architecture handles it:
 
 **Out of scope for the event** (future work): fine-tuned evaluator, bandit learning, video and audio, browser extension, multi-language.
 
-**Candidates for "the three improvements"** (judged in Rounds 2 and 3; confirm with the organisers what this means):
-1. the ambiguity detector and Guideline health
-2. calibrated confidence learned from reviewer decisions
-3. the confidentiality-leak check plus time-aware (outdated) fact verification
+The table above is the Round 1 plan. **What Round 3 delivered** against the three improvements committed after Round 2:
+1. **Creators and managers talk it through:** *Conversations* beside the piece, with meeting links as Join cards; the conversation, kept with its times beside the piece, is the meeting's record. Voice through masked phone numbers was not built: telephony is a separate, paid infrastructure that a prototype cannot justify against the free meeting apps people already use.
+2. **Sharper vision and speech:** recoloured icons found by outline (33% to 100%), and mascot cut-outs repaired with stretch named (section 23). The GPU, and with it a stronger Hindi speech model, was not possible: AWS refused the quota, so the models run on CPU.
+3. **The Brand Console runs it:** the approved-people tab with agreement dates, the video timeline with findings as marks and range comments, and image markup that the creator sees in place.
 
 **Round 3 add-on: performance feedback.** The brief asks for consistency before publishing; brands also ask whether a flagged post would have done worse. Once a piece is approved, its creator or the brand team records the live post's link and the numbers the platform shows (reach, views, likes, comments, shares, saves), or the brand team imports a CSV of numbers keyed by link (`api/results.py`). Nothing is fetched from a platform; reading Meta Graph, YouTube Analytics or LinkedIn's API where a brand grants access is the next step. Links are reduced to one address per post (https only, platform hosts without www. or m., YouTube short links and Shorts as the watch page, tracking parameters dropped), and a link belongs to one piece. Guideline health then shows, per rule, the median engagement of live posts that ran into the rule against posts on the same platforms that didn't, with a 90% bootstrap range for the difference. Three choices keep it honest: every rate uses one denominator (reach where most posts have it, else views); a finding dismissed as a false positive or not applicable doesn't count as running into the rule, while one fixed before posting does, since the question is whether what the rule catches costs engagement; and a rule says nothing until both sides have five posts with numbers. It informs the brand team's judgement and never changes a rule, a severity or a verdict, since engagement is confounded by budget, timing and audience; format and week are not controlled for yet.
 

@@ -11,14 +11,17 @@ One small ARM server (AWS t4g.medium, Mumbai) runs everything judges touch:
 | Document previews | `verytas-convert.socket` | LibreOffice in a sealed per-file service; see below |
 | Deploys | `verytas-deploy.timer` | every 3 minutes: if `live` (main after CI) moved, build it, switch, health-check, roll back on failure |
 | Demo reset | `verytas-reset.timer` | daily check; reseeds when the data is 14 days old (`reset-demo.sh --force` to do it now) |
+| Conversations fan-out | Redis on 127.0.0.1:6379 | loopback only, no persistence, 64 MB; the database is the record, Redis only carries live events between API workers |
+| Keep-warm | `verytas-keepwarm.timer` | every 5 minutes in judging hours (9 AM to 9 PM IST, 31 Oct to 13 Nov): keeps the vision worker awake, stopping for good at 10 USD of warm time |
 
 OCR (RapidOCR), artwork matching (OpenCV), video decoding (PyAV) and speech (faster-whisper) run on the
 server's CPU. The language and vision models are reached over HTTPS, after confidential terms are
 redacted. Nothing listens publicly except Caddy on 80 and 443.
 
 Caddy sends one path to the API instead of the web app: `/mcp`, the endpoint for people's own AI clients
-(`docs/mcp.md`). The API authenticates it with personal tokens and checks the Origin header itself. Applying
-this needs the new `Caddyfile` on the server and a reload; the repo change alone does not open the path.
+(`docs/mcp.md`). The API authenticates it with personal tokens and checks the Origin header itself. A
+change to the `Caddyfile` reaches the server only by hand: copy it to `/etc/caddy/Caddyfile`, `caddy validate`,
+then reload.
 
 Secrets live only on the server, in `/srv/verytas/etc/{api,web}.env` (mode 600), and in the seeded
 demo-accounts file. None of them is in this folder. Both env files may carry `OLLAMA_API_KEY_FALLBACK`, a
@@ -37,6 +40,11 @@ recent releases are kept. A commit that failed is not retried until something ne
 A deploy restarts the API. Reviews running or waiting at that moment are queued again when it starts
 (`Prism.recover`) and run from the beginning; nothing they found was saved yet, so nothing is doubled.
 Brand material being read in Intake is marked for a person to retry.
+
+**Round 3 setup, once per server:** `ssh ubuntu@<server> 'bash -s' < deploy/setup-round3.sh` installs and
+locks down Redis, adds `VERYTAS_REDIS_URL` to `api.env`, installs the keep-warm units from the deployed
+commit and restarts the API. It checks before it changes anything, so it is safe to run again. Without Redis,
+conversations still work in one process.
 
 Spend is capped by an AWS budget that stops both instances automatically at its limit.
 

@@ -141,6 +141,19 @@ findings. A second pass looked for files that should never be committed (`.env`,
 demo account file) and for key assignments in every added line: none. Keys live only in files git ignores
 and, on the server, in `/srv/verytas/etc`.
 
+## Round 3 additions
+
+What was added after Round 2, and how each new surface is held.
+
+| Surface | How it is held |
+|---|---|
+| Conversations | Messages and their file details are sealed at rest with AES-GCM under a 256-bit key kept on the server outside the database, bound to their conversation. A creator sees only conversations they are part of. People are never refused for what they type (a phone number, an email); the limits are on Inki, in code (`services/inki_guard.py`): it answers @Inki only for someone who agreed to it reading the conversation, sees only that conversation and the pieces both people may open, with confidential terms replaced; a request for its instructions gets a fixed answer; everything people wrote goes in as quoted data; a reply that recites its instructions is replaced, and links and private contact details are taken out of its replies; and it has a per-person hourly limit. A link becomes a Join card only for a known meeting service (Google Meet, Teams, Zoom, Skype, Jitsi, Whereby); anything else stays plain text. |
+| Redis (live conversation events) | Bound to loopback with protected mode on, no persistence (the database is the record) and a 64 MB cap with old cache pages evicted first. Without it conversations still work in one process. |
+| MCP endpoint (`/mcp`, `docs/mcp.md`) | Personal tokens (`vt_pat_`, random, stored as SHA-256) work only there; the REST API refuses them, and a session token is refused at `/mcp`. Only accounts with their own password can make one, so the shared demo picker's people cannot. The Origin header is checked, tool calls are limited to 60 a minute per token and all requests to 240, and 20 failed sign-ins a minute from one address answer 429. Answers are redacted like the chats, capped at internal clearance, and search refuses a query that spells out a confidential term. |
+| Live post links and numbers | Links must be https, carry no user name or password, and use a plain ASCII host; tracking parameters are dropped. Nothing is ever fetched from the link, so a link cannot make the server call out. A sheet of numbers updates only live pieces within the importer's clearance, and is capped at 500 KB and 2,000 rows. |
+| Video and image review | Videos stream through the same session-checked proxy with download, picture-in-picture and casting turned off in the player (a determined viewer can still record the screen). Drawn marks are stored as numbers (strokes and labels), never as HTML. |
+| Landing page | Static files with no app data in them, styles and icons served from this site; no third-party script. |
+
 ## Hardening notes
 
 The audit's hardening suggestions, and where each one stands.
@@ -155,7 +168,7 @@ The audit's hardening suggestions, and where each one stands.
 | Edge worker should compare redirect origins | Done ([`5e011bd`](https://github.com/varadarajjborkar/verytas/commit/5e011bd)). Allowlisting forwarded headers is still to do. |
 | Fail closed when sign-in is off in production | Open. The deployed demo runs with sign-in on, so this only matters for a misconfigured install. |
 | Tokens never expire and sign-out does not revoke them | Partly done. A password account's token lapses 7 days after sign-in (`account_token_days`) and sign-out revokes it at the API. Tokens an admin issues, and the shared demo picker's, still never lapse: they have no password to get a new one with. Short access tokens with rotating refresh tokens are still to do. |
-| No per-user rate or spend limit on Ask Verytas | Open |
+| No per-user rate or spend limit on Ask Inki | Open (the MCP endpoint, added later, has its own per-token limits) |
 | `Redactor.restore` also restores placeholders a user typed | Open |
 | The audit chain's head is not anchored or signed; signing keys share an owner with the database | Open |
 | All server jobs share one user; the deploy and reset units are unconfined | Partly: document conversion runs in its own sandboxed service as a per-run user (above). The API, web, deploy and reset jobs still share one user, and the deploy and reset units are still unconfined. |
