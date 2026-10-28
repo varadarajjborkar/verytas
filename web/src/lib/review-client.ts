@@ -4,7 +4,7 @@
 import type {
   ApprovedPerson, BrandAsset, BrandEvent, ContentDetail, CreatorRow, CreatorTrack, EscalationRequest, EventImpact, PublicContact, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
   IntakeBatch, IntakeBatchDetail, IntakeDraft, IntakeItem, IntakeItemIn, Onboarding, SampleKit,
-  Mark, PinnedComment, Review, Rule, RuleClarification, RuleDraft, SearchHit, Term, Timeline, UploadedMedia,
+  Mark, PersonalToken, CreatedToken, PinnedComment, Review, Rule, RuleClarification, RuleDraft, SearchHit, Term, Timeline, UploadedMedia,
 } from "./types";
 
 export class ApiError extends Error {
@@ -77,6 +77,12 @@ export const addComment = (contentId: number, body: string, versionId?: number, 
 export const decide = (findingId: number, action: Decision["action"], reasonCode?: string | null, reasonText?: string | null) =>
   api<Decision>(`findings/${findingId}/decision`, json({ action, reason_code: reasonCode ?? null, reason_text: reasonText || null }));
 export const listPeople = () => api<Person[]>("users");
+
+// Personal tokens for the person's own AI client (the /mcp endpoint). Creating one returns the secret once.
+export const listTokens = () => api<PersonalToken[]>("me/tokens");
+export const createToken = (name: string, scopes: ("read" | "write")[], days: number) =>
+  api<CreatedToken>("me/tokens", json({ name, scopes, days }));
+export const revokeToken = (id: number) => api<null>(`me/tokens/${id}`, { method: "DELETE" });
 
 // --- escalations, events, public contacts ---
 export const escalate = (findingId: number, message: string) =>

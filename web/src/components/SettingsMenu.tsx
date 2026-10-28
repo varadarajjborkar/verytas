@@ -5,6 +5,7 @@ import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useId
 import { createPortal } from "react-dom";
 import { useStored, writeStored } from "@/lib/stored";
 import { CloseIcon, SettingsIcon } from "./Icons";
+import { PersonalTokens } from "./PersonalTokens";
 import { type ThemeChoice, useTheme } from "./Providers";
 import { useToast } from "./Toaster";
 import { START_TOUR } from "./Tour";
@@ -30,6 +31,7 @@ const TABS = [
   { value: "profile", label: "Profile" },
   { value: "social", label: "Socials" },
   { value: "theme", label: "Appearance" },
+  { value: "tokens", label: "Tokens" },
 ] as const;
 export type SettingsTab = (typeof TABS)[number]["value"];
 type Tab = SettingsTab;
@@ -208,7 +210,7 @@ function SettingsDialog({ onClose, first }: { onClose: () => void; first: Tab })
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div role="tablist" aria-label="Settings sections" aria-orientation="vertical"
-          className="mx-5 mt-4 grid grid-cols-3 gap-1 rounded-xl bg-sunken p-1 text-[13px] font-medium md:m-0 md:flex md:w-52 md:shrink-0 md:flex-col md:gap-0.5 md:rounded-none md:border-r md:border-line md:bg-transparent md:p-3"
+          className="mx-5 mt-4 grid grid-cols-4 gap-1 rounded-xl bg-sunken p-1 text-[13px] font-medium md:m-0 md:flex md:w-52 md:shrink-0 md:flex-col md:gap-0.5 md:rounded-none md:border-r md:border-line md:bg-transparent md:p-3"
           onKeyDown={(e) => arrows(e, TABS.map((t) => t.value), tab, setTab)}>
           {TABS.map((t, i) => (
             <button key={t.value} role="tab" type="button" aria-selected={tab === t.value} onClick={() => setTab(t.value)}
@@ -298,6 +300,8 @@ function SettingsDialog({ onClose, first }: { onClose: () => void; first: Tab })
               <button type="button" onClick={saveSocials} className="vt-btn vt-btn-primary self-end">Save</button>
             </div>
           )}
+
+          {tab === "tokens" && <PersonalTokens />}
 
           {tab === "theme" && (
             <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-3"

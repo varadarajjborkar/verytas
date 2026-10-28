@@ -25,6 +25,10 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^findings\/\d+\/decision$/],
   ["GET", /^brand-assets$/],
   ["GET", /^me$/],
+  // Personal tokens for the person's own AI client. Managed here with the web session, never over /mcp.
+  ["GET", /^me\/tokens$/],
+  ["POST", /^me\/tokens$/],
+  ["DELETE", /^me\/tokens\/\d+$/],
   // The global search bar; the API scopes every hit to what this person may open.
   ["GET", /^search$/],
   // A self-serve company's join code, for its brand admin (the API refuses everyone else).

@@ -258,6 +258,20 @@ export type ContentDetail = Omit<ContentRow, "version_count" | "updated_at" | "l
 
 export type Me = { id: number; email: string; name: string; role: string; clearance: string };
 
+/** A personal token for the person's own AI client (GET /me/tokens). The secret is never in a listing. */
+export type PersonalToken = {
+  id: number;
+  name: string;
+  prefix: string;
+  scopes: ("read" | "write")[];
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+};
+/** The one response that carries the secret, shown once. */
+export type CreatedToken = PersonalToken & { token: string };
+
 // --- the brand team's side -------------------------------------------------------------------
 
 export type Person = { id: number; name: string; role: string };
