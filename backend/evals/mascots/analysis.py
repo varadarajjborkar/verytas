@@ -46,10 +46,9 @@ def features(bench: Bench, case: dict, e: dict) -> dict:
     return f
 
 
-def run(data: Path, cache: Path) -> list[dict]:
+def run(bench: Bench) -> list[dict]:
     from evals.mascots import policies
 
-    bench = Bench(data, cache)
     base = {r["file"]: r for r in run_policy(bench, policies.baseline)}
     rows = []
     for case in bench.cases:
@@ -74,7 +73,7 @@ def report(rows: list[dict]) -> str:
            f"(busy {sum(r['flagged'] for r in busy)}/{len(busy)})", "",
            "| Signal | AUC false alarm, all ok | busy only | AUC bad mask (IoU<0.9) |", "|---|---|---|---|"]
     for s in SIGNALS:
-        def a(rs, label):
+        def a(rs, label, s=s):
             pos = [-r[s] for r in rs if label(r)]  # low signal = bad, so negate: high score means trouble
             neg = [-r[s] for r in rs if not label(r)]
             return auc(pos, neg)
@@ -90,9 +89,10 @@ def main() -> None:
     p = argparse.ArgumentParser(prog="evals.mascots.analysis")
     p.add_argument("--data", type=Path, required=True)
     p.add_argument("--cache", type=Path, required=True)
+    p.add_argument("--manifest", default="manifest.json")
     p.add_argument("--save", type=Path)
     a = p.parse_args()
-    rows = run(a.data, a.cache)
+    rows = run(Bench(a.data, a.cache, a.manifest))
     if a.save:
         a.save.write_text(json.dumps(rows))
     print(report(rows))

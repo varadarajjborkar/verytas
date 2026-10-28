@@ -1,11 +1,11 @@
 """Replay the mascot benchmark from the cache of model outputs: fidelity and the mask decisions are
 recomputed, the models are not run, so a change to either is measured in seconds.
 
-    .venv/bin/python -m evals.mascots.replay --data DIR --cache DIR [--policy production]
+    .venv/bin/python -m evals.mascots.replay --data DIR --cache DIR [--policy production] [--manifest poses.json]
 
 A *policy* turns a scene's cached outputs into the cut-out that fidelity sees (or says it is not sure).
 `baseline` is what the worker did before the mask-quality work (one box-prompted mask, trusted always);
-`production` is the current logic in `verytas.media.maskcheck`. Reports the same tables as run.py plus the
+`settled` is the production logic, `verytas.media.maskcheck.judge`. Reports the same tables as run.py plus the
 busy and plain split of false alarms, and the never-regress figures.
 """
 
@@ -17,11 +17,15 @@ from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
 
+import cv2
 import numpy as np
 from PIL import Image
 
 from evals.mascots.cache import load
 from verytas.media.fidelity import compare, official_reference
+from verytas.media.maskcheck import judge
+
+cv2.setNumThreads(0)  # OpenCV's pool is not fork-safe on macOS, and these images are small
 
 OK_VARIANTS = ["plain", "busy", "small", "rotated", "jpeg", "redrawn"]
 WANT = {"colour": {"colour_missing", "colour_new"}, "parts": {"parts"}, "shape": {"shape"}}
@@ -68,11 +72,7 @@ class Bench:
 Policy = Callable[[Bench, dict, dict], tuple[np.ndarray | None, str]]
 
 
-_JOB: tuple[Bench, Policy] | None = None
-
-
-def _one(case: dict) -> dict:
-    bench, policy = _JOB  # type: ignore[misc]
+def _one(bench: Bench, policy: Policy, case: dict) -> dict:
     e = bench.entry(case)
     row = dict(case)
     if e is None:
@@ -82,23 +82,18 @@ def _one(case: dict) -> dict:
     row |= {"found": True, "status": status, "differences": []}
     if mask is not None and mask.any() and status != "unsure":
         try:
-            fid = compare(bench.refs[case["mascot"]], (bench.rgb(case), mask))
+            ref = bench.refs[case["mascot"]]
+            fid = judge(ref, bench.rgb(case), mask) if status == "judge" else compare(ref, (bench.rgb(case), mask))
             row["differences"] = [{"kind": d.kind, "text": d.text} for d in fid.differences]
         except ValueError:
             row["status"] = "toosmall"
     return row
 
 
-def run_policy(bench: Bench, policy: Policy, only: set[str] | None = None, workers: int = 4) -> list[dict]:
-    """Fidelity for every cached scene under a policy; scenes are independent, so they run in parallel
-    (forked workers share the loaded benchmark)."""
-    global _JOB
-    import multiprocessing as mp
-
-    _JOB = (bench, policy)
-    cases = [c for c in bench.cases if not only or c["variant"] in only]
-    with mp.get_context("fork").Pool(workers) as pool:
-        return pool.map(_one, cases, chunksize=4)
+def run_policy(bench: Bench, policy: Policy, only: set[str] | None = None) -> list[dict]:
+    """Fidelity for every cached scene under a policy. One process on purpose: the cache makes a replay
+    take a minute or two, and forking after OpenCV has started its thread pool crashes on macOS."""
+    return [_one(bench, policy, c) for c in bench.cases if not only or c["variant"] in only]
 
 
 def tables(rows: list[dict]) -> str:
@@ -136,9 +131,10 @@ def main() -> None:
     p.add_argument("--data", type=Path, required=True)
     p.add_argument("--cache", type=Path, required=True)
     p.add_argument("--policy", default="baseline")
+    p.add_argument("--manifest", default="manifest.json", help="poses.json replays the posed scenes")
     p.add_argument("--out", type=Path)
     a = p.parse_args()
-    bench = Bench(a.data, a.cache)
+    bench = Bench(a.data, a.cache, a.manifest)
     rows = run_policy(bench, getattr(policies, a.policy))
     print(tables(rows))
     if a.out:

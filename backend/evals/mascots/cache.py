@@ -22,15 +22,12 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-# SAM's own stability definition (SAM 1 and 2): how much a mask changes when its threshold moves one
-# logit either way. A mask whose edge is a plateau of near-zero logits is unstable.
-STABILITY_OFFSET = 1.0
 
-
-def stability(logits: np.ndarray) -> float:
-    inside = float((logits > STABILITY_OFFSET).sum())
-    union = float((logits > -STABILITY_OFFSET).sum())
-    return inside / union if union else 0.0
+def stability(logits: np.ndarray, offset: float = 1.0) -> float:
+    """SAM's stability score: |logits > +1| / |logits > -1|. A mask whose edge sits on a plateau of near-zero
+    logits (a shadow, a texture it cannot decide about) changes a lot when the threshold moves."""
+    union = float((logits > -offset).sum())
+    return float((logits > offset).sum()) / union if union else 0.0
 
 
 def _pack(masks: np.ndarray) -> np.ndarray:
@@ -84,7 +81,8 @@ def build(data: Path, cache: Path, models: Path, device: str, resume: bool,
     chain = Chain(models, device)
     t0 = time.perf_counter()
     todo = [c for c in manifest["cases"]
-            if not (resume and (cache / f"{c['file']}.npz").is_file() and (cache / "feats" / f"{c['file']}.pt").is_file())]
+            if not (resume and (cache / f"{c['file']}.npz").is_file()
+                    and (cache / "feats" / f"{c['file']}.pt").is_file())]
     print(f"{len(todo)} of {len(manifest['cases'])} scenes to cache", flush=True)
     for n, case in enumerate(todo, start=1):
         scene = Image.open(data / case["file"]).convert("RGB")

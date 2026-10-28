@@ -84,3 +84,35 @@ def reclaim(bench: Bench, case: dict, e: dict) -> tuple[np.ndarray | None, str]:
 
     m = e["one"]["masks"][0]
     return maskcheck.reclaim(bench.rgb(case), m, palette(bench, case, m)), "ok"
+
+
+def _points(bench: Bench, case: dict, key: str) -> tuple[np.ndarray, float] | None:
+    """A box-and-points mask from evals.mascots.reprompt, with its SAM stability."""
+    from evals.mascots.cache import unpack
+
+    path = bench.cache / f"{case['file']}.pts.npz"
+    if not path.is_file():
+        return None
+    z = np.load(path)
+    shape = tuple(int(v) for v in z["shape"])
+    return unpack(z[f"{key}_masks"], shape)[0], float(np.ravel(z[f"{key}_stab"])[0])
+
+
+def pos_box(bench: Bench, case: dict, e: dict) -> tuple[np.ndarray | None, str]:
+    got = _points(bench, case, "pos_box")
+    return (got[0] if got else e["one"]["masks"][0]), "ok"
+
+
+def posneg_box(bench: Bench, case: dict, e: dict) -> tuple[np.ndarray | None, str]:
+    got = _points(bench, case, "posneg_box")
+    return (got[0] if got else e["one"]["masks"][0]), "ok"
+
+
+def posneg_nobox(bench: Bench, case: dict, e: dict) -> tuple[np.ndarray | None, str]:
+    got = _points(bench, case, "posneg_nobox")
+    return (got[0] if got else e["one"]["masks"][0]), "ok"
+
+
+def settled(bench: Bench, case: dict, e: dict) -> tuple[np.ndarray | None, str]:
+    """Production: the box mask, judged by maskcheck.judge (reclaimed parts may withdraw a shortfall)."""
+    return e["one"]["masks"][0], "judge"
