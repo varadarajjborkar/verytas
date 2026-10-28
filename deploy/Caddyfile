@@ -17,5 +17,17 @@
 		Permissions-Policy "camera=(), microphone=(self), geolocation=()"
 		-Server
 	}
-	reverse_proxy 127.0.0.1:3000
+	# The MCP endpoint (docs/mcp.md) belongs to the API, not the web app, so it is the one path sent there.
+	# Nothing else of the API is public: the web app reaches it on the loopback address. The API checks the
+	# personal token and the Origin header itself; a request with a body over 1 MB is refused here first.
+	@mcp path /mcp /mcp/
+	handle @mcp {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
 }

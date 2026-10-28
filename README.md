@@ -217,6 +217,7 @@ flowchart LR
 - **Signing out ends the session at the server.** A password account's token is revoked on sign-out and lapses after 7 days.
 - **What people type is screened too.** Bribes and instructions aimed at the AI are refused before they are stored. Contact details are flagged for the brand team, never refused: a long number is as often an order code.
 - **Access follows role and clearance**, checked on the server on every request, including in the audit log.
+- **Your own AI client can use it, as you and no more.** A personal token lets Claude Desktop, Claude Code or any MCP client read your content and reviews and submit text, with your permissions, a clearance ceiling, a rate limit and an audit entry per call; it can never decide, approve or publish ([how](docs/mcp.md)).
 - **Audited.** A security review with the Cloudflare security-audit method ran on this codebase; its confirmed findings and the leads it raised are fixed, each with a regression test. The [security report](docs/security/README.md) lists every item, the commit that fixed it, and what is still open.
 - **Locked dependencies.** The backend and the vision worker install from hashed lock files, and model files are pinned by SHA-256, so production runs exactly what the tests ran.
 - **The live site is reviewed too.** Role checks, cross-site refusals, the browser-only route allowlist, cookie flags and the shipped bundles were checked against the deployed demo; what it found is fixed and listed in the security report.

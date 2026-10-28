@@ -400,11 +400,24 @@ Creators see only their own pieces on every content route; the brand team sees a
 
 **Why it matters:** the brief says content now comes from employees, agencies **and AI tools**. If Verytas exposes an **MCP server**, governance runs *inside* the AI tools people already write with (Claude, ChatGPT, Cursor, and any MCP client), before the content even reaches a review queue. MCP access is **table stakes, not our differentiator**: Markup AI (formerly Acrolinx) already ships an MCP server (section 21). What makes ours different is what the tools return: cited, fact-grounded findings tied to a review trail.
 
-**Verytas as an MCP server** (official Python SDK **v2.x**; note that v2 renamed `FastMCP` to `MCPServer` and dropped WebSocket transport, so most 2025 tutorials are out of date; we use Streamable HTTP):
-- tools: `check_content(text|url, channel)`, `explain_finding(id)`, `lookup_fact(query)`, `get_brand_voice(channel)`, `submit_for_review(content, title)`
-- resources: `brand://guidelines/{section}`, `brand://facts/public`
-- prompts: `on_brand_rewrite`
-- security: OAuth 2.1 per the MCP authorization spec; MCP clients get a **`public` tier ceiling** by default; read-only tools are annotated as such; every call is audited
+**Verytas as an MCP server, as built** ([docs/mcp.md](mcp.md)): the official Python SDK (1.30.0; the 2.x rewrite was
+left alone), Streamable HTTP, stateless with JSON responses, at `/mcp`. It is mounted on the FastAPI app as a plain
+route (`verytas/mcpserver`), so the request keeps the real app in its scope. A gate in front of the SDK checks the
+`Origin` header (a browser origin is refused unless listed) and then a **personal token** (`vt_pat_...`, 7 to 90
+days, up to five per person, scopes `read` and `write`). Personal tokens are a different audience from the web
+session token: separate table, rejected by every REST route, and session tokens are rejected at `/mcp`. OAuth 2.1
+from the MCP authorization spec is not implemented; a per-person token that the person mints and revokes in
+Settings fits a client that is theirs, and keeps the surface small.
+- tools (all act as the token's person, through the same route functions and visibility helpers as REST):
+  read `whoami`, `list_content`, `get_review`, `list_rules`, `search`, `precheck_text`; write `submit_content`
+  (text only) and `add_comment`.
+- never exposed: deciding, approving, publishing, admin and library editing, confidential terms, token
+  management.
+- limits: a clearance ceiling of `internal` for tokens, confidential terms redacted from every result, 60 tool
+  calls a minute per token, a 1 MB body cap, and every call appended to the audit chain by tool name and outcome
+  (never arguments).
+- not built: resources and prompts, and tools such as `lookup_fact` and `explain_finding` from the first plan; the
+  `get_review` findings already carry the cited rule and a suggested rewrite.
 
 **Verytas as an MCP client** (import and notify):
 - Notion's official server: import brand books.

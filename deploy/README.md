@@ -16,6 +16,10 @@ OCR (RapidOCR), artwork matching (OpenCV), video decoding (PyAV) and speech (fas
 server's CPU. The language and vision models are reached over HTTPS, after confidential terms are
 redacted. Nothing listens publicly except Caddy on 80 and 443.
 
+Caddy sends one path to the API instead of the web app: `/mcp`, the endpoint for people's own AI clients
+(`docs/mcp.md`). The API authenticates it with personal tokens and checks the Origin header itself. Applying
+this needs the new `Caddyfile` on the server and a reload; the repo change alone does not open the path.
+
 Secrets live only on the server, in `/srv/verytas/etc/{api,web}.env` (mode 600), and in the seeded
 demo-accounts file. None of them is in this folder. Both env files may carry `OLLAMA_API_KEY_FALLBACK`, a
 second account's key that the API and the web's model routes switch to (for ten minutes at a time) when
