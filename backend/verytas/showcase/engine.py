@@ -263,6 +263,29 @@ def _seed_company(c: TestClient, co: Company, *, first: bool, limit: int | None)
             if key == p.key:
                 add(born + timedelta(hours=hours), _step(c, h, state, key, "decide", {
                     "rule": code, "by": by, "action": act, "reason_code": reason, "reason_text": note}, got, co))
+    names = {m.key: m.name for m in [*co.team, *co.creators]}
+    threads: dict[tuple[str, str], int] = {}
+    got["messages"] = 0
+
+    def make_message(conv: dict, side: str, text: str, extra: dict) -> Callable[[], None]:
+        def run() -> None:
+            team, creator = conv["team"], conv["creator"]
+            if (team, creator) not in threads:
+                people = c.get("/conversations/people", headers=h(team)).json()
+                uid = next(x["id"] for x in people if x["name"] == names[creator])
+                threads[team, creator] = post("/conversations", team, {"user_id": uid})["id"]
+            body: dict = {"text": text}
+            if extra.get("piece") in state:
+                body["content_id"] = state[extra["piece"]]["id"]
+            if extra.get("call"):
+                body["call_url"] = extra["call"]
+            post(f"/conversations/{threads[team, creator]}/messages", team if side == "team" else creator, body)
+            got["messages"] += 1
+        return run
+
+    for conv in co.conversations:
+        for hours, side, text, extra in conv["messages"]:
+            add(at(conv["days_ago"]) + timedelta(hours=hours), make_message(conv, side, text, extra))
     for when, _, run in sorted(actions, key=lambda a: (a[0], a[1])):
         _Clock.at = when
         run()

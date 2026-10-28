@@ -63,6 +63,9 @@ class Company:
     stance: dict[str, dict[str, tuple[float, list[tuple[str, str]]]]] = field(default_factory=dict)
     # (days ago, action, args): the brand team editing its library mid-history.
     admin_log: list[tuple[float, str, dict]] = field(default_factory=list)
+    # Conversations between a team member and a creator: {"team", "creator", "days_ago", "messages": [(hours
+    # after the start, "team" | "creator", text, {"piece": piece key, "call": meeting link})]}.
+    conversations: list[dict] = field(default_factory=list)
     # (json key, member key, side, title, blurb): who a judge can sign in as.
     demo: list[tuple[str, str, str, str, str]] = field(default_factory=list)
 

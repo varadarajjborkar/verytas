@@ -863,8 +863,32 @@ def build() -> Company:
         assert len(keys) == len(set(keys)), "duplicate piece keys"
         return out
 
+    conversations = [
+        {"team": "approver", "creator": "dev", "days_ago": 1.0, "messages": [
+            (0, "creator", "I've asked for a second look at Sneak peek. Falcon was named in the CEO's interview on "
+                           "Monday, so I think it's public now.", {"piece": "falcon"}),
+            (1, "team", "Thanks, Dev. Legal hasn't cleared the name yet. Can we go through it on a quick call?",
+             {"call": "https://meet.google.com/kte-fqzw-rpv"}),
+            (1.3, "creator", "Works for me. I'll leave the draft as it is until then.", {}),
+            (3, "team", "Spoke to legal: the name stays under wraps until the 12th. Say \"something new for "
+                        "revision is coming\" instead and send it back.", {"piece": "falcon"}),
+        ]},
+        {"team": "approver", "creator": "priya", "days_ago": 1.4, "messages": [
+            (0, "team", "The offer reel says 2 million learners; the approved figure is 1.2 million. Could you change "
+                        "it, and drop \"cheapest\"? We can't back that up.", {"piece": "cheap"}),
+            (2, "creator", "Done in my draft. Is \"best value this festive season\" all right instead?", {}),
+            (2.5, "team", "Yes, that works. Keep the end date from the offer brief.", {}),
+        ]},
+        {"team": "admin", "creator": "dev", "days_ago": 2.4, "messages": [
+            (0, "team", "The crypto tip in Money skills can't go out: we don't give investment advice. The rest of "
+                        "the post is good.", {"piece": "d-money"}),
+            (5, "creator", "Fair. I'll cut that line and keep the saving and interest parts.", {}),
+        ]},
+    ]
+
     return Company(
         key="kitepath", brand=BRAND, industry="Edtech: courses, mentors and a tutor app for school and early-career "
         "learners", domain="kitepath.example", days=56, team=TEAM, creators=CREATORS, rules=RULES, facts=FACTS,
         terms=TERMS, contacts=CONTACTS, assets=ARTWORK, events=EVENTS, people=PEOPLE, pieces=pieces,
-        decisions=DECISIONS, stance=STANCE, admin_log=ADMIN_LOG, demo=DEMO)
+        decisions=DECISIONS, stance=STANCE, admin_log=ADMIN_LOG, demo=DEMO,
+        conversations=conversations)
