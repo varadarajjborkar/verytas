@@ -569,8 +569,10 @@ body:has(.vt-dock) .vt-toasts { padding-bottom: 5.25rem; }
 }
 
 /* A page that takes the whole content column (the conversations inbox): no width cap, no side or bottom
-   padding, so it meets the sidebar and the window's edges; the top padding stays clear of the search bar. */
+   padding, so it meets the sidebar and the window's edges; the top padding stays clear of the search bar.
+   Only while that page is the one showing: Next keeps recently visited pages mounted but hidden (display:
+   none on their .vt-page), and a hidden inbox must not strip the padding from the page that replaced it. */
 @media (min-width: 768px) {
-  main:has(.vt-bleed) { padding-inline: 0; padding-bottom: 0; }
-  main:has(.vt-bleed) > div { max-width: none; }
+  main:has(.vt-page:not([style*="none"]) .vt-bleed) { padding-inline: 0; padding-bottom: 0; }
+  main:has(.vt-page:not([style*="none"]) .vt-bleed) > div { max-width: none; }
 }
