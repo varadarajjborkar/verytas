@@ -35,6 +35,8 @@ from verytas.db import Database
 from verytas.intake import pipeline as intake_pipeline
 from verytas.mcpserver import mount_mcp
 from verytas.media import storage
+from verytas.memory.embed import embedder_for
+from verytas.memory.personal import PersonalMemory
 from verytas.prism.orchestrator import Prism
 from verytas.services.messages import MessageHub, MessageSeal
 from verytas.services.workspace import backfill_system_rule_tiers, backfill_system_rules
@@ -59,6 +61,13 @@ def _init_sentry(settings: Settings) -> None:
     )
 
 
+async def _warm(embedder) -> None:
+    try:
+        await asyncio.to_thread(embedder.warm)
+    except Exception:  # noqa: BLE001 - Inki answers without its memory until the model loads
+        log.warning("embedding model did not load; Inki's memory is off until it does", exc_info=True)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -81,6 +90,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         sweep = asyncio.create_task(storage.sweep_forever(db.sessionmaker, settings.orphan_upload_ttl_h))
         seal.ensure_key()
         await hub.start()
+        if settings.memory_enabled:
+            # The embedding model loads now, off the event loop, rather than inside the first question asked.
+            warming = asyncio.create_task(_warm(app.state.embedder))
         try:
             if mcp_manager is None:
                 yield
@@ -93,6 +105,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             sweep.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await sweep
+            if settings.memory_enabled:
+                warming.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await warming
             await hub.close()
         await prism.drain()
         await db.dispose()
@@ -108,6 +124,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.prism = prism
     app.state.messages = hub
     app.state.message_seal = seal
+    # One embedding model for all of Inki's memory, loaded on first use (verytas/memory/embed.py).
+    app.state.embedder = embedder_for(settings.memory_embed_model, settings.memory_dir / "models")
+    app.state.personal = PersonalMemory(settings.memory_dir / "personal", app.state.embedder,
+                                        settings.memory_dir / "models")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

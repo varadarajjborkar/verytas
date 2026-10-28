@@ -90,6 +90,17 @@ class Settings(BaseSettings):
 
     keys_dir: Path = Path(".keys")
 
+    # Inki's memory (verytas/memory). One local embedding model serves all of it; "hash" is a model-free
+    # stand-in for tests and offline runs. Earlier turns of a long conversation are recalled by meaning on
+    # top of the recent ones, and what a person tells Ask Inki about how they work is kept for them (mem0,
+    # stored under memory_dir). Off turns both off; Inki then reads only the recent turns, as before.
+    memory_enabled: bool = True
+    memory_dir: Path = Path(".memory")
+    memory_embed_model: str = "BAAI/bge-small-en-v1.5"  # or "hash"
+    memory_recall_turns: int = Field(default=6, ge=0, le=20)      # earlier turns added to the recent ones
+    memory_recall_scan: int = Field(default=400, ge=20, le=2000)  # how far back a conversation is searched
+    memory_personal_k: int = Field(default=5, ge=0, le=20)       # facts about the asker in Ask Inki
+
     # Conversations (services/messages.py). With Redis, new messages reach open screens through its
     # pub/sub and the latest page of each conversation is served from its cache; without it, one API
     # process delivers them itself and every read goes to the database. Either way the database is the

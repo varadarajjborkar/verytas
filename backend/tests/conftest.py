@@ -16,6 +16,9 @@ def settings(tmp_path) -> Settings:
         # The face models are fetched on first use; the suite stays offline (tests/test_faces.py opts in).
         faces_enabled=False,
         db_guard_reads=True,
+        # Model-free embeddings and a per-test memory store: the suite stays offline and isolated.
+        memory_embed_model="hash",
+        memory_dir=tmp_path / "memory",
     )
 
 

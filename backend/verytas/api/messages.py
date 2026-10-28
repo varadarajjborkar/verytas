@@ -34,7 +34,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Requ
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import defer
 
@@ -44,6 +44,7 @@ from verytas.api.content import visible
 from verytas.api.deps import CurrentUser, Session, bearer, current_user
 from verytas.media import serve, storage
 from verytas.media.files import MediaError
+from verytas.memory.thread import Turn, VectorCache, earlier_turns, expand, ranks
 from verytas.models import (
     Content,
     Conversation,
@@ -51,6 +52,7 @@ from verytas.models import (
     MediaDigest,
     Message,
     MessageAttachment,
+    MessageVector,
     Role,
     User,
     utcnow,
@@ -684,6 +686,8 @@ async def edit(conversation_id: Id, message_id: Id, body: EditIn, request: Reque
     if payload.get("text") != body.text:
         m.sealed = _seal(request).seal(conv.id, {**payload, "text": body.text})
         m.edited_at = utcnow()
+        # The old words' vector goes too; recall embeds the new ones when it next needs them.
+        await session.execute(delete(MessageVector).where(MessageVector.message_id == m.id))
         await session.commit()
         await _hub(request).forget_page(conv.id)
         await _publish(_hub(request), session, conv, m)
@@ -706,6 +710,8 @@ async def delete_message(conversation_id: Id, message_id: Id, request: Request, 
         m.sealed = _seal(request).seal(conv.id, {"text": ""})
         m.deleted_at = utcnow()
         m.content_id = None
+        # What the words meant goes with them (memory/thread.py keeps a sealed vector per turn).
+        await session.execute(delete(MessageVector).where(MessageVector.message_id == m.id))
         await session.flush()
         await storage.release(session, conv.workspace_id, held)
         await session.commit()
@@ -902,21 +908,33 @@ async def _answer(app: Any, conversation_id: int, asked_by: int, question_id: in
         if question is None:
             return  # deleted before Inki got to it
         names = {creator_id: "Creator", manager_id: "Brand team"}
-        transcript, file_ids = [], []
-        for m in rows:
+
+        def said(m: Message) -> tuple[str, str, list[dict]]:
             payload = seal.open(conv_id, m.sealed) or {}
             call = payload.get("call")
             shared = [f for f in payload.get("files", []) if isinstance(f, dict)]
-            file_ids += [f["id"] for f in shared]
             text = payload.get("text") or ""
             if call:
                 text += f" (shared a {call['provider']} link)"
             if shared:
                 text += f" (shared {', '.join(f['name'] for f in shared)})"
-            if text.strip():
-                who = "Inki" if m.sender_id is None else names.get(m.sender_id, "Someone")
-                transcript.append((who, text.strip()))
+            return "Inki" if m.sender_id is None else names.get(m.sender_id, "Someone"), text.strip(), shared
+
+        transcript, file_ids = [], []
+        for m in rows:
+            who, text, shared = said(m)
+            file_ids += [f["id"] for f in shared]
+            if text:
+                transcript.append((who, text))
         question_text = (seal.open(conv_id, question.sealed) or {}).get("text", "")
+        # Older turns, for recall below once the question is known to be answered (verytas/memory/thread.py).
+        settings = app.state.settings
+        turns: list[Turn] = []
+        if settings.memory_enabled and settings.memory_recall_turns and rows:
+            older = list(reversed((await session.scalars(select(Message).where(
+                Message.conversation_id == conv_id, Message.id < rows[0].id, Message.deleted_at.is_(None))
+                .order_by(Message.id.desc()).limit(settings.memory_recall_scan))).all()))
+            turns = [Turn(m.id, who, text) for m in older for who, text, _ in [said(m)] if text]
         # The pieces this conversation has pointed at, newest first; the question's own piece leads.
         linked = [m.content_id for m in reversed(rows) if m.content_id]
         older = (await session.scalars(select(Message.content_id).where(
@@ -945,9 +963,28 @@ async def _answer(app: Any, conversation_id: int, asked_by: int, question_id: in
                 got = await _digest(app, session, blob_id)
                 if got:
                     files.append({"name": got[0], "kind": got[1], "text": got[2]})
-        await session.commit()  # no transaction held across the model call
+        await session.commit()  # no transaction held across the model calls below
 
-        task = InkiTask(transcript=transcript, pieces=pieces, files=files)
+        # Beyond the recent turns, the earlier ones that bear on the question, found by meaning, by shared
+        # words and by the question reworded the way the answer was likely written. Only for a question Inki
+        # will answer: a refusal or the hourly limit sends nothing anywhere, rewording included. The rewording
+        # is the first time the question leaves, so consent is read fresh before it.
+        earlier: list[tuple[str, str]] = []
+        if fixed is None and turns:
+            if not await _still_consents(app, asked_by):
+                return
+            try:
+                phrasings = []
+                if ranks(turns):  # a short history comes whole, unranked: nothing to reword for
+                    _, quick, _, _ = app.state.prism.guarded_providers(redactor)
+                    phrasings = await expand(quick, question_text, [text for _, text in transcript[-3:-1]])
+                picked = await earlier_turns(VectorCache(app.state.db, seal), app.state.embedder, conv_id, turns,
+                                             question_text, settings.memory_recall_turns, phrasings)
+                earlier = [(t.who, t.text) for t in picked]
+            except Exception:  # noqa: BLE001 - recall is extra context; without it Inki still has the recent turns
+                log.warning("inki recall of earlier turns failed", exc_info=True)
+
+        task = InkiTask(transcript=transcript, pieces=pieces, files=files, earlier=earlier)
         if fixed is not None:
             reply = fixed  # answered here; the model is never asked
         elif not await _still_consents(app, asked_by):

@@ -624,6 +624,8 @@ class ChatThread(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     title: Mapped[str] = mapped_column(String(200))
     messages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    # How many of the person's own messages have been read for things to remember (verytas/memory/personal.py).
+    remembered: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
@@ -840,6 +842,21 @@ class MessageAttachment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     message_id: Mapped[int] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"), index=True)
     blob_id: Mapped[str] = mapped_column(String(64), index=True)
+
+
+class MessageVector(Base):
+    """A message's meaning as numbers, so Inki can find the turns of a long conversation that bear on a question
+    (verytas/memory/thread.py). Sealed with the conversation's key like the message itself: what the words were
+    about is not left readable at rest either. `model` and `digest` say what it was made from, so an edited
+    message or a changed model is embedded again rather than matched on stale numbers."""
+
+    __tablename__ = "message_vectors"
+
+    message_id: Mapped[int] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
+    model: Mapped[str] = mapped_column(String(80))
+    digest: Mapped[str] = mapped_column(String(16))
+    sealed: Mapped[str] = mapped_column(Text)
 
 
 class MediaDigest(Base):
