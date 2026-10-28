@@ -137,7 +137,9 @@ async def resolve_escalation(esc_id: int, body: EscalationResolveIn, session: Se
     esc = await _escalation(session, user, esc_id)
     if esc.status != "open":
         raise HTTPException(status.HTTP_409_CONFLICT, f"already {esc.status}")
-    finding = await session.get(Finding, esc.finding_id)
+    # Decided on the finding the creator sees now: if the piece was checked again since the request, the
+    # same issue carries a new id, and only a decision there shows on their screen and gates approval.
+    finding = await _current_finding(session, esc)
     approver = user.role in (Role.approver, Role.brand_admin)
     if body.outcome == "cleared" and finding.level is Level.blocker and not approver:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "only approvers can clear a must-fix finding")
@@ -179,6 +181,21 @@ async def _escalation(session, user: User, esc_id: int) -> Escalation:
     if user.role is Role.creator and esc.raised_by != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "escalation not found")
     return esc
+
+
+async def _current_finding(session, esc: Escalation) -> Finding:
+    """The escalated finding as the piece's newest check raised it: the same rule or fact on the same words
+    in the same place. A request outlives a re-check, but each check makes its findings afresh. Falls back to
+    the original when the newest check no longer raises it (the creator fixed it) or nothing newer ran."""
+    finding = await session.get(Finding, esc.finding_id)
+    latest = await _latest_review(session, esc.content_id)
+    if latest is None or latest.id == finding.review_id:
+        return finding
+    same = lambda col, v: col.is_(None) if v is None else col == v  # noqa: E731
+    match = await session.scalar(select(Finding).where(
+        Finding.review_id == latest.id, same(Finding.rule_id, finding.rule_id), same(Finding.fact_id, finding.fact_id),
+        same(Finding.quote, finding.quote), Finding.source == finding.source).order_by(Finding.id).limit(1))
+    return match or finding
 
 
 def _person(u: User | None) -> dict | None:
@@ -233,6 +250,8 @@ async def _view(session, user: User, esc: Escalation) -> dict[str, Any]:
         "finding": {"id": finding.id, "title": finding.title, "level": finding.level, "category": finding.category,
                     "explanation": finding.explanation, "checker": finding.checker, "model": finding.model,
                     "confidence": finding.confidence, "source": finding.source},
+        # Where the request shows on the piece: the same finding in its newest check (see _current_finding).
+        "current_finding_id": (await _current_finding(session, esc)).id,
         "excerpt": excerpt, "citations": citations,
         "resolution": None if esc.status == "open" else {
             "outcome": esc.status, "code": esc.resolution_code, "note": esc.resolution, "by": _person(resolved_by)},

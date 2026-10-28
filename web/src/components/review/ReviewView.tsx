@@ -96,11 +96,12 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
   const loadTimeline = useCallback(() => {
     getTimeline(contentId).then((t) => { if (live.current === contentId) setTimeline(t); }).catch(() => {});
     listComments(contentId).then((c) => { if (live.current === contentId) setPins(c); }).catch(() => {});
-    // The latest request per finding: a withdrawn one may be followed by a new ask.
+    // The latest request per finding: a withdrawn one may be followed by a new ask. Keyed by the finding as the
+    // newest check raised it, so a request made before a re-check still shows, with the brand team's answer.
     listEscalations("all", contentId).then((rows) => {
       if (live.current !== contentId) return;
       const by: Record<number, EscalationRequest> = {};
-      for (const r of [...rows].sort((a, b) => a.id - b.id)) by[r.finding.id] = r;
+      for (const r of [...rows].sort((a, b) => a.id - b.id)) by[r.current_finding_id] = r;
       setRequests(by);
     }).catch(() => {});
   }, [contentId]);

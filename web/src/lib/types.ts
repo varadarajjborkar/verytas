@@ -373,6 +373,8 @@ export type EscalationRequest = {
   version: { id: number; version_no: number } | null;
   finding: { id: number; title: string; level: Level; category: string; explanation: string; checker: string;
     model: string | null; confidence: number; source: string };
+  /** The same finding in the piece's newest check: a re-check gives findings new ids, and the piece shows those. */
+  current_finding_id: number;
   excerpt: { before: string; quote: string; after: string; clipped_start: boolean; clipped_end: boolean };
   citations: (RuleCitation | FactCitation)[];
   resolution: { outcome: string; code: string | null; note: string | null; by: Person | null } | null;

@@ -99,6 +99,34 @@ def test_a_creator_escalates_and_the_brand_team_decides_with_the_record_beside_i
     assert client.get("/escalations", headers=_auth(creator)).json() == []  # nothing open any more
 
 
+def test_a_request_about_an_earlier_check_is_answered_on_the_finding_the_creator_sees_now(client, world):
+    # The creator asks, then saves a new version before the brand team answers. The new check repeats the
+    # finding under a new id; the answer and the decision must land there, where the creator's screen looks.
+    creator, approver = world["creator"], world["approver"]
+    made = _post(client, creator, LEAK)
+    old = _blocker(client, creator, made)
+    raised = client.post(f"/findings/{old['id']}/escalations", headers=_auth(creator),
+                         json={"message": "Lumen was announced publicly at the keynote yesterday."})
+    assert raised.status_code == 201, raised.text
+    again = client.post(f"/contents/{made['content']['id']}/versions?wait=true", headers=_auth(creator),
+                        json={"body": LEAK + " Sign up today."})
+    assert again.status_code == 201, again.text
+    new = _blocker(client, creator, again.json())
+    assert new["id"] != old["id"]
+
+    mine = client.get(f"/escalations?state=all&content_id={made['content']['id']}", headers=_auth(creator)).json()
+    assert [r["current_finding_id"] for r in mine] == [new["id"]]
+
+    done = client.post(f"/escalations/{raised.json()['id']}/resolve", headers=_auth(approver),
+                       json={"outcome": "cleared", "reason_code": "not_applicable",
+                             "note": "Public since the keynote."})
+    assert done.status_code == 200, done.text
+    assert done.json()["current_finding_id"] == new["id"]
+    # Cleared on the finding the newest check raised, so it no longer holds the piece back.
+    decided = next(x for x in _findings(client, creator, again.json()["review_id"]) if x["id"] == new["id"])
+    assert decided["decisions"][-1]["action"] == "rejected"
+
+
 def test_creators_never_see_each_others_pieces_or_requests(client, world):
     admin = _auth(world["admin"])
     other = client.post("/users", headers=admin, json={"email": "c2@acme.io", "name": "Second", "role": "creator"})
