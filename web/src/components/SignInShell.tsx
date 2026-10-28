@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { FindingDeck } from "./FindingDeck";
 import { CheckIcon } from "./Icons";
+import { PointerGlow } from "./PointerGlow";
 import { Wordmark } from "./Wordmark";
 
 const PROMISES = [
@@ -19,6 +20,7 @@ export function SignInShell({ children }: { children: ReactNode }) {
   return (
     <div className="fixed inset-0 z-40 grid overflow-y-auto bg-surface md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:overflow-hidden">
       <aside className="vt-signin-aside relative flex flex-col md:min-h-0 gap-7 p-6 md:overflow-y-auto md:px-12 md:py-10 [@media(min-width:768px)_and_(max-height:760px)]:gap-5 [@media(min-width:768px)_and_(max-height:760px)]:py-8">
+        <PointerGlow />
         {/* The two halves meet in a fade, not a rule: one surface with the brand side lit at its corner. */}
         <span aria-hidden className="pointer-events-none absolute inset-y-0 right-0 hidden w-32 bg-gradient-to-r from-transparent to-surface md:block" />
         <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-b from-transparent to-surface md:hidden" />
