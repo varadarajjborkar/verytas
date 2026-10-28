@@ -125,12 +125,12 @@ export const ExternalIcon = (p: IconProps) => <Icon {...p}><path d="M7 17 17 7" 
 export const FileIcon = (p: IconProps) => (
   <Icon {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></Icon>
 );
-// Inki in the same stroke as the rest of the nav: the cat-eared head, its antenna, one open eye and the
-// wink. The coloured mark (components/Inki.tsx) stays for Inki itself, in chats and on its page.
+// Inki in the same stroke as the rest of the nav: the cat-eared head, its antenna, both eyes open (at rest,
+// as everywhere; the wink is only the hover animation of the coloured mark). The coloured mark (components/Inki.tsx) stays for Inki itself, in chats and on its page.
 export const InkiLineIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M6 20h12a2 2 0 0 0 2-2v-6.5a2.5 2.5 0 0 0-.7-1.7V5.5L15.6 8.5H8.4L4.7 5.5v4.3a2.5 2.5 0 0 0-.7 1.7V18a2 2 0 0 0 2 2z" />
     <path d="M15 8.5 17 4.6" /><circle cx="17.6" cy="3.4" r="1.1" />
-    <path d="M9 12.6v1.8" /><path d="m16.2 12.4-2 1.1 2 1.1" /><path d="M9.6 16.6c1.4 1 3.4 1 4.8 0" />
+    <path d="M9 12.6v1.8" /><path d="M15 12.6v1.8" /><path d="M9.6 16.6c1.4 1 3.4 1 4.8 0" />
   </Icon>
 );
