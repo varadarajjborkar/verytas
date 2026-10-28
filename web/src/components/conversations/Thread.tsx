@@ -47,11 +47,15 @@ export function Thread({ conv, me, side, subscribe, inki, initialPiece, onBack, 
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const marked = useRef(0);
+  const marking = useRef(0);
   const lastRef = useRef(0);
 
   const merge = useCallback((incoming: ChatMessage[]) => setMsgs((list) => {
     const byId = new Map((list ?? []).map((m) => [m.id, m]));
-    incoming.forEach((m) => byId.set(m.id, m));
+    // A message only moves forward: plain, then edited, then deleted. A slow page fetched before a live
+    // edit or deletion arrived must not put the older copy back.
+    const stage = (m: ChatMessage) => (m.deleted ? 2 : m.edited ? 1 : 0);
+    incoming.forEach((m) => { const had = byId.get(m.id); if (!had || stage(m) >= stage(had)) byId.set(m.id, m); });
     return [...byId.values()].sort((a, b) => a.id - b.id);
   }), []);
 
@@ -60,17 +64,29 @@ export function Thread({ conv, me, side, subscribe, inki, initialPiece, onBack, 
     listMessages(conv.id).then((m) => { merge(m); setMore(m.length >= PAGE); }).catch((e: Error) => setError(e.message));
   }, [conv.id, merge]);
 
+  // Everything after the last message seen, page by page, so a long gap leaves no hole in the middle.
+  // With nothing loaded yet there is no "after": the newest page is the whole answer.
+  const catchUp = useCallback(async () => {
+    try {
+      let after = lastRef.current;
+      for (let page = 0; after && page < 20; page++) {
+        const got = await listMessages(conv.id, { after });
+        merge(got);
+        if (got.length < PAGE) break;
+        after = got.at(-1)!.id;
+      }
+      merge(await listMessages(conv.id));
+    } catch { /* the next reconnect tries again */ }
+  }, [conv.id, merge]);
+
   const lastId = msgs?.at(-1)?.id ?? 0;
   useEffect(() => { lastRef.current = lastId; }, [lastId]);
   useEffect(() => subscribe((e) => {
     if (e.type === "message" && e.message.conversation_id === conv.id) merge([e.message]);
     // After a gap: what is new since the last id, and the newest page again, which carries any edits and
     // deletions made while the stream was down.
-    if (e.type === "resync") {
-      listMessages(conv.id, { after: lastRef.current }).then(merge).catch(() => {});
-      listMessages(conv.id).then(merge).catch(() => {});
-    }
-  }), [conv.id, merge, subscribe]);
+    if (e.type === "resync") void catchUp();
+  }), [conv.id, merge, subscribe, catchUp]);
 
   // Follow new messages while the reader is at the bottom; leave them be while they read further up. Pictures
   // and videos load after the text, so the content's growth is watched too.
@@ -91,9 +107,13 @@ export function Thread({ conv, me, side, subscribe, inki, initialPiece, onBack, 
   useEffect(() => {
     if (!lastId || lastId <= marked.current) return;
     const mark = () => {
-      if (document.hidden || lastId <= marked.current) return;
-      marked.current = lastId;
-      markRead(conv.id, lastId).then(() => { onRead(); window.dispatchEvent(new Event(CONVERSATIONS_SEEN_EVENT)); }).catch(() => {});
+      if (document.hidden || lastId <= marked.current || marking.current >= lastId) return;
+      // Counted as read only once the server has it; a failed call is tried again on the next look.
+      marking.current = lastId;
+      markRead(conv.id, lastId)
+        .then(() => { marked.current = Math.max(marked.current, lastId); onRead(); window.dispatchEvent(new Event(CONVERSATIONS_SEEN_EVENT)); })
+        .catch(() => {})
+        .finally(() => { if (marking.current === lastId) marking.current = 0; });
     };
     mark();
     document.addEventListener("visibilitychange", mark);
@@ -123,9 +143,22 @@ export function Thread({ conv, me, side, subscribe, inki, initialPiece, onBack, 
     try { merge([await deleteMessage(conv.id, m.id)]); } catch (e) { setError((e as Error).message); }
   };
 
-  const jump = (id: number) => {
-    const el = scroller.current?.querySelector<HTMLElement>(`[data-message="${id}"]`);
-    if (!el) return;
+  const jump = async (id: number) => {
+    let el = scroller.current?.querySelector<HTMLElement>(`[data-message="${id}"]`);
+    // The quoted message may be on an earlier page: load back to it (a few pages at most), then show it.
+    let first = msgs?.[0]?.id;
+    for (let page = 0; !el && first && id < first && page < 10; page++) {
+      let older: ChatMessage[];
+      try { older = await listMessages(conv.id, { before: first }); } catch { break; }
+      if (!older.length) break;
+      stick.current = false;
+      merge(older);
+      setMore(older.length >= PAGE);
+      first = older[0].id;
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      el = scroller.current?.querySelector<HTMLElement>(`[data-message="${id}"]`);
+    }
+    if (!el) { setError("That message is no longer in this conversation."); return; }
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     el.classList.add("vt-flash");
     setTimeout(() => el.classList.remove("vt-flash"), 1200);
@@ -215,7 +248,7 @@ function Row({ m, me, side, conversationId, onJump, onView, onReply, onEdit, onD
     : mine ? "rounded-2xl rounded-br-md bg-accent text-accent-ink" : "rounded-2xl rounded-bl-md bg-sunken";
   return (
     // Yours on the right, theirs on the left, Inki on the left with its own mark: who said what at a glance.
-    <li data-message={m.id} className={`group flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}>
+    <li data-message={m.id} data-mine={mine || undefined} className={`group flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}>
       {!mine && (inki ? <InkiIcon size={28} className="mb-5" /> : <span className="mb-5"><Avatar name={m.sender?.name ?? "?"} size={28} /></span>)}
       <div className={`flex min-w-0 max-w-[min(34rem,85%)] flex-col gap-1 ${mine ? "items-end" : "items-start"}`}>
         {!mine && (
@@ -364,10 +397,10 @@ function Files({ files, conversationId, onView }: { files: SharedFile[]; convers
       ) : f.kind === "video" ? (
         <div key={f.id} className="w-80 max-w-full overflow-hidden rounded-xl border border-line bg-black" onContextMenu={(e) => e.preventDefault()}>
           <video src={fileUrl(conversationId, f.id)} poster={posterUrl(conversationId, f.id)} controls preload="metadata"
-            controlsList="nodownload noplaybackrate" disablePictureInPicture className="block max-h-60 w-full" />
+            controlsList="nodownload noplaybackrate noremoteplayback" disablePictureInPicture disableRemotePlayback className="block max-h-60 w-full" />
           <p className="flex justify-between gap-2 bg-raised px-3 py-1.5 text-[11px] text-muted">
             <span className="truncate">{f.name}</span>
-            {f.duration ? <span className="shrink-0">{Math.floor(f.duration / 60)}:{String(Math.round(f.duration % 60)).padStart(2, "0")}</span> : null}
+            {f.duration ? <span className="shrink-0">{Math.floor(Math.round(f.duration) / 60)}:{String(Math.round(f.duration) % 60).padStart(2, "0")}</span> : null}
           </p>
         </div>
       ) : (
@@ -612,11 +645,13 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
               className="vt-btn vt-btn-primary ml-auto h-8 px-3 text-xs">{editing ? "Save" : <><ArrowUpIcon size={13} /> Send</>}</button>
           </div>
         </div>
-        <p className="mt-1.5 hidden flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-subtle sm:flex">
-          <span className="flex items-center gap-1"><ShieldIcon size={11} /> Encrypted at rest. Deleting removes a message and its files for everyone.</span>
+        {/* The privacy note hides on a phone; the way to turn Inki off never does, since the consent says it is here. */}
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-subtle">
+          <span className="hidden items-center gap-1 sm:flex"><ShieldIcon size={11} /> Encrypted at rest. Deleting removes a message and its files for everyone.</span>
           {inkiOn && (
             <button type="button" className="underline-offset-2 hover:text-ink hover:underline"
-              onClick={() => withdrawInki().then(() => setInkiOn(false)).catch(() => {})}>
+              onClick={() => withdrawInki().then(() => setInkiOn(false))
+                .catch((e: Error) => setError(`${INKI} is still on: ${e.message}. Try again.`))}>
               {INKI} may read conversations you ask it into · Turn off
             </button>
           )}

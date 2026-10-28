@@ -57,8 +57,19 @@ export function ConversationsView() {
   const search = useRef<HTMLInputElement>(null);
   useEffect(() => { activeRef.current = active; }, [active]);
 
-  const load = useCallback(() => listConversations().then((c) => { setConvs(c); setError(null); })
-    .catch((e: Error) => setError(e.message)), []);
+  // Only the newest request lands, and one that was in flight while a live message changed a row is asked
+  // again, so a slow list can't put back what the stream just updated.
+  const loads = useRef({ seq: 0, changedAt: 0 });
+  const load = useCallback(function again(): Promise<void> {
+    const seq = ++loads.current.seq;
+    return listConversations().then((c) => {
+      if (seq !== loads.current.seq) return;
+      if (loads.current.changedAt > seq) { void again(); return; }
+      setConvs(c); setError(null);
+    }).catch((e: Error) => { if (seq === loads.current.seq) setError(e.message); });
+  }, []);
+  const convsRef = useRef<ConversationRow[] | null>(null);
+  useEffect(() => { convsRef.current = convs; }, [convs]);
 
   const choose = useCallback((id: number | null) => {
     router.push(id ? `/conversations?c=${id}` : "/conversations", { scroll: false });
@@ -119,13 +130,14 @@ export function ConversationsView() {
         if (e.type === "message") {
           const m = e.message;
           if (m.kind === "inki") settle(m.conversation_id);
-          setConvs((list) => {
-            const row = list?.find((c) => c.id === m.conversation_id);
-            // A conversation new to this screen, or a piece whose status isn't known here: ask the server.
-            if (!row || (m.piece && row.topic?.id !== m.piece.id)) { load(); return list; }
-            return list!.map((c) => c.id === m.conversation_id ? applyToRow(c, m, me?.id ?? null, activeRef.current) : c)
-              .sort((a, b) => b.last_message_at.localeCompare(a.last_message_at));
-          });
+          const row = convsRef.current?.find((c) => c.id === m.conversation_id);
+          // A conversation new to this screen, or a piece whose status isn't known here: ask the server.
+          if (!row || (m.piece && row.topic?.id !== m.piece.id)) void load();
+          else {
+            loads.current.changedAt = loads.current.seq + 1;
+            setConvs((list) => list?.map((c) => c.id === m.conversation_id ? applyToRow(c, m, me?.id ?? null, activeRef.current) : c)
+              .sort((a, b) => b.last_message_at.localeCompare(a.last_message_at)) ?? list);
+          }
           window.dispatchEvent(new Event(CONVERSATIONS_SEEN_EVENT));
         }
         if (e.type === "read") setConvs((list) => list?.map((c) => c.id === e.conversation_id ? { ...c, unread: 0 } : c) ?? list);
@@ -241,6 +253,16 @@ export function ConversationsView() {
               <Thread key={current.id} conv={current} me={me} side={side} subscribe={subscribe} initialPiece={piece}
                 inki={thinking[current.id] ?? null} onBack={() => choose(null)}
                 onRead={() => setConvs((list) => list?.map((c) => c.id === current.id ? { ...c, unread: 0 } : c) ?? list)} />
+            ) : active && !convs && !error ? (
+              <div aria-busy="true" aria-label="Opening the conversation" className="flex flex-1 flex-col gap-3 p-6">
+                {[0, 1, 2].map((i) => <div key={i} className={`h-12 animate-pulse rounded-2xl bg-sunken ${i % 2 ? "ml-auto w-1/2" : "w-2/3"}`} />)}
+              </div>
+            ) : active && !convs && error ? (
+              <Empty title="Conversations didn't load" body={error}
+                action={<div className="flex gap-2">
+                  <button type="button" onClick={() => void load()} className="vt-btn">Try again</button>
+                  <button type="button" onClick={() => choose(null)} className="vt-btn vt-btn-quiet">Back to conversations</button>
+                </div>} />
             ) : active && convs && !current ? (
               <Empty title="That conversation isn't here" body="It may belong to someone else, or the link is old."
                 action={<button type="button" onClick={() => choose(null)} className="vt-btn vt-btn-quiet">Back to conversations</button>} />
