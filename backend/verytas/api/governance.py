@@ -33,6 +33,7 @@ from verytas.models import (
     Level,
     PublicContact,
     Review,
+    ReviewStatus,
     Role,
     Rule,
     User,
@@ -137,6 +138,12 @@ async def resolve_escalation(esc_id: int, body: EscalationResolveIn, session: Se
     esc = await _escalation(session, user, esc_id)
     if esc.status != "open":
         raise HTTPException(status.HTTP_409_CONFLICT, f"already {esc.status}")
+    # A check still running has no findings yet: an answer now would land on the old finding, and the one the
+    # new check raises would come back undecided and hold the piece up again. Answer once it has finished.
+    latest = await _latest_review(session, esc.content_id)
+    if latest is not None and latest.status in (ReviewStatus.queued, ReviewStatus.running):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "the piece is being checked again; answer once that check finishes")
     # Decided on the finding the creator sees now: if the piece was checked again since the request, the
     # same issue carries a new id, and only a decision there shows on their screen and gates approval.
     finding = await _current_finding(session, esc)
@@ -192,10 +199,21 @@ async def _current_finding(session, esc: Escalation) -> Finding:
     if latest is None or latest.id == finding.review_id:
         return finding
     same = lambda col, v: col.is_(None) if v is None else col == v  # noqa: E731
-    match = await session.scalar(select(Finding).where(
-        Finding.review_id == latest.id, same(Finding.rule_id, finding.rule_id), same(Finding.fact_id, finding.fact_id),
-        same(Finding.quote, finding.quote), Finding.source == finding.source).order_by(Finding.id).limit(1))
-    return match or finding
+
+    def alike(review_id: int):
+        return select(Finding.id).where(
+            Finding.review_id == review_id, same(Finding.rule_id, finding.rule_id),
+            same(Finding.fact_id, finding.fact_id), same(Finding.quote, finding.quote),
+            Finding.source == finding.source).order_by(Finding.id)
+
+    # The same phrase flagged twice is two findings; the request follows its own occurrence, counted in order,
+    # so each of two requests lands on its own finding. Offsets can't be compared: the new version moved the text.
+    before = list(await session.scalars(alike(finding.review_id)))
+    now = list(await session.scalars(alike(latest.id)))
+    if not now:
+        return finding
+    nth = before.index(finding.id) if finding.id in before else 0
+    return await session.get(Finding, now[min(nth, len(now) - 1)])
 
 
 def _person(u: User | None) -> dict | None:

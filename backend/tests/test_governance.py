@@ -127,6 +127,28 @@ def test_a_request_about_an_earlier_check_is_answered_on_the_finding_the_creator
     assert decided["decisions"][-1]["action"] == "rejected"
 
 
+def test_a_request_waits_for_a_re_check_still_running_before_it_is_answered(client, world, monkeypatch):
+    # Answered mid-check, the decision would sit on the old finding and the new check's copy of it would come
+    # back undecided. The brand team is asked to wait for the check instead.
+    creator, approver = world["creator"], world["approver"]
+    made = _post(client, creator, LEAK)
+    old = _blocker(client, creator, made)
+    raised = client.post(f"/findings/{old['id']}/escalations", headers=_auth(creator),
+                         json={"message": "Lumen was announced publicly at the keynote yesterday."})
+    assert raised.status_code == 201, raised.text
+    monkeypatch.setattr(client.app.state.prism, "schedule", lambda review_id: None)  # the check stays queued
+    again = client.post(f"/contents/{made['content']['id']}/versions", headers=_auth(creator),
+                        json={"body": LEAK + " Sign up today."})
+    assert again.status_code == 201, again.text
+
+    early = client.post(f"/escalations/{raised.json()['id']}/resolve", headers=_auth(approver),
+                        json={"outcome": "cleared", "reason_code": "not_applicable",
+                              "note": "Public since the keynote."})
+    assert early.status_code == 409, early.text
+    assert "checked again" in early.json()["detail"]
+    assert client.get(f"/escalations/{raised.json()['id']}", headers=_auth(approver)).json()["status"] == "open"
+
+
 def test_creators_never_see_each_others_pieces_or_requests(client, world):
     admin = _auth(world["admin"])
     other = client.post("/users", headers=admin, json={"email": "c2@acme.io", "name": "Second", "role": "creator"})
@@ -272,3 +294,24 @@ def test_a_retired_contact_can_be_listed_again_and_the_badge_count_is_cheap(clie
     assert client.get("/escalations/count", headers=_auth(world["reviewer"])).json() == {"open": 1}
     other = client.post("/users", headers=admin, json={"email": "c3@acme.io", "name": "Third", "role": "creator"})
     assert client.get("/escalations/count", headers=_auth(other.json()["token"])).json() == {"open": 0}
+
+
+def test_two_requests_on_a_phrase_flagged_twice_each_follow_their_own_finding(client, world):
+    # The same words twice are two findings with the same rule and quote; after a re-check each request must
+    # still point at its own occurrence, or one answer would land on the other's finding.
+    creator = world["creator"]
+    made = _post(client, creator, f"{LEAK} Again: {LEAK}")
+    twins = [f for f in _findings(client, creator, made["review_id"]) if f["level"] == "blocker"]
+    first = twins[0]
+    twins = [f for f in twins if (f["title"], f["quote"]) == (first["title"], first["quote"])]
+    assert len(twins) == 2, twins
+    for f in twins:
+        out = client.post(f"/findings/{f['id']}/escalations", headers=_auth(creator),
+                          json={"message": "Lumen was announced publicly at the keynote yesterday."})
+        assert out.status_code == 201, out.text
+    again = client.post(f"/contents/{made['content']['id']}/versions?wait=true", headers=_auth(creator),
+                        json={"body": f"{LEAK} Again: {LEAK} Sign up today."})
+    assert again.status_code == 201, again.text
+    mine = client.get(f"/escalations?state=all&content_id={made['content']['id']}", headers=_auth(creator)).json()
+    current = sorted(r["current_finding_id"] for r in mine)
+    assert len(set(current)) == 2 and all(i not in {t["id"] for t in twins} for i in current)
