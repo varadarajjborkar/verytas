@@ -584,7 +584,7 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
           </div>
         )}
         {error && <p role="alert" className="mb-2 rounded-lg bg-[var(--vt-blocker-bg)] px-3 py-1.5 text-[13px] text-[var(--vt-blocker)]">{error}</p>}
-        <div className="rounded-xl border border-line bg-raised focus-within:border-accent/50">
+        <div className="vt-composer rounded-xl border border-line bg-raised">
           {(replyTo || editing) && (
             <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-xs text-muted">
               {editing ? <PencilIcon size={12} /> : <ReplyIcon size={12} />}
