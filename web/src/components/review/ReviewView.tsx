@@ -506,7 +506,7 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
             {latest && !editing && docView === "text" && (
               <>
                 {/* Keyed by version: a drawing or a selected stretch belongs to the version it was made on. */}
-                <Attachments key={latest.id} contentId={contentId} version={latest} findings={findings} active={active} onSelect={pick}
+                <Attachments key={`media-${latest.id}`} contentId={contentId} version={latest} findings={findings} active={active} onSelect={pick}
                   comments={pins} onPinned={loadTimeline} canComment={role !== "brand_admin"} />
                 {coverage?.sources && <DocumentPages key={latest.id} contentId={contentId} version={latest} sources={coverage.sources}
                   findings={findings} active={active} onSelect={pick} kept={kept} />}
