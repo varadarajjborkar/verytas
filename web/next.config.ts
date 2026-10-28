@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
   // No "X-Powered-By: Next.js": the framework and its version are no one else's business.
   poweredByHeader: false,
   partialPrefetching: true,
+  // The proxy gets the URL Next itself received. Normalized, it is rebuilt as localhost while Next compares
+  // rewrites against the address it binds (127.0.0.1 on the server), so every rewrite looks external and is
+  // proxied back to ourselves; behind Caddy's X-Forwarded-Proto: https that proxy speaks TLS to a plain
+  // http port and the landing page answers 500.
+  skipProxyUrlNormalize: true,
   // Every image the app shows is its own or one the viewer attached (data: and blob: URLs), so img-src
   // stays on this origin: an image link a model or a pasted post slips into Ask Verytas cannot load,
   // which keeps it from beaconing who read it. Scripts are left to Next for now; nonces would cost the
