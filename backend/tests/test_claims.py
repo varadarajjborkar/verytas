@@ -312,6 +312,9 @@ def test_a_rate_is_not_judged_against_a_total_or_a_fact_about_something_else():
     assert verdicts("Meet Ananya, who mentors 40 learners a week in our design track.") == ["unmatched"]
     assert verdicts("Kitepath has 2 million learners") == ["contradicted"]
     assert verdicts("Support is open 6 days a week") == ["contradicted"]
+    # A span of time is about whatever the sentence is about: a recording's 30 days are not support's 7.
+    assert verdicts("The recording stays up for 30 days.") == ["unmatched"]
+    assert verdicts("Our support team is open 6 days.") == ["contradicted"]
     # Through retrieval, which ranks by shared words and hands over only the support fact.
     quote = "Meet Ananya, who mentors 40 learners a week in our design track."
     assert [r.verdict for r in _verify_numbers(quote, parse_numbers(quote), facts[1:], ctx)] == ["unmatched"]

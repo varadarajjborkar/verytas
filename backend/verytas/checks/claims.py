@@ -280,6 +280,9 @@ class _NumberResult:
 _MATCH_FLOOR = 0.5
 _EXACT_TOPIC_FLOOR = 0.2  # with an exact value match, a little topical overlap is enough
 _UNIT_LEAD = 0.25  # how much naming the fact's own unit counts over a shared word
+# Units of time say how long, not what of. "30 days" counts days for anything, so a figure whose subject is
+# only such a unit is about a fact only if the sentence shares the fact's topic too.
+_MEASURE = {"second", "minute", "min", "hour", "hr", "day", "week", "month", "year"}
 # A figure per period ("40 learners a week") is a rate, and a rate is not a total: it can't contradict
 # "Kitepath has 1.2 million learners", only another rate.
 _RATE = re.compile(r"\b(?:a|an|per|each|every)\s+(?:day|week|month|year|hour|session|class|batch)\b"
@@ -357,6 +360,12 @@ def _verify_numbers(quote: str, numbers: list[ParsedNumber], candidates: list[Fa
         # retrieval ranks by shared words, so the fact that counts the noun may not be among the candidates.
         if any(_counts(unit, f) for f in ctx.facts if f.value is not None):
             scored = [(sc, f) for sc, f in scored if _counts(unit, f)]
+        # Found on the live demo: "the recording stays up for 30 days" was a blocker against "Learner support
+        # is open 7 days a week". The days are the recording's, and nothing else in the sentence is support.
+        if unit and unit <= _MEASURE:
+            topic = _content_words(quote) - _MEASURE
+            scored = [(sc, f) for sc, f in scored
+                      if topic & (_content_words(f"{f.statement} {f.subject or ''}") - _MEASURE)]
         if not scored:
             return None
         top = max(sc for sc, _ in scored)
