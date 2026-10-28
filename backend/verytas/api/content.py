@@ -7,7 +7,7 @@ import base64
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
@@ -350,9 +350,12 @@ async def list_contents(session: Session, user: CurrentUser, state: ContentStatu
     for v in versions:
         count[v.content_id] = count.get(v.content_id, 0) + 1
         last_edit[v.content_id] = max(last_edit.get(v.content_id, v.created_at), v.created_at)
-    latest: dict[int, Review] = {}
-    for r in (await session.scalars(
-            select(Review).where(Review.version_id.in_(list(content_of))).order_by(Review.id.desc()))).all():
+    # Only the columns the list shows: a full review row carries its coverage (the agent tree, sources, models),
+    # which is most of its size and was parsed for every review of every piece just to be dropped.
+    latest: dict[int, Any] = {}
+    for r in (await session.execute(
+            select(Review.id, Review.version_id, Review.status, Review.summary, Review.finished_at)
+            .where(Review.version_id.in_(list(content_of))).order_by(Review.id.desc()))).all():
         latest.setdefault(content_of[r.version_id], r)
 
     # When each piece entered its current status: a queue is ordered by how long it has waited
