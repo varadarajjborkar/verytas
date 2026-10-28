@@ -29,6 +29,10 @@ const ALLOWED: [string, RegExp][] = [
   ["GET", /^me\/tokens$/],
   ["POST", /^me\/tokens$/],
   ["DELETE", /^me\/tokens\/\d+$/],
+  // What Inki keeps about the person from Ask Inki; the API scopes it to them.
+  ["GET", /^me\/memories$/],
+  ["DELETE", /^me\/memories$/],
+  ["DELETE", /^me\/memories\/[0-9a-fA-F-]{32,36}$/],
   // The global search bar; the API scopes every hit to what this person may open.
   ["GET", /^search$/],
   // A self-serve company's join code, for its brand admin (the API refuses everyone else).

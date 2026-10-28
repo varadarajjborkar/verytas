@@ -5,6 +5,7 @@ import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useId
 import { createPortal } from "react-dom";
 import { useStored, writeStored } from "@/lib/stored";
 import { CloseIcon, SettingsIcon } from "./Icons";
+import { InkiMemory } from "./InkiMemory";
 import { PersonalTokens } from "./PersonalTokens";
 import { type ThemeChoice, useTheme } from "./Providers";
 import { useToast } from "./Toaster";
@@ -32,6 +33,7 @@ const TABS = [
   { value: "social", label: "Socials" },
   { value: "theme", label: "Appearance" },
   { value: "tokens", label: "Tokens" },
+  { value: "memory", label: "Inki's memory" },
 ] as const;
 export type SettingsTab = (typeof TABS)[number]["value"];
 type Tab = SettingsTab;
@@ -311,6 +313,8 @@ function SettingsDialog({ onClose, first }: { onClose: () => void; first: Tab })
           )}
 
           {tab === "tokens" && <PersonalTokens />}
+
+          {tab === "memory" && <InkiMemory />}
 
           {tab === "theme" && (
             <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-3"

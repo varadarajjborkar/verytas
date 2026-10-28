@@ -11,10 +11,11 @@ reach and engagement are not here; the note says so for the model to relay.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -23,6 +24,7 @@ from verytas.api.accounts import SelfServeBudget
 from verytas.api.content import _aware, list_contents
 from verytas.api.deps import CurrentUser, Session
 from verytas.api.insights import _visible_tiers, guideline_health_for, overview_for, recurring_for
+from verytas.memory.personal import scope_of
 from verytas.models import ConfidentialTerm, Content, ContentVersion, Finding, Review, Role, Tier
 from verytas.security.redaction import Redactor
 
@@ -31,6 +33,7 @@ router = APIRouter(prefix="/assistant", tags=["assistant"])
 ANALYSTS = {Role.reviewer, Role.approver, Role.auditor, Role.brand_admin}
 MAX_LISTED = 60
 MAX_DETAILED = 3
+log = logging.getLogger("verytas.assistant")
 _WORD = re.compile(r"[a-z0-9]+")
 _STOP = frozenset({"a", "an", "the", "my", "our", "is", "was", "how", "did", "does", "do", "of", "on", "in", "for",
                    "to", "and", "or", "with", "it", "this", "that", "what", "where"})
@@ -91,7 +94,8 @@ class Conversation(BaseModel):
 
 
 @router.post("/context", dependencies=[SelfServeBudget])
-async def context_for_conversation(body: Conversation, session: Session, user: CurrentUser) -> dict[str, Any]:
+async def context_for_conversation(body: Conversation, request: Request, session: Session,
+                                   user: CurrentUser) -> dict[str, Any]:
     """The context plus the conversation itself, redacted together.
 
     The questions leave Verytas too, so a codename typed into one is hidden like
@@ -100,16 +104,17 @@ async def context_for_conversation(body: Conversation, session: Session, user: C
     """
     redactor = await _redactor(session, user)
     messages = [redactor.redact(m) for m in body.messages]
-    out = await _context(session, user, body.messages[-1][:2000] if body.messages else "", redactor)
+    out = await _context(session, user, body.messages[-1][:2000] if body.messages else "", redactor, request.app)
     return out | {"messages": messages}
 
 
 @router.get("/context")
-async def context(session: Session, user: CurrentUser, q: str = Query("", max_length=2000)) -> dict[str, Any]:
-    return await _context(session, user, q, await _redactor(session, user))
+async def context(request: Request, session: Session, user: CurrentUser,
+                  q: str = Query("", max_length=2000)) -> dict[str, Any]:
+    return await _context(session, user, q, await _redactor(session, user), request.app)
 
 
-async def _context(session: Session, user: CurrentUser, q: str, redactor: Redactor) -> dict[str, Any]:
+async def _context(session: Session, user: CurrentUser, q: str, redactor: Redactor, app: Any = None) -> dict[str, Any]:
 
     rows = [r for r in await list_contents(session, user, state=None, mine=False, limit=200)
             if r.tier != Tier.confidential][:MAX_LISTED]
@@ -135,6 +140,18 @@ async def _context(session: Session, user: CurrentUser, q: str, redactor: Redact
 
     out: dict[str, Any] = {"note": NOTE, "you": {"name": user.name, "role": user.role},
                            "content": items, "content_details": details}
+    # What this person told Inki before about how they work (memory/personal.py), the facts closest to the
+    # question, within their clearance today.
+    settings = getattr(getattr(app, "state", None), "settings", None)
+    if settings is not None and settings.memory_enabled and settings.memory_personal_k and q.strip():
+        # Nothing here writes. Ending the read first means no transaction (on SQLite, for the POST route,
+        # the write lock) is held while the memory store loads or waits its turn.
+        await session.commit()
+        try:
+            out["about_you"] = await app.state.personal.recall(
+                scope_of(user), q, [t.value for t in _visible_tiers(user)], settings.memory_personal_k)
+        except Exception:  # noqa: BLE001 - without it Inki answers from the record alone, as before
+            log.warning("inki memory unavailable", exc_info=True)
     if user.role in ANALYSTS:
         # The same ceiling as the content list: aggregates quote phrases and count
         # findings, so confidential pieces must not feed them either.

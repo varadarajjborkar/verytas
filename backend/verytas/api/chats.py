@@ -9,18 +9,24 @@ from __future__ import annotations
 
 import base64
 import binascii
+import logging
+import re
 from datetime import datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 
 from verytas.api.deps import CurrentUser, Session
-from verytas.models import ChatThread, utcnow
+from verytas.memory.personal import FactTask, scope_of
+from verytas.models import ChatThread, User, utcnow
+from verytas.prism.disputes import workspace_redactor
 from verytas.schemas import UTCModel
+from verytas.services.inki_guard import RateLimit
 
 router = APIRouter(tags=["chats"])
+log = logging.getLogger("verytas.chats")
 
 MAX_THREADS_LISTED = 100
 MAX_THREADS = 500
@@ -107,7 +113,7 @@ async def list_threads(session: Session, user: CurrentUser) -> list[ChatThread]:
 
 
 @router.post("/chats", response_model=ThreadOut, status_code=status.HTTP_201_CREATED)
-async def create_thread(body: ThreadIn, session: Session, user: CurrentUser) -> ChatThread:
+async def create_thread(body: ThreadIn, request: Request, session: Session, user: CurrentUser) -> ChatThread:
     held = await session.scalar(select(func.count()).select_from(ChatThread).where(
         ChatThread.user_id == user.id, ChatThread.workspace_id == user.workspace_id))
     if (held or 0) >= MAX_THREADS:
@@ -116,6 +122,7 @@ async def create_thread(body: ThreadIn, session: Session, user: CurrentUser) -> 
                         messages=[m.model_dump() for m in body.messages])
     session.add(thread)
     await session.commit()
+    _learn_later(request, user, thread.id)
     return thread
 
 
@@ -125,12 +132,14 @@ async def get_thread(thread_id: int, session: Session, user: CurrentUser) -> Cha
 
 
 @router.put("/chats/{thread_id}", response_model=ThreadOut)
-async def replace_thread(thread_id: int, body: ThreadIn, session: Session, user: CurrentUser) -> ChatThread:
+async def replace_thread(thread_id: int, body: ThreadIn, request: Request, session: Session,
+                         user: CurrentUser) -> ChatThread:
     thread = await _own(session, user, thread_id)
     thread.title = body.title
     thread.messages = [m.model_dump() for m in body.messages]
     thread.updated_at = utcnow()
     await session.commit()
+    _learn_later(request, user, thread.id)
     return thread
 
 
@@ -138,3 +147,77 @@ async def replace_thread(thread_id: int, body: ThreadIn, session: Session, user:
 async def delete_thread(thread_id: int, session: Session, user: CurrentUser) -> None:
     await session.delete(await _own(session, user, thread_id))
     await session.commit()
+
+
+# --- what Inki keeps from a thread -------------------------------------------------------------------------
+
+LEARN_FROM = 4  # the person's newest unread messages at most, per save
+# Saves come after every answer, so most have something new; each one that does is a fast-model call. Past
+# this many an hour, the rest wait for a later save (the counter below keeps them unread until then). Not
+# charged to a self-serve company's daily budget: that pays for reviews and edits people ask for, and a
+# background call they never see should not use it up.
+LEARN_PER_HOUR = 20
+
+
+def _learn_later(request: Request, user, thread_id: int) -> None:
+    """After a save, in the background: durable facts from what the person newly typed (memory/personal.py)."""
+    app = request.app
+    if app.state.settings.memory_enabled and app.state.settings.memory_personal_k:
+        app.state.prism.schedule_job(lambda: _learn(app, user.id, thread_id))
+
+
+async def _learn(app, user_id: int, thread_id: int) -> None:
+    async with app.state.db.sessionmaker() as session:
+        thread, user = await session.get(ChatThread, thread_id), await session.get(User, user_id)
+        if thread is None or user is None or thread.user_id != user.id:
+            return
+        said = [m.get("content", "") for m in thread.messages if m.get("role") == "user"]
+        # A thread edited down to fewer messages than were read starts over; what was kept already is
+        # matched as a near-duplicate rather than stored twice.
+        start = thread.remembered or 0
+        new = [s for s in said[start if start <= len(said) else 0:] if s.strip()][-LEARN_FROM:]
+        if not hasattr(app.state, "learning"):
+            app.state.learning = RateLimit(per_hour=LEARN_PER_HOUR)
+        if not new or not app.state.learning.take(user.id):
+            return
+        redactor = await workspace_redactor(session, user.workspace_id)
+        scope = scope_of(user)
+        await session.commit()  # no transaction held across the model call
+    _, llm, _, _ = app.state.prism.guarded_providers(redactor)
+    try:
+        facts = (await llm.run(FactTask(new))).facts
+        # The guarded provider gives hidden terms back in its output; a fact that names one is not kept.
+        await app.state.personal.remember(scope, [f for f in facts if redactor.redact(f) == f])
+    except Exception:  # noqa: BLE001 - nothing remembered this time; the next save reads these messages again
+        log.warning("inki could not draw facts from a thread", exc_info=True)
+        return
+    # Read only once the facts are kept: a failed call leaves these messages for the next save.
+    async with app.state.db.sessionmaker() as session:
+        thread = await session.get(ChatThread, thread_id)
+        if thread is not None:
+            thread.remembered = len(said)
+            await session.commit()
+
+
+# --- what Inki remembers, in the person's own hands ------------------------------------------------------------
+
+@router.get("/me/memories")
+async def my_memories(request: Request, user: CurrentUser) -> list[dict[str, Any]]:
+    """Everything Inki has kept about this person, newest first."""
+    return await request.app.state.personal.listing(scope_of(user))
+
+
+@router.delete("/me/memories")
+async def forget_me(request: Request, user: CurrentUser) -> dict[str, int]:
+    """Forget everything Inki kept about this person."""
+    return {"forgotten": await request.app.state.personal.forget(scope_of(user))}
+
+
+@router.delete("/me/memories/{memory_id}")
+async def forget_one(memory_id: str, request: Request, user: CurrentUser) -> dict[str, int]:
+    if not re.fullmatch(r"[0-9a-fA-F-]{32,36}", memory_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+    n = await request.app.state.personal.forget(scope_of(user), memory_id)
+    if not n:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+    return {"forgotten": n}
