@@ -29,6 +29,10 @@ dependencies = [
     "opencv-python-headless>=4.10", # brand-asset matching (SIFT, homography)
     "av>=14",                       # video decoding (FFmpeg bundled)
     "faster-whisper>=1.1",          # speech-to-text for video, runs locally
+    # Inki's memory (verytas/memory): a local embedding model on onnxruntime, and mem0 as the store for what a
+    # person tells Ask Inki (local qdrant, no service; mem0 is given no model of its own and no telemetry).
+    "fastembed>=0.7,<0.10",
+    "mem0ai>=2.2,<2.3",
 ]
 
 [project.optional-dependencies]
