@@ -103,7 +103,9 @@ def _add_missing_columns(conn) -> None:
                 # A NOT NULL column with a plain default (a flag, a count, a fixed word) can be added with that
                 # default written into the existing rows; anything computed still needs a fresh database.
                 value = getattr(column.default, "arg", None)
-                if column.default is None or callable(value) or not isinstance(value, bool | int | float | str):
+                # SQLite also refuses a non-NULL default on an added REFERENCES column.
+                if (column.default is None or callable(value) or column.foreign_keys
+                        or not isinstance(value, bool | int | float | str)):
                     log.warning("%s.%s is new and NOT NULL without a plain default; it can't be added in place. "
                                 "Start from a fresh database.", table.name, column.name)
                     continue

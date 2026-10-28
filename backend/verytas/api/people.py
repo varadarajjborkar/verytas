@@ -59,10 +59,11 @@ async def create_person(body: PersonIn, session: Session, admin: Admin) -> Perso
     # The same agreement entered twice (a double click, a retry after a slow answer) is one person, not two.
     twin = await session.scalar(select(Person.id).where(
         Person.workspace_id == admin.workspace_id, Person.active, Person.kind == body.kind,
-        func.lower(Person.name) == body.name.strip().lower()))
+        func.lower(Person.name) == body.name.lower()))
     if twin is not None:
         raise HTTPException(status.HTTP_409_CONFLICT,
-                            f"{body.name.strip()} is already listed; change their dates there")
+                            f"{body.name} is already listed; change their dates there, or add a surname or handle "
+                            "if this is someone else")
     person = Person(workspace_id=admin.workspace_id, created_by=admin.id, **body.model_dump())
     session.add(person)
     await session.flush()

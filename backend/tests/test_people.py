@@ -91,7 +91,9 @@ def test_the_same_person_entered_twice_is_one_person(client):
     admin = client.post("/bootstrap", json={"workspace_name": "Acme", "admin_email": "a@acme.io",
                                             "admin_name": "Ada"}).json()["token"]
     body = {"name": "Riya Kapoor", "kind": "ambassador", "valid_from": "2026-10-01"}
-    assert client.post("/people", headers=_auth(admin), json=body).status_code == 201
+    assert client.post("/people", headers=_auth(admin), json=body | {"name": "Riya Kapoor  "}).status_code == 201
     again = client.post("/people", headers=_auth(admin), json=body | {"name": " riya kapoor "})
     assert again.status_code == 409
-    assert len(client.get("/people", headers=_auth(admin)).json()) == 1
+    listed = client.get("/people", headers=_auth(admin)).json()
+    assert [p["name"] for p in listed] == ["Riya Kapoor"]
+    assert client.post("/people", headers=_auth(admin), json=body | {"name": "   "}).status_code == 422

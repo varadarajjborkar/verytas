@@ -538,6 +538,14 @@ class PersonIn(BaseModel):
     tier: Tier = Tier.internal
     user_id: int | None = Field(default=None, description="The workspace user this record is, for a creator")
 
+    @field_validator("name")
+    @classmethod
+    def _trimmed(cls, v: str) -> str:
+        # Stored trimmed, so "Priya " and "Priya" are one person to the duplicate check and to face matching.
+        if not v.strip():
+            raise ValueError("name can't be blank")
+        return v.strip()
+
     @model_validator(mode="after")
     def _window(self) -> PersonIn:
         if self.valid_to is not None and self.valid_to <= self.valid_from:
