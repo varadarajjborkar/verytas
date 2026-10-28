@@ -502,6 +502,8 @@ export type PostResult = {
 /** GET /insights/performance: per rule, live posts that ran into it against those that didn't. */
 export type PerformanceReport = {
   live_pieces: number; with_link: number; with_numbers: number; min_posts: number;
-  rules: { rule_id: number; code: string; title: string; needed: number; clean: number;
+  /** The one denominator every rate uses: reach where most posts have it, else views. */
+  basis: "reach" | "views";
+  rules: { rule_id: number; code: string; title: string; needed: number; clean: number; platforms: string[];
     median_needed?: number; median_clean?: number; difference_90?: [number, number] }[];
 };

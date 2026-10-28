@@ -23,6 +23,8 @@ const number = new Intl.NumberFormat("en-IN");
  */
 export function LiveResult({ contentId, canRecord }: { contentId: number; canRecord: boolean }) {
   const [result, setResult] = useState<PostResult | null | undefined>(undefined);
+  // A failed load isn't "no link yet": showing the empty form then would invite overwriting a real one.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [url, setUrl] = useState("");
   const [postedOn, setPostedOn] = useState("");
@@ -33,7 +35,7 @@ export function LiveResult({ contentId, canRecord }: { contentId: number; canRec
 
   useEffect(() => {
     let live = true;
-    getResult(contentId).then((r) => { if (live) setResult(r); }).catch(() => { if (live) setResult(null); });
+    getResult(contentId).then((r) => { if (live) setResult(r); }).catch(() => { if (live) setLoadFailed(true); });
     return () => { live = false; };
   }, [contentId]);
 
@@ -47,7 +49,10 @@ export function LiveResult({ contentId, canRecord }: { contentId: number; canRec
 
   const save = async () => {
     if (busy) return;
-    const metrics: PostMetrics = {};
+    // Numbers the form has no field for (watch time from an imported sheet) carry over; PUT replaces the set.
+    const shown = new Set<string>(FIELDS.map((f) => f.key));
+    const metrics: PostMetrics = Object.fromEntries(
+      Object.entries(result?.metrics ?? {}).filter(([k]) => !shown.has(k))) as PostMetrics;
     for (const f of FIELDS) {
       const raw = (numbers[f.key] ?? "").replace(/[,\s]/g, "");
       if (!raw) continue;
@@ -61,7 +66,7 @@ export function LiveResult({ contentId, canRecord }: { contentId: number; canRec
       const saved = await saveResult(contentId, { url: url.trim(), posted_on: postedOn || null, metrics });
       setResult(saved);
       setEditing(false);
-      toast({ kind: "success", title: "Live link saved", detail: Object.keys(metrics).length ? "The numbers count toward how rules perform." : "Add numbers any time, here or from a sheet." });
+      toast({ kind: "success", title: "Live link saved", detail: saved.engagement_rate != null ? "The numbers count toward how rules perform." : "Add numbers any time, here or from a sheet." });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -75,6 +80,13 @@ export function LiveResult({ contentId, canRecord }: { contentId: number; canRec
     catch (e) { toast({ kind: "error", title: "Couldn't remove it", detail: (e as Error).message }); }
   };
 
+  if (loadFailed) {
+    return (
+      <section aria-label="Live post" className="vt-card mt-4 p-4 text-sm text-muted md:p-5">
+        The live post&apos;s link couldn&apos;t be loaded just now. Reload the page to see or change it.
+      </section>
+    );
+  }
   if (result === undefined) return null;
   if (!result && !canRecord) return null;
 

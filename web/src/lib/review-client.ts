@@ -25,8 +25,12 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!res.ok) {
     const j = json as { error?: string; detail?: unknown };
     const detail = j?.detail;
+    // FastAPI's validation errors are a list of { loc, msg }; a field validator's own words follow "Value error, ".
+    const listed = Array.isArray(detail)
+      ? detail.map((d: { msg?: string }) => d?.msg?.replace(/^Value error, /, "")).filter(Boolean).join("; ")
+      : "";
     const message = typeof detail === "string" ? detail
-      : (detail as { message?: string })?.message ?? j?.error ?? `Request failed (${res.status})`;
+      : listed || ((detail as { message?: string })?.message ?? j?.error ?? `Request failed (${res.status})`);
     throw new ApiError(res.status, message, detail ?? json);
   }
   return json as T;
@@ -145,7 +149,7 @@ export const saveResult = (contentId: number, body: { url: string; posted_on: st
   api<PostResult>(`contents/${contentId}/result`, send("PUT", body));
 export const removeResult = (contentId: number) => api<null>(`contents/${contentId}/result`, send("DELETE"));
 export const importResults = (csv: string) =>
-  api<{ updated: number; skipped: { row: number; reason: string }[] }>("results/import", json({ csv }));
+  api<{ updated: number; skipped: { row: number; reason: string }[]; skipped_total: number }>("results/import", json({ csv }));
 export const performanceReport = () => api<PerformanceReport>("insights/performance");
 export const listComments = (contentId: number) => api<PinnedComment[]>(`contents/${contentId}/comments`);
 /** A comment pinned to a stretch of a video or drawn onto an image. */

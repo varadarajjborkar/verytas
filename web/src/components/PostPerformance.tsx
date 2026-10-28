@@ -8,6 +8,14 @@ import type { PerformanceReport } from "@/lib/types";
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 const pp = (v: number) => `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)}`;
 
+/** The skipped rows grouped by reason, so a sheet with a few different problems names each one. */
+function skipSummary(rows: { row: number; reason: string }[]) {
+  const by = new Map<string, number[]>();
+  for (const r of rows) by.set(r.reason, [...(by.get(r.reason) ?? []), r.row]);
+  return [...by].slice(0, 3).map(([reason, ns]) =>
+    `Row${ns.length === 1 ? "" : "s"} ${ns.slice(0, 4).join(", ")}${ns.length > 4 ? "…" : ""}: ${reason}.`).join(" ");
+}
+
 /**
  * How live posts did, by rule: engagement for the posts that ran into a rule against the ones that didn't.
  * A row says nothing until both sides have enough posts, and then gives a range, not a single number, so a
@@ -32,7 +40,9 @@ export function PostPerformance({ canImport }: { canImport: boolean }) {
       toast({
         kind: res.updated ? "success" : "warning",
         title: `${res.updated} post${res.updated === 1 ? "" : "s"} updated`,
-        detail: res.skipped.length ? `${res.skipped.length} row${res.skipped.length === 1 ? "" : "s"} skipped: ${res.skipped[0].reason}` : "Every row matched a recorded link.",
+        detail: res.skipped_total
+          ? `${res.skipped_total} row${res.skipped_total === 1 ? "" : "s"} skipped. ${skipSummary(res.skipped)}`
+          : "Every row matched a recorded link.",
       });
       void load();
     } catch (e) {
@@ -42,7 +52,15 @@ export function PostPerformance({ canImport }: { canImport: boolean }) {
     }
   };
 
-  if (failed) return null;
+  if (failed) {
+    return (
+      <section aria-labelledby="perf-title" className="vt-card mt-6 p-4 md:p-5">
+        <h2 id="perf-title" className="text-base font-semibold">How live posts did</h2>
+        <p className="mt-1 text-sm text-muted">This couldn&apos;t be loaded just now ({failed}).</p>
+        <button type="button" onClick={() => void load()} className="vt-btn mt-3 h-8 text-xs">Try again</button>
+      </section>
+    );
+  }
   const ready = report?.rules.filter((r) => r.difference_90) ?? [];
   const waiting = report?.rules.filter((r) => !r.difference_90) ?? [];
 
@@ -52,8 +70,8 @@ export function PostPerformance({ canImport }: { canImport: boolean }) {
         <div>
           <h2 id="perf-title" className="text-base font-semibold">How live posts did</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            Engagement for approved posts that ran into a rule, against those that didn&apos;t. Links and numbers come
-            from creators and the brand team; nothing is read from the platforms.
+            Engagement for approved posts that ran into a rule, against those on the same platforms that didn&apos;t.
+            Links and numbers come from creators and the brand team; nothing is read from the platforms.
           </p>
         </div>
         {canImport && (
@@ -118,6 +136,13 @@ export function PostPerformance({ canImport }: { canImport: boolean }) {
                     </tbody>
                   </table>
                 </div>
+              )}
+              {ready.length > 0 && (
+                <p className="mt-3 text-xs text-subtle">
+                  Engagement here is interactions per {report.basis === "reach" ? "person reached" : "view"}. A range is
+                  90% sure with the posts so far; with few posts it is rough, and across many rules one may look clear by
+                  chance. Budget, timing and audience move engagement too, so read it as a prompt to look, not a verdict.
+                </p>
               )}
               {waiting.length > 0 && (
                 <p className="mt-3 text-xs text-subtle">
