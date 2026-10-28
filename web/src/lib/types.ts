@@ -250,6 +250,8 @@ export type ContentDetail = Omit<ContentRow, "version_count" | "updated_at" | "l
   versions: { id: number; version_no: number; parent_id: number | null; body: string; created_at: string;
     /** Attached images as references; the bytes come from versionImageUrl. */
     images?: { id: string; alt: string | null; decorative: boolean; media_type: string }[];
+    /** Attached videos; streamed in ranges from versionVideoUrl, never offered as a download. */
+    videos?: { id: string; name: string | null }[];
     documents?: { id: string; name: string | null; media_type: string }[] }[];
   latest_review_id: number | null;
 };
@@ -462,4 +464,16 @@ export type ApprovedPerson = {
   user_id: number | null; channels: string[]; event_ids: number[]; valid_from: string; valid_to: string | null;
   notes: string | null; tier: "public" | "internal" | "confidential"; active: boolean; created_at: string;
   references: { id: number; media_type: string; source: string; source_url: string | null; approved: boolean; created_at: string }[];
+};
+
+/** A pen line or a word written over a picture, in fractions of its width and height. */
+export type Mark =
+  | { type: "stroke"; points: [number, number][]; width: number }
+  | { type: "text"; x: number; y: number; text: string };
+
+/** GET /contents/{id}/comments: a comment, and where on the media it is pinned, if anywhere. */
+export type PinnedComment = {
+  id: number; version_id: number | null; parent_id: number | null; actor_id: number; body: string;
+  span_start: number | null; span_end: number | null; media_id: string | null;
+  time_start: number | null; time_end: number | null; box: number[] | null; marks: Mark[] | null; created_at: string;
 };

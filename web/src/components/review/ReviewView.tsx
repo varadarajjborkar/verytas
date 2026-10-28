@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { journey } from "@/lib/journey";
 import {
-  ApiError, decide as decideFinding, escalate, FINISHED, getContent, getReview, getTimeline, listDisputes,
+  ApiError, decide as decideFinding, escalate, FINISHED, getContent, getReview, getTimeline, listComments, listDisputes,
   listEscalations, listPeople, nextSteps,
   relativeTime, resubmit, STATUS_HINT, STATUS_LABEL, transition, waitForReview, whereLabel,
 } from "@/lib/review-client";
 import { canDecide, sideOf } from "@/lib/roles";
-import type { ContentDetail, ContentStatus, Dispute, EscalationRequest, Finding, Person, Review, SecondLooks, Timeline } from "@/lib/types";
+import type { ContentDetail, ContentStatus, Dispute, EscalationRequest, Finding, Person, PinnedComment, Review, SecondLooks, Timeline } from "@/lib/types";
 import { JourneyMap } from "../Journey";
 import { useModalFocus } from "../Drawer";
 import { CheckIcon, CloseIcon, HistoryIcon } from "../Icons";
@@ -73,6 +73,8 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [announce, setAnnounce] = useState("");
   const [timeline, setTimeline] = useState<Timeline | null>(null);
+  // Comments pinned to a moment of a video or drawn on an image, shown where they point.
+  const [pins, setPins] = useState<PinnedComment[]>([]);
   const [people, setPeople] = useState<Map<number, Person>>(new Map());
   const [history, setHistory] = useState(false);
   const [show, setShow] = useState<"all" | "open">("all");
@@ -92,6 +94,7 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
 
   const loadTimeline = useCallback(() => {
     getTimeline(contentId).then((t) => { if (live.current === contentId) setTimeline(t); }).catch(() => {});
+    listComments(contentId).then((c) => { if (live.current === contentId) setPins(c); }).catch(() => {});
     // The latest request per finding: a withdrawn one may be followed by a new ask.
     listEscalations("all", contentId).then((rows) => {
       if (live.current !== contentId) return;
@@ -502,7 +505,8 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
             </div>
             {latest && !editing && docView === "text" && (
               <>
-                <Attachments contentId={contentId} version={latest} findings={findings} active={active} onSelect={pick} />
+                <Attachments contentId={contentId} version={latest} findings={findings} active={active} onSelect={pick}
+                  comments={pins} onPinned={loadTimeline} canComment={role !== "brand_admin"} />
                 {coverage?.sources && <DocumentPages key={latest.id} contentId={contentId} version={latest} sources={coverage.sources}
                   findings={findings} active={active} onSelect={pick} kept={kept} />}
               </>

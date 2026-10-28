@@ -4,7 +4,7 @@
 import type {
   ApprovedPerson, BrandAsset, BrandEvent, ContentDetail, CreatorRow, CreatorTrack, EscalationRequest, EventImpact, PublicContact, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
   IntakeBatch, IntakeBatchDetail, IntakeDraft, IntakeItem, IntakeItemIn, Onboarding, SampleKit,
-  Review, Rule, RuleClarification, RuleDraft, SearchHit, Term, Timeline, UploadedMedia,
+  Mark, PinnedComment, Review, Rule, RuleClarification, RuleDraft, SearchHit, Term, Timeline, UploadedMedia,
 } from "./types";
 
 export class ApiError extends Error {
@@ -132,6 +132,13 @@ export const retireAsset = (id: number) => api<null>(`brand-assets/${id}`, send(
 export const assetImageUrl = (id: number) => `/api/v/brand-assets/${id}/image`;
 export const versionImageUrl = (contentId: number, versionId: number, imageId: string) =>
   `/api/v/contents/${contentId}/versions/${versionId}/images/${encodeURIComponent(imageId)}`;
+export const versionVideoUrl = (contentId: number, versionId: number, videoId: string) =>
+  `/api/v/contents/${contentId}/versions/${versionId}/videos/${encodeURIComponent(videoId)}`;
+export const listComments = (contentId: number) => api<PinnedComment[]>(`contents/${contentId}/comments`);
+/** A comment pinned to a stretch of a video or drawn onto an image. */
+export const addPinnedComment = (contentId: number, pin: {
+  body: string; version_id: number; media_id: string; time_start?: number; time_end?: number; marks?: Mark[];
+}) => api<PinnedComment>(`contents/${contentId}/comments`, json(pin));
 export type DocumentPreview =
   | { kind: "pages"; pages: { width: number; height: number }[]; total_pages: number;
       marks: { finding_id: number; page: number; box: number[] }[] }
