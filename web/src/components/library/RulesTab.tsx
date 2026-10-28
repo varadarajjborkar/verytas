@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createRule, updateRule } from "@/lib/review-client";
 import type { Rule, RuleCategory, RuleDraft } from "@/lib/types";
 import { PlusIcon } from "../Icons";
@@ -20,19 +20,24 @@ const TERM_PATTERNS = ["banned_terms", "preferred_terms", "casing"];
 export function RulesTab({ rules, editable, onChanged, initialState, initialQuery }: {
   rules: Rule[]; editable: boolean; onChanged: () => void; initialState?: string | null; initialQuery?: string | null;
 }) {
-  const [state, setState] = useState<(typeof STATES)[number]["k"]>(
-    () => STATES.find((s) => s.k === initialState)?.k ?? "active");
-  const [category, setCategory] = useState<RuleCategory | "all">("all");
-  const [query, setQuery] = useState(initialQuery ?? "");
-  const [open, setOpen] = useState<number | null>(null);
-  const [creating, setCreating] = useState(false);
-
   // Only the latest version of each code; earlier ones are history.
   const latest = useMemo(() => {
     const by = new Map<string, Rule>();
     for (const r of rules) if (!by.has(r.code) || by.get(r.code)!.version < r.version) by.set(r.code, r);
     return [...by.values()];
   }, [rules]);
+  // Arriving from a link to one rule (/library?q=CODE, as Guideline health and Escalations send), that rule opens,
+  // under whichever status it has, and is brought into view.
+  const [linked] = useState(() => latest.find((r) => r.code.toLowerCase() === initialQuery?.trim().toLowerCase()));
+  const [state, setState] = useState<(typeof STATES)[number]["k"]>(
+    () => STATES.find((s) => s.k === initialState)?.k ?? (linked && linked.status !== "active" ? "all" : "active"));
+  const [category, setCategory] = useState<RuleCategory | "all">("all");
+  const [query, setQuery] = useState(initialQuery ?? "");
+  const [open, setOpen] = useState<number | null>(linked?.id ?? null);
+  const [creating, setCreating] = useState(false);
+  useEffect(() => {
+    if (linked) document.getElementById(`rule-${linked.id}`)?.scrollIntoView({ block: "center" });
+  }, [linked]);
   const shown = latest.filter((r) => (state === "all" || r.status === state) && (category === "all" || r.category === category)
     && (!query.trim() || `${r.code} ${r.title} ${r.text}`.toLowerCase().includes(query.trim().toLowerCase())));
   // Grouped by category in a fixed order, strictest first inside each, so a long library scans by topic.
@@ -77,7 +82,7 @@ export function RulesTab({ rules, editable, onChanged, initialState, initialQuer
               </h3>
               <ul>
                 {rs.map((r) => (
-                  <li key={r.id} className="border-b border-line last:border-0">
+                  <li key={r.id} id={`rule-${r.id}`} className={`border-b border-line last:border-0 ${r.id === linked?.id ? "vt-flash" : ""}`}>
                     <button type="button" onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id}
                       className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-sunken/50">
                       <RuleCode code={r.code} className="hidden w-40 sm:block" />

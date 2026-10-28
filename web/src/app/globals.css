@@ -576,3 +576,28 @@ body:has(.vt-dock) .vt-toasts { padding-bottom: 5.25rem; }
   main:has(.vt-page:not([style*="none"]) .vt-bleed) { padding-inline: 0; padding-bottom: 0; }
   main:has(.vt-page:not([style*="none"]) .vt-bleed) > div { max-width: none; }
 }
+
+/* Guideline health's ring (components/GuidelineHealthView.tsx): a tilted 3D ring of the three clarity levels.
+   Each level has a top colour lit from above (-hi to the base) and sides mixed toward --vt-ring-shade.
+   The slice under the pointer, in focus, or picked rises and slides out from the centre. */
+:root {
+  --vt-ring-bad: light-dark(#c9472f, #d9553d);
+  --vt-ring-bad-hi: light-dark(#e06a52, #f07a63);
+  --vt-ring-mid: light-dark(#d08a1e, #d4972f);
+  --vt-ring-mid-hi: light-dark(#e8a845, #efb757);
+  --vt-ring-good: light-dark(#2f9a68, #33a370);
+  --vt-ring-good-hi: light-dark(#4cb882, #55c890);
+  --vt-ring-label: light-dark(#ffffff, #0c0e13);
+  --vt-ring-shade: light-dark(#000000, #05060a);
+  --vt-ring-floor: light-dark(rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.5));
+  --vt-ring-lift: light-dark(rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.7));
+}
+.vt-ring-slice { cursor: pointer; outline: none;
+  transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 240ms ease-out, opacity 200ms; }
+.vt-ring-slice:is(:hover, :focus-visible, [data-on="true"], [data-hot="true"]) {
+  transform: translate(var(--dx), var(--dy));
+  filter: drop-shadow(0 7px 6px var(--vt-ring-lift));
+}
+.vt-ring-slice:focus-visible .vt-ring-top { stroke: var(--vt-ink); stroke-width: 2.5; }
+.vt-ring[data-dim="true"] .vt-ring-slice:not([data-on="true"]) { opacity: 0.28; }
+@media (prefers-reduced-motion: reduce) { .vt-ring-slice { transition: none; } }
