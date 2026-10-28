@@ -48,3 +48,6 @@ demo-accounts*.json
 # Vision model weights (downloaded, never committed)
 backend/.models/
 backend/.venv-vision/
+
+# Mascot benchmark scenes and the SAM output cache (regenerable, large)
+backend/evals/mascots/.work/

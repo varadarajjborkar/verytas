@@ -219,8 +219,8 @@ def _background(rnd: random.Random, busy: bool, size=(900, 700)) -> Image.Image:
 
 
 def place(character: Image.Image, rnd: random.Random, *, busy: bool, scale: float = 1.0, angle: float = 0.0,
-          jpeg: int | None = None) -> tuple[Image.Image, list[int]]:
-    """The character in a scene; returns the scene and the character's true box."""
+          jpeg: int | None = None) -> tuple[Image.Image, list[int], Image.Image]:
+    """The character in a scene; returns the scene, the character's true box and its true mask."""
     c = character.rotate(angle, resample=Image.BICUBIC, expand=True) if angle else character
     side = int(300 * scale)
     # The character's height sets its size and its own proportions are kept, so a stretched one stays so.
@@ -228,13 +228,15 @@ def place(character: Image.Image, rnd: random.Random, *, busy: bool, scale: floa
     bg = _background(rnd, busy)
     x, y = rnd.randint(30, bg.width - c.width - 30), rnd.randint(30, bg.height - c.height - 30)
     bg.paste(c, (x, y), c)
+    truth = Image.new("L", bg.size, 0)
+    truth.paste(c.getchannel("A").point(lambda a: 255 if a > 127 else 0), (x, y))
     ys, xs = np.nonzero(np.asarray(c)[..., 3] > 127)
     box = [int(x + xs.min()), int(y + ys.min()), int(x + xs.max() + 1), int(y + ys.max() + 1)]
     if jpeg:
         buf = io.BytesIO()
         bg.save(buf, "JPEG", quality=jpeg)
         bg = Image.open(buf).convert("RGB")
-    return bg, box
+    return bg, box, truth
 
 
 def generate(out: Path, count: int, seed: int = 7) -> dict:
@@ -258,10 +260,14 @@ def generate(out: Path, count: int, seed: int = 7) -> dict:
         for kind, (img, expect) in defects(s).items():
             cases.append((kind, f"defect:{expect}", img, {"busy": rnd.random() < 0.5}))
         for variant, expect, img, how in cases:
-            scene, box = place(img, rnd, **how)
+            scene, box, truth = place(img, rnd, **how)
             file = f"{name}_{variant}.jpg" if how.get("jpeg") else f"{name}_{variant}.png"
             scene.save(out / file)
-            rows.append({"mascot": name, "variant": variant, "expect": expect, "file": file, "box": box})
+            # The true mask is its own file, not part of the scene, so the scenes are byte for byte what
+            # they were; it lets mask quality be measured against the truth.
+            truth.save(out / f"{name}_{variant}_truth.png")
+            rows.append({"mascot": name, "variant": variant, "expect": expect, "file": file, "box": box,
+                         "busy": bool(how.get("busy"))})
         (out / f"{name}.json").write_text(json.dumps(asdict(s)))
     manifest = {"seed": seed, "count": count, "cases": rows}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
