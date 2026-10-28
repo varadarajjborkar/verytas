@@ -9,7 +9,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from verytas.media.fidelity import compare, official_reference
+from verytas.media.fidelity import official_reference
+from verytas.media.maskcheck import judge
 
 PROMPT = "a cartoon mascot character."
 # Hugging Face models at a fixed commit, like the SAM checkpoint's pinned hash: an upstream change can't
@@ -149,7 +150,8 @@ class Chain:
             alike = sorted((r for r in refs if likeness[r.id] >= COMPARE_FROM), key=lambda r: -likeness[r.id])
             for r in alike[:COMPARED]:
                 try:
-                    fid = compare(r.fidelity, (rgb, mask))
+                    # judge, not a bare compare: a shortfall that SAM's clipping explains is withdrawn.
+                    fid = judge(r.fidelity, rgb, mask)
                 except ValueError:
                     continue  # a cut-out too small to compare: left uncompared, never called faithful
                 ch.differences[r.id] = [{"kind": d.kind, "text": d.text} for d in fid.differences]

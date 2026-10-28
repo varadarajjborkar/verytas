@@ -63,6 +63,16 @@ class Difference:
     text: str
     colour: RGB
     severity: float  # 0..1, how far from the artwork
+    # For "parts": how many shapes of the colour the cut-out has and the artwork has. A cut-out with fewer is
+    # a shortfall, which a clipped mask produces as readily as a missing part (see media/maskcheck.py).
+    have: int | None = None
+    want: int | None = None
+
+    @property
+    def shortfall(self) -> bool:
+        """Less of a colour than the artwork: the colour is missing, or it has fewer shapes."""
+        return self.kind == "colour_missing" or (self.kind == "parts" and self.have is not None
+                                                 and self.want is not None and self.have < self.want)
 
 
 @dataclass
@@ -332,5 +342,5 @@ def compare(official: tuple[np.ndarray, np.ndarray], candidate: tuple[np.ndarray
             continue
         out.differences.append(Difference(
             "parts", f"{have} {colour_label(colour)} shape{'s' if have != 1 else ''} where the artwork has {want}",
-            colour, min(1.0, abs(have - want) / want)))
+            colour, min(1.0, abs(have - want) / want), have=have, want=want))
     return out
