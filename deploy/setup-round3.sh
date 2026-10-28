@@ -12,7 +12,7 @@
 # Safe to run twice: every step checks before it changes anything.
 set -euo pipefail
 
-APP=/srv/verytas/app
+REPO=/srv/verytas/repo.git
 ENV=/srv/verytas/etc/api.env
 
 if ! command -v redis-server >/dev/null; then
@@ -20,9 +20,10 @@ if ! command -v redis-server >/dev/null; then
 fi
 conf=/etc/redis/redis.conf
 sudo sed -i -E 's/^bind .*/bind 127.0.0.1 -::1/; s/^protected-mode .*/protected-mode yes/; s/^appendonly .*/appendonly no/' "$conf"
-grep -q '^maxmemory 64mb' "$conf" || echo 'maxmemory 64mb' | sudo tee -a "$conf" >/dev/null
-grep -q '^maxmemory-policy allkeys-lru' "$conf" || echo 'maxmemory-policy allkeys-lru' | sudo tee -a "$conf" >/dev/null
-grep -q '^save ""' "$conf" || echo 'save ""' | sudo tee -a "$conf" >/dev/null
+# redis.conf is readable by root only, so the "already there?" checks need sudo too.
+sudo grep -q '^maxmemory 64mb' "$conf" || echo 'maxmemory 64mb' | sudo tee -a "$conf" >/dev/null
+sudo grep -q '^maxmemory-policy allkeys-lru' "$conf" || echo 'maxmemory-policy allkeys-lru' | sudo tee -a "$conf" >/dev/null
+sudo grep -q '^save ""' "$conf" || echo 'save ""' | sudo tee -a "$conf" >/dev/null
 sudo systemctl enable --now redis-server >/dev/null
 sudo systemctl restart redis-server
 [ "$(redis-cli ping)" = "PONG" ] || { echo "redis did not answer" >&2; exit 1; }
@@ -31,8 +32,11 @@ if ! sudo grep -q '^VERYTAS_REDIS_URL=' "$ENV"; then
   echo 'VERYTAS_REDIS_URL=redis://127.0.0.1:6379/0' | sudo tee -a "$ENV" >/dev/null
 fi
 
-sudo install -o root -g root -m 0644 "$APP/deploy/systemd/verytas-keepwarm.service" \
-  "$APP/deploy/systemd/verytas-keepwarm.timer" /etc/systemd/system/
+# A release holds only backend/ and web/; the unit files come from the deployed commit in the server's clone.
+for unit in verytas-keepwarm.service verytas-keepwarm.timer; do
+  sudo -u verytas git -C "$REPO" show "live:deploy/systemd/$unit" | sudo tee "/etc/systemd/system/$unit" >/dev/null
+  sudo chmod 0644 "/etc/systemd/system/$unit"
+done
 sudo systemctl daemon-reload
 sudo systemctl enable --now verytas-keepwarm.timer >/dev/null
 sudo systemctl restart verytas-api
