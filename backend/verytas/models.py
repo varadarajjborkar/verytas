@@ -583,7 +583,7 @@ class ChatThread(Base):
 
 class PublicContact(Base):
     """A contact detail the company publishes. Anything phone- or email-shaped in a post or a message that
-    is not listed here is treated as private: posts are flagged, and messages offering it are refused."""
+    is not listed here is treated as private: posts and messages carrying it are flagged for the brand team."""
 
     __tablename__ = "public_contacts"
     __table_args__ = (UniqueConstraint("workspace_id", "kind", "normalized", name="uq_public_contact"),)

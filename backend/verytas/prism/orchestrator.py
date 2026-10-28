@@ -324,7 +324,9 @@ class Prism:
         # Offers and off-the-record contact in the note go to a person whatever the model makes of it.
         # (Steering is the intent agent's call: it reads the note against each finding.)
         note_text = " ".join(v for v in notes_realm.values() if isinstance(v, str))
-        for flag in screen(note_text, ctx.contacts).refused if note_text.strip() else []:
+        # Contact details are flagged rather than refused now, so both lists are read.
+        guarded = screen(note_text, ctx.contacts) if note_text.strip() else None
+        for flag in [*guarded.refused, *guarded.flagged] if guarded else []:
             if flag.code in ("inducement", "contact_exchange"):
                 escalations.append({"reason": f"creator note: {flag.label}", "detail": flag.quote})
 

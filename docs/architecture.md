@@ -390,7 +390,7 @@ flowchart LR
 | Public contacts | `GET/POST /public-contacts` · `DELETE /public-contacts/{id}` | read: anyone · write: brand admin |
 | Ask Inki | `POST /assistant/context` (context plus the conversation, redacted with one set of placeholders) · `GET/POST/PUT/DELETE /chats` | anyone; confidential tier left out |
 
-Creators see only their own pieces on every content route; the brand team sees all of them within its clearance. Escalation messages, comments, disputes and resolution notes pass the guardrails (`security/guard.py`) before they are stored.
+Creators see only their own pieces on every content route; the brand team sees all of them within its clearance. Escalation messages, comments, disputes and resolution notes pass the guardrails (`security/guard.py`) before they are stored: a bribe or an instruction aimed at the AI is refused, and contact details are flagged for the brand team rather than refused, since a ten digit number is as often an order code. Conversation messages are not screened; Inki reads them only through its own guard.
 
 `GET /contents/{id}/timeline` is the one record both sides read: each version, its check, every status move, comment and decision, with who did it. The review screen's journey map and activity feed are drawn from it.
 

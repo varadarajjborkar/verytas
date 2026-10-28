@@ -667,9 +667,10 @@ async def list_comments(content_id: int, session: Session, user: CurrentUser) ->
 
 @router.post("/contents/{content_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
 async def add_comment(content_id: int, body: CommentIn, session: Session, user: Writer) -> Comment:
-    # Not screened: a note like "the 9876543210 order code is wrong" is feedback, not an attempt to go off
-    # the record, and refusing it only teaches people to stop leaving notes.
     await _content(session, user, content_id)
+    # Comments reach Inki's context, so a bribe or an instruction aimed at the model is still refused. Contact
+    # details only flag: "the 9876543210 order code is wrong" is feedback, not an attempt to go off the record.
+    await screened(session, workspace_id=user.workspace_id, actor_id=user.id, text=body.body, where="comment")
     if body.parent_id is not None:
         parent = await session.get(Comment, body.parent_id)
         if parent is None or parent.content_id != content_id:

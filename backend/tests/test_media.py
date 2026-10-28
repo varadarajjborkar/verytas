@@ -586,3 +586,12 @@ def test_both_pyav_subtitle_shapes_yield_text():
     assert _subtitle_texts(new) == ["Hello, world"]
     assert _subtitle_texts(NS(ass=b"0,0,Default,,0,0,0,,Only ass")) == ["Only ass"]
     assert _subtitle_texts(NS(rects=[])) == []
+
+
+def test_a_creator_note_offering_private_contact_still_reaches_a_person(client, world):
+    # Contact details are flagged, not refused, so the escalation must read the flagged list too.
+    _submit(client, world, body="Launch post",
+            notes={"brief": "whatsapp me on 98200 12345, we can sort this off the record"})
+    audit = client.get("/audit", headers=_auth(world["admin"])).json()
+    escalated = [a for a in audit if a["action"] == "review.escalated"]
+    assert escalated and any("creator note" in r for r in escalated[-1]["detail"]["reasons"])
