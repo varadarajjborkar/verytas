@@ -71,6 +71,14 @@
   #tints span.soft { width: 30rem; height: 30rem; background: radial-gradient(closest-side, rgba(56, 132, 255, 0.10), transparent); }
   .dark #tints span { background: radial-gradient(closest-side, rgba(76, 155, 255, 0.10), transparent); }
   .dark #tints span.soft { background: radial-gradient(closest-side, rgba(120, 170, 255, 0.07), transparent); }
+  /* A glow that follows the pointer, stronger than the drifting tints (0.246 to their 0.13, 0.189 to 0.10 in
+     dark), and the canvas a click ripples the dot grid on. Both sit behind the page like the tints. */
+  #glow { position: fixed; left: 0; top: 0; width: 34rem; height: 34rem; border-radius: 9999px; z-index: -1;
+    pointer-events: none; opacity: 0; transition: opacity 500ms cubic-bezier(0.22,1,0.36,1); will-change: transform;
+    background: radial-gradient(closest-side, rgba(26, 95, 209, 0.246), transparent); }
+  .dark #glow { background: radial-gradient(closest-side, rgba(76, 155, 255, 0.189), transparent); }
+  #glow.on { opacity: 1; }
+  #ripple { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
   /* Inki: leans in with a little overshoot, closes its open eye for a beat, and settles. */
   .inki { position: relative; display: inline-block; flex-shrink: 0; cursor: pointer; outline: none;
     transition: transform 520ms cubic-bezier(0.34, 1.56, 0.64, 1); }
@@ -102,6 +110,8 @@
 </head>
 <body class="">
 <div id="tints" aria-hidden="true"></div>
+<div id="glow" aria-hidden="true"></div>
+<canvas id="ripple" aria-hidden="true"></canvas>
 <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-accent focus:px-4 focus:py-2 focus:text-white">Skip to content</a>
 
 <!-- Floating nav pill -->
@@ -411,6 +421,77 @@
     addEventListener("scroll", function () { if (!queued) { queued = true; requestAnimationFrame(paint); } }, { passive: true });
     addEventListener("resize", paint);
     paint();
+  })();
+
+  // The glow eases after the pointer, so it glides rather than sticks; only for a mouse or trackpad, and
+  // still (no easing) for anyone who asked for less motion.
+  (function () {
+    var glow = document.getElementById("glow");
+    if (!matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+    var still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var x = innerWidth / 2, y = innerHeight / 3, tx = x, ty = y, running = false;
+    function place() {
+      var half = glow.offsetWidth / 2;
+      glow.style.transform = "translate3d(" + (x - half) + "px," + (y - half) + "px,0)";
+    }
+    function step() {
+      x += (tx - x) * 0.12; y += (ty - y) * 0.12;
+      place();
+      if (Math.abs(tx - x) + Math.abs(ty - y) > 0.5) requestAnimationFrame(step); else running = false;
+    }
+    addEventListener("pointermove", function (e) {
+      if (e.pointerType !== "mouse" && e.pointerType !== "pen") return;
+      tx = e.clientX; ty = e.clientY;
+      glow.classList.add("on");
+      if (still) { x = tx; y = ty; place(); } else if (!running) { running = true; requestAnimationFrame(step); }
+    }, { passive: true });
+    document.documentElement.addEventListener("pointerleave", function () { glow.classList.remove("on"); });
+  })();
+
+  // A click sends a ring out through the dot grid that fades as it spreads. The dots are drawn on the
+  // hero's own 18px grid, so inside the hero they light the dots already there.
+  (function () {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    var canvas = document.getElementById("ripple"), ctx = canvas.getContext("2d");
+    var grid = document.querySelector(".hero-wash");
+    var STEP = 18, LIFE = 650, REACH = 240, BAND = 46;
+    var rings = [], frame = 0;
+    function size() {
+      var dpr = Math.min(2, devicePixelRatio || 1);
+      canvas.width = innerWidth * dpr; canvas.height = innerHeight * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    function draw(now) {
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      rings = rings.filter(function (r) { return now - r.t < LIFE; });
+      var dark = document.documentElement.classList.contains("dark");
+      var rgb = dark ? "120, 175, 255" : "26, 95, 209";
+      var o = grid ? grid.getBoundingClientRect() : { left: 0, top: 0 };
+      var ox = ((o.left + 1) % STEP + STEP) % STEP, oy = ((o.top + 1) % STEP + STEP) % STEP;
+      rings.forEach(function (r) {
+        var k = (now - r.t) / LIFE, ease = 1 - Math.pow(1 - k, 3);
+        var radius = REACH * ease, fade = 1 - k;
+        var x0 = Math.floor((r.x - radius - BAND - ox) / STEP) * STEP + ox;
+        var y0 = Math.floor((r.y - radius - BAND - oy) / STEP) * STEP + oy;
+        for (var gx = x0; gx <= r.x + radius + BAND; gx += STEP) {
+          for (var gy = y0; gy <= r.y + radius + BAND; gy += STEP) {
+            var off = Math.abs(Math.hypot(gx - r.x, gy - r.y) - radius);
+            if (off > BAND) continue;
+            var a = fade * (1 - off / BAND);
+            ctx.fillStyle = "rgba(" + rgb + "," + (0.85 * a).toFixed(3) + ")";
+            ctx.beginPath(); ctx.arc(gx, gy, 1 + 0.9 * a, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+      });
+      frame = rings.length ? requestAnimationFrame(draw) : 0;
+    }
+    addEventListener("pointerdown", function (e) {
+      if (e.button !== 0) return;
+      rings.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+      if (!frame) frame = requestAnimationFrame(draw);
+    }, { passive: true });
+    addEventListener("resize", size);
+    size();
   })();
 
   // Mobile menu: focus moves in, Escape and links close it.
