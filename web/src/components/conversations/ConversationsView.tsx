@@ -11,6 +11,7 @@ import { relativeTime, STATUS_LABEL } from "@/lib/review-client";
 import { ROLE_LABEL } from "@/lib/roles";
 import type { ContentStatus } from "@/lib/types";
 import { useModalFocus } from "../Drawer";
+import { useSplit } from "../Splitter";
 import { ChatIcon, CloseIcon, PlusIcon, SearchIcon } from "../Icons";
 import { INKI, InkiIcon } from "../Inki";
 import { useViewer } from "../Viewer";
@@ -178,15 +179,19 @@ export function ConversationsView() {
   }, [convs, tab, status, query]);
 
   const current = convs?.find((c) => c.id === active) ?? null;
+  // The list's width is the reader's: drag its edge, as wide as the names they need or as narrow as they like.
+  const split = useSplit("vt-conv-list", { initial: 352, min: 260, max: 560 });
   const auditor = me?.role === "auditor";
   const filtered = tab !== "all" || status !== null || query.trim() !== "";
 
   return (
-    <div className="flex h-[calc(100dvh-205px)] min-h-[520px] flex-col md:h-[calc(100dvh-108px)]">
-      <div className="vt-card flex min-h-0 flex-1 flex-col overflow-hidden">
+    // From a wide screen up the inbox is the whole column, edge to edge and down to the bottom of the window,
+    // not a card floating in it: the room goes to the conversation.
+    <div className="vt-bleed flex h-[calc(100dvh-205px)] min-h-[520px] flex-col md:h-[calc(100dvh-72px)]">
+      <div className="vt-card flex min-h-0 flex-1 flex-col overflow-hidden md:rounded-none md:border-x-0 md:border-b-0 md:shadow-none">
         {/* On a phone an open conversation takes the whole card; the filters are one tap back. */}
-        <header className={`flex-col gap-3 border-b border-line px-4 pb-3 pt-4 md:flex md:px-5 ${active ? "hidden" : "flex"}`}>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+        <header className={`flex-col gap-3 border-b border-line px-4 py-3 md:flex md:px-6 ${active ? "hidden" : "flex"}`}>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
             <h1 className="flex items-baseline gap-2 text-xl font-semibold tracking-tight">
               Conversations <span className="text-sm font-normal tabular-nums text-subtle">{counts.all}</span>
             </h1>
@@ -200,6 +205,18 @@ export function ConversationsView() {
                   </button>
                 ))}
             </div>
+            {chips.length > 1 && (
+              <div role="group" className="flex flex-wrap gap-1.5" aria-label="Filter by the piece's status">
+                {chips.map(({ status: s, n }) => (
+                  <button key={s} type="button" aria-pressed={status === s} onClick={() => setStatus(status === s ? null : s)}
+                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition ${
+                      status === s ? "border-accent/50 bg-accent/10 text-ink" : "border-line text-muted hover:text-ink"}`}>
+                    <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[s]}`} />{statusLabel(s)}
+                    <span className="tabular-nums text-subtle">{n}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="ml-auto flex min-w-0 items-center gap-2">
               <label className="relative flex min-w-0 items-center">
                 <span className="sr-only">Search conversations</span>
@@ -216,36 +233,20 @@ export function ConversationsView() {
               )}
             </div>
           </div>
-          {(chips.length > 0 || counts.all > 0) && (
-            <div className="flex flex-wrap items-center gap-2">
-              <div role="group" className="flex flex-wrap gap-1.5" aria-label="Filter by the piece's status">
-                {chips.map(({ status: s, n }) => (
-                  <button key={s} type="button" aria-pressed={status === s} onClick={() => setStatus(status === s ? null : s)}
-                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition ${
-                      status === s ? "border-accent/50 bg-accent/10 text-ink" : "border-line text-muted hover:text-ink"}`}>
-                    <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[s]}`} />{statusLabel(s)}
-                    <span className="tabular-nums text-subtle">{n}</span>
-                  </button>
-                ))}
-              </div>
-              <p className="ml-auto text-xs text-muted" aria-live="polite">
-                <span className="font-medium tabular-nums text-ink">{counts.messages}</span> unread
-                <span aria-hidden className="mx-1.5 text-subtle">·</span>
-                <span className="font-medium tabular-nums text-ink">{counts.waiting}</span> waiting on you
-              </p>
-            </div>
-          )}
         </header>
 
         {error && <p role="alert" className="mx-4 mt-3 rounded-xl bg-[var(--vt-blocker-bg)] px-3 py-2 text-sm text-[var(--vt-blocker)]">{error}</p>}
 
         <div className="flex min-h-0 flex-1">
-          <aside aria-label="Conversation list" className={`min-h-0 w-full flex-col border-line md:flex md:w-[22rem] md:shrink-0 md:border-r ${active ? "hidden" : "flex"}`}>
+          <aside aria-label="Conversation list" style={{ "--list-w": `${split.width}px` } as React.CSSProperties}
+            className={`relative min-h-0 w-full flex-col border-line md:flex md:w-[var(--list-w)] md:shrink-0 md:border-r ${active ? "hidden" : "flex"}`}>
+            {split.handle}
             <ConversationList convs={convs} shown={shown} active={active} onPick={choose} meId={me?.id ?? null}
               loading={loading || convs === null} filtered={filtered}
               onClear={() => { setTab("all"); setStatus(null); setQuery(""); }} onNew={auditor ? null : () => setPicking(true)} />
-            <p className="border-t border-line px-4 py-2 text-[11px] text-subtle" aria-live="polite">
-              {live === "live" ? "Live: new messages appear as they are sent." : live === "connecting" ? "Connecting..." : "Reconnecting... nothing is lost."}
+            <p className="flex items-center gap-1.5 border-t border-line px-4 py-2 text-[11px] text-subtle" aria-live="polite">
+              <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${live === "live" ? "bg-[var(--vt-ok)]" : "bg-[var(--vt-warning)]"}`} />
+              {live === "live" ? "Live" : live === "connecting" ? "Connecting..." : "Reconnecting... nothing is lost."}
             </p>
           </aside>
           <section aria-label="Conversation" className={`min-h-0 min-w-0 flex-1 flex-col ${active ? "flex" : "hidden md:flex"}`}>

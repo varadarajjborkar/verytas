@@ -302,6 +302,13 @@ ins.vt-fix[data-active="true"] { outline: 2px solid var(--vt-accent); }
   box-shadow: 0 1px 2px light-dark(rgba(18, 24, 40, 0.06), rgba(0, 0, 0, 0.3)),
     0 24px 50px -24px light-dark(rgba(18, 24, 40, 0.22), rgba(0, 0, 0, 0.6)); }
 
+/* A pane's drag handle: invisible until the pointer or focus finds it, then a thin accent line on the edge. */
+.vt-splitter::after { content: ""; position: absolute; inset-block: 0; left: 50%; width: 2px; transform: translateX(-50%);
+  background: transparent; transition: background-color 150ms; }
+.vt-splitter:hover::after, .vt-splitter:focus-visible::after, .vt-splitter[data-dragging]::after { background: var(--vt-accent); }
+.vt-splitter:focus-visible { outline: none; }
+body:has(.vt-splitter[data-dragging]) { user-select: none; cursor: col-resize; }
+
 /* The review's two columns on a wide screen, each its own scroller. The padding gives the sheet's shadow and
    a picked row's ring room inside the clip (the negative margin keeps the columns where they were), and the
    short fades at both ends say there is more instead of cutting a card off on a hard edge. */
@@ -559,4 +566,11 @@ body:has(.vt-dock) .vt-toasts { padding-bottom: 5.25rem; }
 @media (prefers-reduced-motion: reduce) {
   .vt-inki, .vt-inki-patch, .vt-inki-eye { transition: none !important; }
   .vt-inki:hover, a:hover > .vt-inki, button:hover > .vt-inki { transform: none; }
+}
+
+/* A page that takes the whole content column (the conversations inbox): no width cap, no side or bottom
+   padding, so it meets the sidebar and the window's edges; the top padding stays clear of the search bar. */
+@media (min-width: 768px) {
+  main:has(.vt-bleed) { padding-inline: 0; padding-bottom: 0; }
+  main:has(.vt-bleed) > div { max-width: none; }
 }

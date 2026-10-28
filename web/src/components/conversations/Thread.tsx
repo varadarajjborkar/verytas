@@ -10,6 +10,7 @@ import {
 } from "@/lib/conversations-client";
 import { ApiError, listContents, STATUS_LABEL, upload } from "@/lib/review-client";
 import { ROLE_LABEL } from "@/lib/roles";
+import { useStored, writeStored } from "@/lib/stored";
 import type { ContentRow, ContentStatus, Me } from "@/lib/types";
 import { useModalFocus } from "../Drawer";
 import {
@@ -22,6 +23,8 @@ import { Avatar, type Listener, STATUS_DOT } from "./ConversationsView";
 const PAGE = 30;
 // Questions Inki can take from the card above the box; each is sent as an ordinary "@Inki" message.
 const ASK_INKI = ["What is still open on this piece?", "Summarise this conversation", "Draft a reply for me"];
+// Hiding the suggested questions is the reader's choice and outlives the conversation; Inki stays one click away.
+const ASK_HIDDEN = "vt-ask-inki-hidden";
 
 type Pending = { key: string; name: string; state: "uploading" | "ready" | "failed"; file?: SharedFile; error?: string };
 
@@ -188,7 +191,7 @@ export function Thread({ conv, me, side, subscribe, inki, initialPiece, onBack, 
 
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto"
         onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
-        <div ref={content} className="mx-auto w-full max-w-3xl px-4 py-5 md:px-8">
+        <div ref={content} className="mx-auto w-full max-w-4xl px-4 py-5 md:px-8">
           <h2 className="text-lg font-semibold leading-snug [overflow-wrap:anywhere]">{conv.topic?.title ?? `You and ${conv.other.name}`}</h2>
           <p className="mt-1 text-xs text-subtle">
             {conv.topic ? "The piece this conversation is about. Change it under the box." : "No piece linked yet: pick one under the box so you both, and Inki, know what you mean."}
@@ -568,19 +571,24 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
 
 
   const ask = (q: string) => send({ text: `@${INKI} ${q}` }, true);
+  const hidden = useStored(ASK_HIDDEN) === "1";
   const first = conv.other.name.split(" ")[0];
   const canSend = editing ? text.trim().length > 0 : (text.trim().length > 0 || files.some((f) => f.state === "ready"));
 
   return (
     <div className="border-t border-line bg-surface/40 px-3 py-3 md:px-6">
-      <div className="mx-auto w-full max-w-3xl">
-        {!editing && !replyTo && !text && !quiet && (
-          <div className="mb-2 hidden flex-wrap items-center gap-1.5 rounded-xl border border-line bg-raised px-3 py-2 md:flex">
+      <div className="mx-auto w-full max-w-4xl">
+        {!editing && !replyTo && !text && !quiet && !hidden && (
+          <div className="vt-pop mb-2 hidden flex-wrap items-center gap-1.5 md:flex">
             <InkiIcon size={18} /><span className="mr-1 text-xs text-muted">Ask {INKI}</span>
             {ASK_INKI.map((q) => (
               <button key={q} type="button" onClick={() => ask(q)} disabled={sending}
-                className="rounded-full border border-line px-2.5 py-0.5 text-xs text-muted transition hover:border-accent/40 hover:text-ink">{q}</button>
+                className="rounded-full border border-line bg-raised px-2.5 py-0.5 text-xs text-muted transition hover:border-accent/40 hover:text-ink">{q}</button>
             ))}
+            <button type="button" onClick={() => writeStored(ASK_HIDDEN, "1")} aria-label={`Hide the ${INKI} suggestions`}
+              title="Hide these suggestions" className="ml-auto grid h-6 w-6 place-items-center rounded-md text-subtle transition hover:bg-sunken hover:text-ink">
+              <CloseIcon size={13} />
+            </button>
           </div>
         )}
         {error && <p role="alert" className="mb-2 rounded-lg bg-[var(--vt-blocker-bg)] px-3 py-1.5 text-[13px] text-[var(--vt-blocker)]">{error}</p>}
@@ -640,6 +648,11 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
                   </select>
                 </label>
               </>
+            )}
+            {/* Only where the suggestions would otherwise show, so a click always brings something back. */}
+            {hidden && !editing && !replyTo && !text && !quiet && (
+              <button type="button" onClick={() => writeStored(ASK_HIDDEN, null)} title={`Show the ${INKI} suggestions`}
+                className="vt-btn vt-btn-quiet hidden h-8 px-2 text-xs md:inline-flex"><InkiIcon size={15} /> Ask {INKI}</button>
             )}
             <button type="button" onClick={() => void submit()} disabled={!canSend || sending}
               className="vt-btn vt-btn-primary ml-auto h-8 px-3 text-xs">{editing ? "Save" : <><ArrowUpIcon size={13} /> Send</>}</button>
