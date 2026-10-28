@@ -1,0 +1,14 @@
+/* Arriving from the landing page (public/welcome/index.html carries the way back): the landing page folds away
+   to the left, sliding shut until only the strip that is sign-in's brand panel is left, while this page drifts
+   in under it. A cross-document view transition: same site, pictures of both pages, no data passed. It is a
+   stylesheet imported by SignInShell so Next links it in the head, where the opt-in must be before the first
+   paint; only the landing and sign-in pages opt in, so the app's own navigation is untouched. 58.333% is the
+   7 of 12 columns the way in takes. Phones stack the halves and keep the browser's crossfade. */
+@view-transition { navigation: auto; }
+@media (prefers-reduced-motion: reduce) { @view-transition { navigation: none; } }
+@media (min-width: 768px) {
+  ::view-transition-old(root) { animation: 760ms cubic-bezier(0.65, 0, 0.35, 1) both vt-fold; z-index: 1; }
+  ::view-transition-new(root) { animation: 760ms cubic-bezier(0.65, 0, 0.35, 1) both vt-arrive; }
+}
+@keyframes vt-fold { 70% { opacity: 1; } to { clip-path: inset(0 58.333% 0 0); opacity: 0; } }
+@keyframes vt-arrive { from { transform: translateX(3%); opacity: 0.6; } }

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { FindingDeck } from "./FindingDeck";
 import { CheckIcon } from "./Icons";
 import { PointerGlow } from "./PointerGlow";
+import "./signin-transition.css";
 import { Wordmark } from "./Wordmark";
 
 const PROMISES = [
@@ -9,6 +10,7 @@ const PROMISES = [
   "Every flag says why and cites its source",
   "People make the final call, and it is recorded",
 ];
+
 
 /**
  * The front door, for the demo picker and the token form alike: what Verytas is on the left (a real

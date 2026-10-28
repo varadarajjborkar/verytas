@@ -70,6 +70,20 @@
   mark.must { color: #c2261b; } .dark mark.must { color: #ff7a6e; }
   mark.should { color: #a35b00; } .dark mark.should { color: #f5b14c; }
 
+  /* Going to sign in, this page folds away to the left like a panel sliding shut until only the strip that
+     becomes sign-in's brand panel is left (a cross-document view transition: same site, pictures of both
+     pages, no data passed). Coming back, it unfolds from that strip; these rules run on the arriving page,
+     so sign-in carries the forward half (components/SignInShell.tsx). Browsers without view transitions,
+     and anyone who asked for less motion, simply load the page. 58.333% is sign-in's 7 of 12 columns. */
+  @view-transition { navigation: auto; }
+  @media (prefers-reduced-motion: reduce) { @view-transition { navigation: none; } }
+  @media (min-width: 768px) {
+    ::view-transition-old(root) { animation: 760ms cubic-bezier(0.65, 0, 0.35, 1) both vt-settle; }
+    ::view-transition-new(root) { animation: 760ms cubic-bezier(0.65, 0, 0.35, 1) both vt-unfold; z-index: 1; }
+  }
+  @keyframes vt-unfold { from { clip-path: inset(0 58.333% 0 0); } to { clip-path: inset(0 0 0 0); } }
+  @keyframes vt-settle { to { transform: translateX(3%); opacity: 0.6; } }
+
   /* Tints that drift as the page scrolls, behind everything (the body background paints on the canvas). */
   #tints { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
   #tints span { position: absolute; left: 0; top: 0; width: 44rem; height: 44rem; border-radius: 9999px; will-change: transform;
