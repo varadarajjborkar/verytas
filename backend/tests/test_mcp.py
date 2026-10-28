@@ -380,15 +380,11 @@ def test_an_internal_failure_does_not_leak_detail(client, world, monkeypatch):  
 async def test_a_real_mcp_client_round_trip(tmp_path):
     """The SDK's own client against the app over ASGI: initialize, tools/list, tools/call."""
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    from mcp.client.streamable_http import streamable_http_client
 
     cfg = Settings(database_url=f"sqlite+aiosqlite:///{tmp_path / 'c.db'}", llm_mode="offline",
                    keys_dir=tmp_path / "keys", faces_enabled=False)
     app = create_app(cfg)
-
-    def factory(headers=None, timeout=None, auth=None):
-        return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://verytas.test",
-                                 headers=headers, timeout=timeout, auth=auth)
 
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
@@ -400,8 +396,8 @@ async def test_a_real_mcp_client_round_trip(tmp_path):
             pat = made.json()["token"]
 
         url = "http://verytas.test/mcp"
-        headers = {"Authorization": f"Bearer {pat}"}
-        async with (streamablehttp_client(url, headers=headers, httpx_client_factory=factory) as (read, write, _),
+        client = httpx.AsyncClient(transport=transport, headers={"Authorization": f"Bearer {pat}"})
+        async with (client, streamable_http_client(url, http_client=client) as (read, write, _),
                     ClientSession(read, write) as session):
             init = await session.initialize()
             assert init.serverInfo.name == "Verytas" and "cannot decide" in init.instructions
