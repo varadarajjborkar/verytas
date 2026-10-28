@@ -26,6 +26,7 @@ from verytas.api import (
     messages,
     onboarding,
     people,
+    results,
     search,
     tokens,
 )
@@ -134,8 +135,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "llm_backend": settings.llm_backend}
 
     # media before content: /contents/precheck must not be read as a content id.
-    routers = (admin, accounts, knowledge, people, media, intake, content, governance, insights, chats, assistant,
-               assist, search, onboarding, messages, tokens)
+    routers = (admin, accounts, knowledge, people, media, intake, content, results, governance, insights, chats,
+               assistant, assist, search, onboarding, messages, tokens)
     for module in routers:
         app.include_router(module.router)
     if settings.mcp_enabled:

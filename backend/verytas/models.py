@@ -496,6 +496,29 @@ class Person(Base):
         back_populates="person", cascade="all, delete-orphan", order_by="PersonReference.id")
 
 
+class PostResult(Base):
+    """How a piece did once it went live: the post's link and the numbers someone recorded for it.
+
+    Numbers only, never the post itself, and nothing is fetched from the platform: the creator or the brand
+    team pastes the link and types (or imports) what the platform showed them. One per piece.
+    """
+
+    __tablename__ = "post_results"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    content_id: Mapped[int] = mapped_column(ForeignKey("contents.id", ondelete="CASCADE"), unique=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    url: Mapped[str] = mapped_column(String(500), index=True)
+    platform: Mapped[str] = mapped_column(String(20))
+    posted_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # views, reach, likes, comments, shares, saves, watch_seconds: each a count, each optional.
+    metrics: Mapped[dict[str, int]] = mapped_column(JSON, default=dict)
+    source: Mapped[str] = mapped_column(String(10), default="manual")  # manual | csv
+    recorded_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class PersonReference(Base):
     """A photo a face is compared against, and where it came from: uploaded by the brand or the person,
     or found on the web (the address is kept, so a match can be traced to its source)."""
