@@ -11,6 +11,11 @@ const WIDTHS = [0.004, 0.008, 0.014, 0.022] as const;
 /** Points closer than this (a fraction of the width) add nothing to a line but bytes. */
 const MIN_STEP = 0.003;
 const ERASE_RADIUS = 0.025;
+/** One line holds this many points on the server; a longer stroke carries on as a new line. */
+const STROKE_POINTS = 1000;
+const labelSize = (w: number) => Math.max(12, w * 0.028);
+
+const countPoints = (marks: Mark[]) => marks.reduce((n, m) => n + (m.type === "stroke" ? m.points.length : 1), 0);
 
 type Tool = "pen" | "eraser" | "text";
 const INK = "var(--vt-blocker)";
@@ -19,11 +24,13 @@ const INK = "var(--vt-blocker)";
 export function MarksLayer({ marks, w, h, faint = false }: { marks: Mark[]; w: number; h: number; faint?: boolean }) {
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className={`pointer-events-none absolute inset-0 h-full w-full ${faint ? "opacity-60" : ""}`} aria-hidden>
-      {marks.map((m, i) => m.type === "stroke" ? (
+      {marks.map((m, i) => m.type === "stroke" && m.points.length === 1 ? (
+        <circle key={i} cx={m.points[0][0] * w} cy={m.points[0][1] * h} r={(m.width * w) / 2} fill={INK} />
+      ) : m.type === "stroke" ? (
         <polyline key={i} points={m.points.map(([x, y]) => `${x * w},${y * h}`).join(" ")} fill="none" stroke={INK}
           strokeWidth={m.width * w} strokeLinecap="round" strokeLinejoin="round" />
       ) : (
-        <text key={i} x={m.x * w} y={m.y * h} fill={INK} fontSize={Math.max(12, w * 0.028)} fontWeight={600}
+        <text key={i} x={m.x * w} y={m.y * h} fill={INK} fontSize={labelSize(w)} fontWeight={600}
           paintOrder="stroke" stroke="var(--vt-surface)" strokeWidth={Math.max(3, w * 0.006)} dominantBaseline="middle">
           {m.text}
         </text>
@@ -43,6 +50,8 @@ export function ImageMarkup({ contentId, versionId, imageId, size, onDone, onCan
 }) {
   const pad = useRef<SVGSVGElement>(null);
   const drawing = useRef<boolean>(false);
+  // Set once a label is placed or cancelled, so the input's blur (as it unmounts) can't place it again.
+  const settled = useRef(true);
   const [marks, setMarks] = useState<Mark[]>([]);
   const [tool, setTool] = useState<Tool>("pen");
   const [width, setWidth] = useState<number>(WIDTHS[1]);
@@ -52,7 +61,7 @@ export function ImageMarkup({ contentId, versionId, imageId, size, onDone, onCan
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const points = marks.reduce((n, m) => n + (m.type === "stroke" ? m.points.length : 1), 0);
+  const points = countPoints(marks);
   const full = marks.length >= MAX_MARKS || points >= MAX_POINTS;
 
   const spot = (e: React.PointerEvent): [number, number] => {
@@ -60,9 +69,25 @@ export function ImageMarkup({ contentId, versionId, imageId, size, onDone, onCan
     return [Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)), Math.min(1, Math.max(0, (e.clientY - box.top) / box.height))];
   };
   const erase = (x: number, y: number) => {
+    // Distances in fractions of the width, so the eraser is round on a tall or a wide picture alike.
     const ratio = size.h / size.w;
-    const near = (px: number, py: number) => Math.hypot(px - x, (py - y) * ratio) < ERASE_RADIUS;
-    setMarks((all) => all.filter((m) => m.type === "stroke" ? !m.points.some(([px, py]) => near(px, py)) : !near(m.x, m.y)));
+    const toSegment = ([ax, ay]: [number, number], [bx, by]: [number, number]) => {
+      const dx = bx - ax, dy = (by - ay) * ratio, len = dx * dx + dy * dy;
+      const t = len ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * ratio * dy) / len)) : 0;
+      return Math.hypot(x - (ax + t * dx), (y - ay) * ratio - t * dy);
+    };
+    const hits = (m: Mark) => {
+      if (m.type === "text") {
+        // The label's own box: it starts at its anchor and runs right, about 0.6 of the type size a letter.
+        const fs = labelSize(size.w) / size.w;
+        return x >= m.x - ERASE_RADIUS && x <= m.x + m.text.length * fs * 0.6 + ERASE_RADIUS
+          && Math.abs((y - m.y) * ratio) <= fs / 2 + ERASE_RADIUS;
+      }
+      const reach = ERASE_RADIUS + m.width / 2;
+      return m.points.length === 1 ? toSegment(m.points[0], m.points[0]) < reach
+        : m.points.some((pt, i) => i > 0 && toSegment(m.points[i - 1], pt) < reach);
+    };
+    setMarks((all) => all.filter((m) => !hits(m)));
   };
 
   const onDown = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -70,7 +95,13 @@ export function ImageMarkup({ contentId, versionId, imageId, size, onDone, onCan
     // Keeps focus where it is: otherwise the press that places a label blurs its new input, dropping it.
     e.preventDefault();
     const [x, y] = spot(e);
-    if (tool === "text") { if (!full) { setPlacing({ x, y }); setWord(""); } return; }
+    if (tool === "text") {
+      if (full) { setError(`A drawing holds up to ${MAX_MARKS} marks; erase some or save this one.`); return; }
+      settled.current = false;
+      setPlacing({ x, y });
+      setWord("");
+      return;
+    }
     e.currentTarget.setPointerCapture(e.pointerId);
     drawing.current = true;
     if (tool === "eraser") { erase(x, y); return; }
@@ -81,17 +112,30 @@ export function ImageMarkup({ contentId, versionId, imageId, size, onDone, onCan
     if (!drawing.current) return;
     const [x, y] = spot(e);
     if (tool === "eraser") { erase(x, y); return; }
+    if (points >= MAX_POINTS || (marks.length >= MAX_MARKS && marks[marks.length - 1]?.type === "stroke"
+        && (marks[marks.length - 1] as { points: unknown[] }).points.length >= STROKE_POINTS)) {
+      drawing.current = false;
+      setError("That is as much drawing as one comment holds; save it and start another.");
+      return;
+    }
     setMarks((all) => {
       const last = all[all.length - 1];
-      if (!last || last.type !== "stroke" || last.points.length >= 1000 || points >= MAX_POINTS) return all;
+      // Counted from the marks being updated, not the last render, so a fast stroke can't overshoot.
+      if (!last || last.type !== "stroke" || countPoints(all) >= MAX_POINTS) { drawing.current = false; return all; }
       const [px, py] = last.points[last.points.length - 1];
       if (Math.hypot(x - px, y - py) < MIN_STEP) return all;
+      if (last.points.length >= STROKE_POINTS) {
+        if (all.length >= MAX_MARKS) { drawing.current = false; return all; }
+        return [...all, { type: "stroke", points: [[px, py], [x, y]], width: last.width }];
+      }
       return [...all.slice(0, -1), { ...last, points: [...last.points, [x, y]] }];
     });
   };
   const onUp = () => { drawing.current = false; };
 
   const place = () => {
+    if (settled.current) return;
+    settled.current = true;
     const text = word.trim().slice(0, 120);
     if (placing && text) setMarks((all) => [...all, { type: "text", x: placing.x, y: placing.y, text }]);
     setPlacing(null);
@@ -99,6 +143,7 @@ export function ImageMarkup({ contentId, versionId, imageId, size, onDone, onCan
   };
 
   const save = async () => {
+    if (saving) return;
     if (!note.trim()) { setError("Say what should change, so the drawing has words to go with it."); return; }
     setSaving(true);
     setError(null);
@@ -137,7 +182,7 @@ export function ImageMarkup({ contentId, versionId, imageId, size, onDone, onCan
       {placing && (
         <div className="absolute z-20 -translate-y-1/2" style={{ left: `${Math.min(placing.x, 0.55) * 100}%`, top: `${placing.y * 100}%` }}>
           <input autoFocus value={word} maxLength={120} onChange={(e) => setWord(e.target.value)} aria-label="Text to place"
-            onKeyDown={(e) => { if (e.key === "Enter") place(); if (e.key === "Escape") setPlacing(null); }} onBlur={place}
+            onKeyDown={(e) => { if (e.key === "Enter") place(); if (e.key === "Escape") { settled.current = true; setPlacing(null); } }} onBlur={place}
             placeholder="Type, then Enter" className="vt-input h-8 w-48 py-0 text-xs shadow-lg" />
         </div>
       )}

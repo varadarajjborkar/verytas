@@ -40,6 +40,8 @@ export function ReviewVideo({ contentId, versionId, video, findings, comments, a
   const ref = useRef<HTMLVideoElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const press = useRef<{ x: number; at: number; dragging: boolean } | null>(null);
+  // A seek asked for before the length is known (a finding picked while the video loads) waits for it.
+  const pending = useRef<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [now, setNow] = useState(0);
   const [length, setLength] = useState(0);
@@ -60,7 +62,11 @@ export function ReviewVideo({ contentId, versionId, video, findings, comments, a
   useEffect(() => {
     const f = moments.find((m) => m.id === active);
     const v = ref.current;
-    if (f && v && Number.isFinite(f.locator!.time![0])) { v.currentTime = f.locator!.time![0]; v.pause(); }
+    if (f && v && Number.isFinite(f.locator!.time![0])) {
+      v.pause();
+      if (Number.isFinite(v.duration) && v.duration > 0) v.currentTime = Math.min(v.duration, f.locator!.time![0]);
+      else pending.current = f.locator!.time![0];
+    }
     // Only a change of the picked finding should seek; new findings arriving must not move the playhead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
@@ -70,7 +76,22 @@ export function ReviewVideo({ contentId, versionId, video, findings, comments, a
     if (!box || !length) return 0;
     return Math.min(length, Math.max(0, ((clientX - box.left) / box.width) * length));
   };
-  const seek = (t: number) => { if (ref.current) ref.current.currentTime = Math.min(length, Math.max(0, t)); };
+  const seek = (t: number) => {
+    const v = ref.current;
+    if (!v) return;
+    if (!length) { pending.current = Math.max(0, t); return; }
+    v.currentTime = Math.min(length, Math.max(0, t));
+  };
+  // Some recordings (WebM from a browser) report an unknown length until they are read to the end; asking
+  // for a far point makes the browser work it out, and durationchange then brings the real one.
+  const learnLength = (v: HTMLVideoElement) => {
+    if (Number.isFinite(v.duration) && v.duration > 0) {
+      setLength(v.duration);
+      if (pending.current != null) { v.currentTime = Math.min(v.duration, pending.current); pending.current = null; }
+    } else if (v.duration === Infinity) {
+      v.currentTime = Number.MAX_SAFE_INTEGER;
+    }
+  };
   const pct = (t: number) => `${length ? (Math.min(t, length) / length) * 100 : 0}%`;
 
   const toggle = () => {
@@ -92,13 +113,14 @@ export function ReviewVideo({ contentId, versionId, video, findings, comments, a
     if (!p.dragging && Math.abs(e.clientX - p.x) < DRAG_PX) return;
     p.dragging = true;
     const t = at(e.clientX);
-    setRange([Math.min(p.at, t), Math.max(p.at, t)]);
+    if (canComment) setRange([Math.min(p.at, t), Math.max(p.at, t)]);
+    else seek(t);
   };
   const onUp = (e: React.PointerEvent) => {
     const p = press.current;
     press.current = null;
     if (!p) return;
-    if (!p.dragging) { seek(p.at); return; }
+    if (!p.dragging || !canComment) { if (!p.dragging) seek(p.at); return; }
     const t = at(e.clientX);
     setRange([Math.min(p.at, t), Math.max(p.at, t)]);
     ref.current?.pause();
@@ -114,7 +136,7 @@ export function ReviewVideo({ contentId, versionId, video, findings, comments, a
   };
 
   const post = async () => {
-    if (!range || !note.trim()) return;
+    if (!range || !note.trim() || saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -141,8 +163,13 @@ export function ReviewVideo({ contentId, versionId, video, findings, comments, a
           <video ref={ref} src={versionVideoUrl(contentId, versionId, video.id)} preload="metadata" playsInline
             controlsList="nodownload noremoteplayback noplaybackrate" disablePictureInPicture disableRemotePlayback
             onContextMenu={(e) => e.preventDefault()} onClick={toggle}
-            onLoadedMetadata={(e) => setLength(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)}
-            onTimeUpdate={(e) => setNow(e.currentTarget.currentTime)}
+            onLoadedMetadata={(e) => learnLength(e.currentTarget)}
+            onDurationChange={(e) => {
+              const v = e.currentTarget;
+              // The far seek above found the end: take the length and come back to the start.
+              if (Number.isFinite(v.duration) && v.duration > 0 && !length) { learnLength(v); if (pending.current == null && v.currentTime > 0) v.currentTime = 0; }
+            }}
+            onTimeUpdate={(e) => setNow(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.currentTime : 0)}
             onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
             onError={() => setFailed(true)}
             aria-label={video.name ? `Video: ${video.name}` : "Attached video"}
@@ -153,39 +180,56 @@ export function ReviewVideo({ contentId, versionId, video, findings, comments, a
       {!failed && (
         <div className="flex flex-col gap-2">
           {/* The timeline: findings as coloured marks, pinned comments as dots above, a dragged range shaded. */}
-          <div className="relative pt-3">
-            {pinned.map((c) => (
-              <button key={c.id} type="button" onClick={() => { setOpen(open === c.id ? null : c.id); seek(c.time_start!); }}
-                aria-label={`Comment at ${clock(c.time_start!)}: ${c.body}`} aria-pressed={open === c.id}
-                className="absolute top-0 z-10 h-2.5 w-2.5 -translate-x-1/2 rounded-full border-2 border-surface bg-accent transition hover:scale-125"
-                style={{ left: pct(c.time_start!) }} />
-            ))}
-            <div ref={track} role="slider" tabIndex={0} aria-label="Video position" aria-valuemin={0}
-              aria-valuemax={Math.round(length)} aria-valuenow={Math.round(now)} aria-valuetext={`${clock(now)} of ${clock(length)}`}
-              onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { press.current = null; }}
-              onKeyDown={onKey}
-              className="relative h-8 cursor-pointer touch-none select-none rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50">
-              <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-sunken" />
-              <div className="absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-accent/60" style={{ width: pct(now) }} />
-              {range && (
-                <div className="absolute inset-y-1 rounded bg-accent/20 ring-1 ring-accent/60"
-                  style={{ left: pct(range[0]), width: `calc(${pct(range[1] - range[0])} + 2px)` }} />
-              )}
-              {moments.map((f) => {
-                const [t0, t1] = f.locator!.time!;
-                return (
-                  <button key={f.id} type="button" title={`${clock(t0)} ${f.title}`}
-                    aria-label={`${f.title} at ${clock(t0)}: show this issue`} aria-pressed={active === f.id}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={() => { seek(t0); ref.current?.pause(); onSelect(f.id); }}
-                    className={`absolute top-1/2 h-4 min-w-1.5 -translate-y-1/2 rounded-sm ${DOT[f.level]} transition ${
-                      active === f.id ? "ring-2 ring-accent ring-offset-1 ring-offset-surface" : "opacity-85 hover:opacity-100"}`}
-                    style={{ left: pct(t0), width: `max(6px, ${pct(Math.max(0, t1 - t0))})` }} />
-                );
-              })}
-              <div className="pointer-events-none absolute top-1/2 h-4 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink" style={{ left: pct(now) }} />
+          <div className="flex flex-col">
+            {/* Pinned comments, as dots in a row of their own above the line, each a full size tap target. */}
+            {pinned.length > 0 && (
+              <div className="relative h-6">
+                {pinned.map((c) => (
+                  <button key={c.id} type="button" onClick={() => { setOpen(open === c.id ? null : c.id); seek(c.time_start!); }}
+                    aria-label={`Comment at ${clock(c.time_start!)}: ${c.body}`} aria-pressed={open === c.id}
+                    className="group absolute top-0 flex h-6 w-6 -translate-x-1/2 items-center justify-center"
+                    style={{ left: pct(c.time_start!) }}>
+                    <span className={`h-2.5 w-2.5 rounded-full border-2 border-surface bg-accent transition group-hover:scale-125 ${open === c.id ? "scale-125 ring-2 ring-accent/40" : ""}`} />
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="relative h-8">
+              {/* The slider is only the line. Marks sit over it as their own buttons, so their keys stay theirs. */}
+              <div ref={track} role="slider" tabIndex={0} aria-label="Video position" aria-valuemin={0}
+                aria-valuemax={Math.round(length)} aria-valuenow={Math.round(now)} aria-valuetext={`${clock(now)} of ${clock(length)}`}
+                onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { press.current = null; }}
+                onKeyDown={onKey}
+                className="absolute inset-0 cursor-pointer touch-none select-none rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50">
+                <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-sunken" />
+                <div className="absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-accent/60" style={{ width: pct(now) }} />
+                {range && (
+                  <div className="absolute inset-y-1 rounded bg-accent/20 ring-1 ring-accent/60"
+                    style={{ left: pct(range[0]), width: `calc(${pct(range[1] - range[0])} + 2px)` }} />
+                )}
+                <div className="pointer-events-none absolute top-1/2 h-4 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink" style={{ left: pct(now) }} />
+              </div>
+              <div className="pointer-events-none absolute inset-0">
+                {moments.map((f) => {
+                  const [t0, t1] = f.locator!.time!;
+                  return (
+                    <button key={f.id} type="button" title={`${clock(t0)} ${f.title}`}
+                      aria-label={`${f.title} at ${clock(t0)}: show this issue`} aria-pressed={active === f.id}
+                      onClick={() => { seek(t0); ref.current?.pause(); onSelect(f.id); }}
+                      className="group pointer-events-auto absolute inset-y-0 flex items-center justify-center"
+                      // The bar is the finding's stretch (6px at least); the button is 5px wider each side, 16px at least.
+                      style={{ left: `calc(${pct(t0)} - 5px)`, width: `max(16px, calc(${pct(Math.max(0, t1 - t0))} + 10px))` }}>
+                      <span className={`h-4 rounded-sm ${DOT[f.level]} transition ${
+                        active === f.id ? "ring-2 ring-accent ring-offset-1 ring-offset-surface" : "opacity-85 group-hover:opacity-100"}`}
+                        style={{ width: "max(6px, calc(100% - 10px))" }} />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
+
+          {error && !range && <p role="alert" className="text-xs text-[var(--vt-blocker)]">{error}</p>}
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <button type="button" onClick={toggle} aria-label={playing ? "Pause" : "Play"}
@@ -212,7 +256,7 @@ export function ReviewVideo({ contentId, versionId, video, findings, comments, a
           </div>
           {moments.length > 0 && !range && (
             <p className="text-xs text-subtle">
-              {moments.length} issue{moments.length === 1 ? "" : "s"} on the timeline. Pick a mark to jump to it; drag along the timeline to comment on a stretch.
+              {moments.length} issue{moments.length === 1 ? "" : "s"} on the timeline. Pick a mark to jump to it{canComment ? "; drag along the timeline to comment on a stretch" : ""}.
             </p>
           )}
 
