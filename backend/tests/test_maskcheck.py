@@ -123,3 +123,33 @@ def test_reclaiming_never_hides_an_extra_part(kit):
     found = maskcheck.judge(official, rgb, _clip_tail(rgb, mask)).differences
     assert any(x.kind == "parts" and x.have > x.want for x in found)
     assert not any(x.shortfall for x in found)
+
+
+def _alpha(img) -> np.ndarray:
+    return np.asarray(img)[..., 3] > 127
+
+
+def test_a_character_pulled_wider_is_named_as_stretched(kit):
+    from PIL import Image
+
+    img, official = kit
+    wide = img.resize((int(img.width * 1.35), img.height), Image.LANCZOS)
+    found = maskcheck.stretch(official[1], _alpha(wide))
+    assert found is not None and found.kind == "shape" and "wider" in found.text
+    tall = img.resize((img.width, int(img.height * 1.35)), Image.LANCZOS)
+    assert "taller" in maskcheck.stretch(official[1], _alpha(tall)).text
+
+
+def test_a_character_resized_or_turned_evenly_is_not_stretched(kit):
+    from PIL import Image
+
+    img, official = kit
+    assert maskcheck.stretch(official[1], _alpha(img.resize((img.width // 2, img.height // 2), Image.LANCZOS))) is None
+    assert maskcheck.stretch(official[1], _alpha(img.rotate(30, expand=True))) is None
+
+
+def test_a_mask_too_small_for_moments_says_nothing(kit):
+    _, official = kit
+    tiny = np.zeros((40, 40), bool)
+    tiny[10:14, 10:14] = True
+    assert maskcheck.stretch(official[1], tiny) is None

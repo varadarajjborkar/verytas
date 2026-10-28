@@ -59,9 +59,9 @@ MIN_COUNT_SIDE = 96
 
 @dataclass
 class Difference:
-    kind: str  # "colour_missing" | "colour_new" | "parts"
+    kind: str  # "colour_missing" | "colour_new" | "parts" | "shape" (media/maskcheck.py)
     text: str
-    colour: RGB
+    colour: RGB | None  # None for a shape difference
     severity: float  # 0..1, how far from the artwork
     # For "parts": how many shapes of the colour the cut-out has and the artwork has. A cut-out with fewer is
     # a shortfall, which a clipped mask produces as readily as a missing part (see media/maskcheck.py).

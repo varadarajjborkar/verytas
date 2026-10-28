@@ -12,6 +12,11 @@ less:
   shortfall (a colour missing, or fewer shapes of it) that the reclaimed cut-out no longer shows. Reclaiming
   can therefore withdraw a "missing" that clipping caused, and can never hide an extra eye or limb, a new
   colour, or a shortfall it does not explain.
+- `stretch` adds what colours and counts cannot see: a character squashed or pulled out of proportion. The
+  artwork's silhouette is mapped onto the cut-out by the linear map their second moments imply, turned to
+  the best angle (`maskgeom.fit_stretch`); a similarity (any size, any angle) has both singular values
+  equal, a stretch does not. It speaks only when that map explains the cut-out well, since a cut-out that
+  leaked or was clipped, or a character in another pose, moves the moments too.
 
 Measured and not adopted (figures in evals/results/mascots.md): a gate on SAM's stability or on the
 silhouette's fit to the artwork (every threshold that cut false alarms by half sent dozens of real defects
@@ -25,7 +30,16 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from verytas.media import fidelity
+from verytas.media import fidelity, maskgeom
+
+# A stretch is reported from this ratio of the fitted map's two singular values: above every faithful copy on
+# the mascot benchmark (plain, small and redrawn reach 1.11) and below nine in ten of its stretched characters
+# (1.25 and up; they are pulled to 1.35).
+STRETCH_RATIO = 1.20
+# ... and only when the artwork, mapped that way, overlaps the cut-out at least this well (IoU). Below it the
+# moments describe a bad cut-out or a new pose as much as the character: on the benchmark no acceptable
+# scene, posed scene or other defect passes 0.88 with a ratio over 1.15, and 19 of 30 stretched ones do.
+STRETCH_FIT = 0.88
 
 # A palette-coloured shape beside the mask is taken as part of the character when it is no bigger than this
 # share of the mask: a tail piece, a hat, a limb. Anything bigger is a background region that happens to
@@ -75,22 +89,38 @@ def reclaim(rgb: np.ndarray, mask: np.ndarray, palette: list) -> np.ndarray:
     return out
 
 
+def stretch(official_mask: np.ndarray, mask: np.ndarray) -> fidelity.Difference | None:
+    """A "shape" difference when the cut-out is the artwork stretched one way, or None."""
+    try:
+        fit = maskgeom.fit_stretch(official_mask, mask)
+    except ValueError:
+        return None  # too few pixels for moments
+    if fit.anisotropy < STRETCH_RATIO or fit.fit < STRETCH_FIT:
+        return None
+    way = "wider" if fit.wider else "taller"
+    return fidelity.Difference(
+        "shape", f"stretched: {fit.anisotropy - 1:.0%} {way} for its size than the artwork", None,
+        min(1.0, fit.anisotropy - 1))
+
+
 def judge(official: tuple[np.ndarray, np.ndarray], rgb: np.ndarray, mask: np.ndarray) -> fidelity.Fidelity:
-    """Fidelity for a cut-out, with shortfalls that only clipping explains withdrawn (see the module note).
+    """Fidelity for a cut-out: colours and parts with shortfalls that only clipping explains withdrawn, and
+    a stretch (see the module note).
 
     `official` is `fidelity.official_reference(...)`; `rgb` and `mask` are the scene and the segmenter's mask
     for the character."""
     palette = fidelity.palette_for(official, (rgb, mask))
-    plain = fidelity.compare(official, (rgb, mask), palette=palette)
-    if not any(d.shortfall for d in plain.differences):
-        return plain
-    fuller = reclaim(rgb, mask, palette)
-    if fuller.sum() == mask.sum():
-        return plain
-    try:
-        repaired = fidelity.compare(official, (rgb, fuller), palette=palette)
-    except ValueError:
-        return plain
-    still_short = {d.colour for d in repaired.differences if d.shortfall}
-    plain.differences = [d for d in plain.differences if not d.shortfall or d.colour in still_short]
-    return plain
+    out = fidelity.compare(official, (rgb, mask), palette=palette)
+    if any(d.shortfall for d in out.differences):
+        fuller = reclaim(rgb, mask, palette)
+        if fuller.sum() > mask.sum():
+            try:
+                repaired = fidelity.compare(official, (rgb, fuller), palette=palette)
+            except ValueError:
+                repaired = None
+            if repaired is not None:
+                short = {d.colour for d in repaired.differences if d.shortfall}
+                out.differences = [d for d in out.differences if not d.shortfall or d.colour in short]
+    if (shape := stretch(official[1], mask)) is not None:
+        out.differences.append(shape)
+    return out
