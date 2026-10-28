@@ -623,10 +623,6 @@ Social content is short, so a 300-page PDF behind a caption, a 40 MP image or in
 
 **Search** (`api/search.py`, `components/GlobalSearch.tsx`). One bar at the top of every page (Cmd or Ctrl+K, or /) searches pieces, findings (latest review only), escalations, creators, rules, facts, codenames, artwork, events and the console's own pages and settings. Each group applies the same scoping as the screen it links to, in the query itself: workspace, tier clearance, creators only their own pieces, codenames for brand admins only, and no library hits for creators. Before anything is typed it suggests what needs this person next: the review queue oldest first, open escalations, guidelines reviewers often override, recent pieces. Recent hits are remembered per account in the browser.
 
-## 27. Fit with Inkloom
-
-Inkloom builds specialised AI models for logo design (public site and repository; see `docs/research/inkloom.md`). The failure mode of generated brand marks is fidelity: lettering garbled, details changed, colours drifting. Sections 23 and 24 address exactly that: registered official artwork is ground truth, matched and compared at the pixel level, wordmarks are spell-checked, and look-alikes are surfaced. The same pipeline governs the social content those marks end up in.
-
 ## References
 
 - Lowe (2004). *Distinctive Image Features from Scale-Invariant Keypoints.* IJCV.
