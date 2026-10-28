@@ -491,3 +491,23 @@ body:has(.vt-dock) .vt-toasts { padding-bottom: 5.25rem; }
   to { background: transparent; }
 }
 @media (prefers-reduced-motion: reduce) { .vt-flash { animation: none; } }
+
+/* Inki's wink (components/Inki.tsx). Positions are the artwork's own pixels as fractions of its 256px
+   square. Shutting: the copied eye squashes, then it and its cover fade. Coming back: the cover returns
+   with the eye shut, then the eye opens. */
+.vt-inki { transition: transform 480ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.vt-inki-patch, .vt-inki-eye { position: absolute; pointer-events: none; }
+.vt-inki-patch { left: 57.4%; top: 47.3%; width: 14.1%; height: 16.4%; border-radius: 28%; background: rgb(206, 241, 253);
+  transition: opacity 200ms ease-out; }
+.vt-inki-eye { left: 59%; top: 47.7%; width: 10.9%; height: 17.2%; transform-origin: 50% 55%;
+  transition: opacity 200ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1) 220ms; }
+:is(.vt-inki:hover, a:hover > .vt-inki, button:hover > .vt-inki, a:focus-visible > .vt-inki, button:focus-visible > .vt-inki,
+    .vt-inki-host:hover .vt-inki) {
+  transform: scale(1.12) rotate(-6deg);
+  & .vt-inki-eye { transform: scaleY(0.08); opacity: 0; transition: transform 150ms ease-in, opacity 160ms ease-out 130ms; }
+  & .vt-inki-patch { opacity: 0; transition: opacity 160ms ease-out 130ms; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vt-inki, .vt-inki-patch, .vt-inki-eye { transition: none !important; }
+  .vt-inki:hover, a:hover > .vt-inki, button:hover > .vt-inki { transform: none; }
+}
