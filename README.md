@@ -20,7 +20,7 @@ Verytas checks every post, caption, image, document and video against a brand's 
 
 </div>
 
-<p align="center"><img src="docs/assets/review.png" alt="A piece open on the review screen: the caption with each issue marked in place, the issues listed beside it with the rule, the approved fact and the suggested fix, and a bar at the bottom with one dot per issue and a Next issue button" width="900"></p>
+<p align="center"><img src="docs/assets/review.png" alt="A piece open on the review screen: the caption with each issue marked in place, the issues beside it with the rule and the approved fact behind them and who decided each, the steps from written to published, and a bar at the bottom that sends the piece back with its changes" width="900"></p>
 
 ## The problem
 
@@ -47,13 +47,15 @@ A brand works with dozens of creators and agencies who post every day, in many l
 
 ## Try it in 60 seconds
 
+<p align="center"><img src="docs/assets/landing.png" alt="The landing page: the headline Every post, on brand before it ships, buttons to open the live demo or try a check, and a sample review below it" width="900"></p>
+
 1. Open **[verytas.pages.dev](https://verytas.pages.dev)** and pick a person at *Kitepath*, a made-up online learning brand with eight weeks of history. A short tour shows where things are; skip it, or replay it from Settings.
 2. As **Dev Sharma** (creator), open *My reviews*, paste a caption like *"Kitepath has 2 million learners. Guaranteed results!"* and run it. The claim is checked against the approved fact (1.2 million), a fix appears, and the promise is flagged. Apply the fixes and send it for approval.
 3. Use **Switch account** to become **Arjun Mehta** (brand team). Your piece is now in the review queue, ranked by what needs attention first. Approve it, or send it back with a note.
 
 <p align="center"><img src="docs/assets/dashboard.png" alt="The brand team's dashboard: pieces waiting for a decision, creators, escalations and how work is flowing" width="900"></p>
 
-<p align="center"><img src="docs/assets/tour.png" alt="The guided tour on a first visit: the Review queue in the sidebar is lit, and a card beside it, step 3 of 9, says what the queue is for, with Skip, Back and Next" width="900"></p>
+<p align="center"><img src="docs/assets/tour.png" alt="The guided tour on a first visit: the Review queue in the sidebar is lit, and a card beside it, step 3 of 10, says what the queue is for and how videos and images are marked, with Skip, Back and Next" width="900"></p>
 
 ## How a review works
 
@@ -78,8 +80,11 @@ sequenceDiagram
     P->>P: An independent judge confirms each one, then findings are signed
     P-->>W: Issues in place, ranked P1 to P3, each with its source and a fix
     C->>W: Applies fixes or disputes a reading, then sends for approval
+    B->>W: Marks a video moment or draws on an image, talks it through in Conversations
     B->>W: Approves, sends back or overrides with a reason
     W->>A: Every step is written to a tamper-evident audit log
+    C->>W: Once posted, adds the live link and the platform's numbers
+    A->>B: Guideline health compares how posts that ran into each rule did
 ```
 
 ## Architecture
@@ -90,11 +95,12 @@ flowchart LR
         direction TB
         CR["Creators<br/>Studio app"]:::client
         BT["Brand team<br/>Brand Console app"]:::client
+        AI["Their own AI client<br/>Claude, any MCP client"]:::client
     end
 
     subgraph Web["Next.js server"]
         direction TB
-        UI["Pages and components"]:::web
+        UI["Pages and components<br/>plus a static landing page"]:::web
         BFF["Backend for frontend<br/>holds the session token,<br/>forwards an allowlist of routes"]:::web
     end
 
@@ -104,14 +110,20 @@ flowchart LR
         PRISM["Prism<br/>one agent per part of the post"]:::core
         CHECKS["Checkers<br/>facts, words, artwork,<br/>tone, accessibility"]:::core
         GUARD["Safety layer<br/>redaction, guardrails,<br/>signed findings"]:::sec
+        CONV["Conversations<br/>sealed messages,<br/>@Inki on consent"]:::core
+        MCP["MCP endpoint<br/>personal tokens,<br/>read and submit only"]:::api
     end
 
     LOCAL["Local media tools<br/>OCR, speech to text,<br/>image matching, faces, PDF"]:::local
     VISION["Vision worker<br/>finds and compares mascots<br/>(wakes on demand)"]:::local
     MODELS["Ollama Cloud<br/>gpt-oss, gemma4 vision"]:::ext
-    DB[("Database<br/>rules, facts, reviews,<br/>hash-chained audit log")]:::data
+    DB[("Database<br/>rules, facts, reviews, results,<br/>hash-chained audit log")]:::data
+    REDIS[("Redis<br/>live conversation events")]:::data
 
     CR & BT --> UI --> BFF --> API --> PRISM
+    AI --> MCP --> API
+    API --> CONV --> REDIS
+    CONV --> GUARD
     PRISM --> CHECKS
     PRISM --> LOCAL
     PRISM --> VISION
@@ -141,19 +153,25 @@ flowchart LR
 ```mermaid
 flowchart LR
     U["Visitor's browser"]:::client
+    AIC["Their own AI client<br/>MCP over HTTPS"]:::client
     CF["Cloudflare Pages<br/>verytas.pages.dev<br/>pass-through worker"]:::edge
 
     subgraph AWS["AWS EC2, Mumbai"]
         direction TB
-        CAD["Caddy<br/>HTTPS, security headers"]:::web
+        CAD["Caddy<br/>HTTPS, security headers,<br/>/mcp straight to the API"]:::web
         NX["Next.js<br/>:3000"]:::web
         FA["FastAPI + Prism<br/>:8000"]:::api
         SQ[("SQLite<br/>+ media blobs")]:::data
         TM["Deploy timer<br/>every 3 min"]:::ops
+        RD[("Redis<br/>loopback only")]:::data
+        KW["Keep-warm timer<br/>judging hours, 10 USD cap"]:::ops
         VW["Vision worker<br/>stops itself when idle"]:::api
         CV["Document converter<br/>LibreOffice, no network,<br/>throwaway user"]:::sec
         CAD --> NX --> FA --> SQ
+        CAD -- "/mcp" --> FA
+        FA --> RD
         FA -- "starts it when needed" --> VW
+        KW -- "keeps it awake" --> VW
         FA -- "local socket" --> CV
     end
 
@@ -169,6 +187,7 @@ flowchart LR
     end
 
     U --> CF --> CAD
+    AIC --> CAD
     FA -- "redacted requests" --> OL
     TM -- "pulls with a read-only key,<br/>builds, health-checks,<br/>rolls back on failure" --> LIVE
 
@@ -246,6 +265,8 @@ The three improvements committed to after Round 2, and where each stands.
 | **Creators and managers talk it through** | *Conversations* beside the piece in question: replies, edits, files with previews, unread counts, and Meet, Teams or Zoom links that become a Join card. Each exchange is kept with its time, beside the piece, so the meeting's record is the conversation itself. | Voice through masked temporary phone numbers. Telephony is a separate, paid infrastructure; for a prototype it would cost money every month and add little over the free meeting apps people already use. |
 | **Sharper vision and speech** | Recoloured app icons found by outline: 33% to 100%. Mascots: a part the cut-out clipped no longer reads as missing, and a stretched body is named (false alarms 64 to 50 of 180, stretched 0 to 18 of 30). The vision worker wakes on demand and is kept warm in judging hours inside a 10 USD cap. Before and after are published for each ([artwork](backend/evals/results/assets.md), [mascots](backend/evals/results/mascots.md)). | A GPU, and with it a stronger Hindi speech model: AWS refused the GPU quota twice, so the models run on CPU. Hindi is helped instead by matching codenames by sound. |
 | **The Brand Console runs it** | An approved-people tab with agreement dates; videos with each finding as a mark on the timeline, range comments and 0.5x to 2x; images marked up with a marker, eraser and text, which the creator sees in place. | |
+
+<p align="center"><img src="docs/assets/conversations.png" alt="Conversations: the brand team's inbox on the left, and a thread with a creator about a piece, with a Google Meet link shown as a Join card and Ask Inki shortcuts above the message box" width="900"></p>
 
 Also added in Round 3: performance feedback (a live post's link and numbers on the piece, compared per rule in
 Guideline health), a personal-token MCP endpoint, a landing page, and Redis behind conversations.

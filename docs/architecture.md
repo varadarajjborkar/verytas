@@ -306,8 +306,9 @@ The browser never holds an API token. Pages render on the Next.js server, and ev
 flowchart LR
     subgraph Browser["Two apps, one per side"]
         direction TB
-        CR["Studio :3001<br/>creators: My work,<br/>My reviews, Ask"]:::client
-        MG["Brand Console :3000<br/>Dashboard, Review queue,<br/>Escalations, Library, Ask"]:::client
+        CR["Studio :3001<br/>creators: My work,<br/>My reviews, Conversations, Ask"]:::client
+        MG["Brand Console :3000<br/>Dashboard, Review queue,<br/>Escalations, Conversations,<br/>Library, Health, Ask"]:::client
+        MC["Their own AI client<br/>MCP, personal token"]:::client
     end
 
     subgraph Web["Next.js server: holds the token"]
@@ -323,9 +324,12 @@ flowchart LR
         ADM["admin<br/>/me /users /audit /bootstrap"]:::api
         KNO["knowledge<br/>/rules /rules/extract /facts<br/>/confidential-terms /brand-assets"]:::data
         MED["media<br/>/media /contents/precheck"]:::check
-        GOV["governance<br/>/escalations /events<br/>/public-contacts"]:::sec
+        GOV["governance<br/>/escalations /events<br/>/public-contacts /people"]:::sec
+        MSG["conversations<br/>/conversations, messages,<br/>files, stream, @Inki"]:::core
+        RES["results<br/>/contents/{id}/result<br/>/results/import"]:::api
+        MCPS["/mcp<br/>tools: read, search, submit"]:::sec
         CON["content<br/>/contents /reviews /findings<br/>transition, comments, timeline,<br/>resubmit, ai-edit, disputes,<br/>document preview and pages"]:::core
-        INS["insights<br/>/insights/overview, recurring,<br/>guideline-health"]:::api
+        INS["insights<br/>/insights/overview, recurring,<br/>guideline-health, performance"]:::api
         AST["assistant · chats<br/>/assistant/context /chats"]:::api
     end
 
@@ -334,11 +338,15 @@ flowchart LR
     GRD["Guardrails<br/>offers, contact swaps,<br/>instructions to the AI"]:::sec
     LLM["Ollama Cloud<br/>gpt-oss, gemma4"]:::ext
     DB[("SQLite / Postgres<br/>+ hash-chained audit log")]:::data
+    RDS[("Redis<br/>live events")]:::data
 
     CR & MG --> PG & PX & CH
     CR & MG -.-> SS
     PG --> ADM & INS
-    PX --> CON & MED & KNO & AST & ADM & GOV
+    PX --> CON & MED & KNO & AST & ADM & GOV & MSG & RES
+    MC --> MCPS --> CON
+    MSG --> RDS
+    MSG -- "@Inki, on consent" --> RED
     CON & GOV -. "user text" .-> GRD
     GOV -- "event update chain:<br/>rules rewritten, pieces re-checked" --> PRISM
     CH -- "context and chat,<br/>redacted together" --> AST
@@ -346,7 +354,7 @@ flowchart LR
     CON --> PRISM
     KNO -- "brand-book import" --> RED
     PRISM --> RED --> LLM
-    ADM & KNO & MED & CON & INS & AST & GOV --> DB
+    ADM & KNO & MED & CON & INS & AST & GOV & MSG & RES --> DB
 
     style Browser fill:#f8fafc,stroke:#94a3b8,color:#334155
     style Web fill:#f8fafc,stroke:#94a3b8,color:#334155
