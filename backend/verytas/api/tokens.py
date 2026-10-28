@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 
@@ -74,7 +74,10 @@ def _out(t: PersonalToken) -> dict:
 
 
 @router.post("/me/tokens", response_model=TokenCreated, status_code=status.HTTP_201_CREATED)
-async def create_token(body: TokenIn, session: Session, user: CurrentUser) -> dict:
+async def create_token(body: TokenIn, request: Request, session: Session, user: CurrentUser) -> dict:
+    if request.app.state.settings.mcp_tokens_need_password and not user.password_hash:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "personal tokens are for your own account: sign up with a password to make one")
     scopes = ["read", "write"] if "write" in body.scopes else ["read"]
     now = utcnow()
     held = (await session.scalars(select(PersonalToken).where(

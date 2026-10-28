@@ -38,6 +38,8 @@ from verytas.prism.orchestrator import Prism
 from verytas.services.messages import MessageHub, MessageSeal
 from verytas.services.workspace import backfill_system_rule_tiers, backfill_system_rules
 
+log = logging.getLogger("verytas")
+
 
 def _init_sentry(settings: Settings) -> None:
     if not settings.sentry_dsn:
@@ -115,7 +117,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # An id past 64 bits passes int validation but can't be bound to SQLite. Nothing has such an id, so
     # it is the same answer as any unknown one, given once here rather than capped on every route.
     @app.exception_handler(OverflowError)
-    async def _too_big(_: Request, __: OverflowError) -> JSONResponse:
+    async def _too_big(request: Request, exc: OverflowError) -> JSONResponse:
+        # Logged, so an overflow from anything other than an id still reaches the logs and Sentry.
+        log.warning("overflow on %s %s answered as not found: %s", request.method, request.url.path, exc)
         return JSONResponse({"detail": "not found"}, status_code=404)
 
     @app.exception_handler(StatementError)

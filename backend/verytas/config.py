@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     # The highest tier a token can read, whatever the person's own clearance. Material leaving for an AI
     # client is hosted by a third party, so confidential material stays out unless a deployment opts in.
     mcp_max_tier: Literal["public", "internal", "confidential"] = "internal"
+    # Tokens only for accounts with a password of their own. The demo picker's people are shared by every
+    # visitor who picks them, so a token made there would be anyone's, and outlive the visit. Turn off where
+    # a brand admin issues accounts without passwords.
+    mcp_tokens_need_password: bool = True
     # Error monitoring is opt-in; nothing is sent unless a DSN is configured.
     sentry_dsn: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("SENTRY_DSN", "VERYTAS_SENTRY_DSN")

@@ -61,6 +61,15 @@ def _message(e: HTTPException) -> str:
     return str(d)
 
 
+def _fold(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
+def _inside_a_term(query: str, redactor: Redactor) -> bool:
+    q = _fold(query)
+    return len(q) >= 2 and any(q in _fold(term) for term in redactor.terms)
+
+
 def _scrub(redactor: Redactor, value: Any) -> Any:
     """Confidential terms out of every string in a result, wherever it came from. A piece of text a person
     wrote, or a finding that quotes it, can hold a codename; the AI client is a third party."""
@@ -251,6 +260,11 @@ def build_server(settings: Settings) -> FastMCP:
         get_review for a piece) and a title. Matching is plain case-insensitive text. Does not reach other
         people's drafts, the library, people or confidential terms."""
         async def body(session, user, request, redactor):
+            # Search matches the stored text, before redaction, so a query that is part of a confidential term
+            # would answer "is this the codename?" one letter at a time. Such a query finds nothing, the same
+            # nothing as a word that isn't there.
+            if redactor.redact(query) != query or _inside_a_term(query, redactor):
+                return {"hits": []}
             found = await search.search(request, session, user, q=query, limit=limit)
             return {"hits": [{"kind": h.type, "id": h.id, "title": h.title, "detail": h.subtitle}
                              for h in found.results if h.type in ("content", "finding", "rule")]}
@@ -307,6 +321,8 @@ def build_server(settings: Settings) -> FastMCP:
         app: personal contact details and attempts to steer the reviewer are refused. Needs a token with write
         access. Does not change the piece's status or any finding."""
         async def body(session, user, request, redactor):
+            # Called as a function, the REST route's role dependency doesn't run; it is applied here instead.
+            await _WRITER(user)
             comment = await content_api.add_comment(content_id, CommentIn(body=text), session, user)
             return {"comment_id": comment.id}
         return await _run(ctx, "add_comment", "write", body)

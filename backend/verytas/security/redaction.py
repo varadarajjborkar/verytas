@@ -39,6 +39,8 @@ class Redactor:
         # Loose matching: hyphenated, glued, re-spaced and plural variants are
         # redacted too. Over-redaction is cheap; a leaked codename is not.
         self._terms = [term_pattern(t, loose=True) for t in terms]
+        # The words themselves, for callers that must refuse to search inside one (mcpserver/tools.py).
+        self.terms: tuple[str, ...] = tuple(terms)
         self._forward: dict[str, str] = {}
         self._reverse: dict[str, str] = {}
         self.count = 0

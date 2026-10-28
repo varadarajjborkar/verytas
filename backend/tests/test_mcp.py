@@ -11,6 +11,7 @@ import re
 import time
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -21,6 +22,13 @@ from verytas.models import AuditEntry, PersonalToken, Role, User, Workspace, utc
 
 HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
 SPY = "Project Lumen"
+
+
+@pytest.fixture
+def settings(tmp_path) -> Settings:
+    # Bootstrapped accounts have no password; most tests here are about the token, not who may make one.
+    return Settings(database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", llm_mode="offline",
+                    keys_dir=tmp_path / "keys", faces_enabled=False, mcp_tokens_need_password=False)
 
 
 def _make_token(client, session_token, *, scopes=("read",), days=None, name="laptop"):
@@ -191,7 +199,8 @@ def test_a_browser_origin_is_refused_unless_listed(client, world, settings):  # 
 
 def test_a_listed_origin_passes(tmp_path):
     cfg = Settings(database_url=f"sqlite+aiosqlite:///{tmp_path / 'o.db'}", llm_mode="offline",
-                   keys_dir=tmp_path / "keys", faces_enabled=False, mcp_allowed_origins=["https://app.example"])
+                   keys_dir=tmp_path / "keys", faces_enabled=False, mcp_allowed_origins=["https://app.example"],
+                   mcp_tokens_need_password=False)
     with TestClient(create_app(cfg)) as c:
         boot = c.post("/bootstrap", json={"workspace_name": "A", "admin_email": "a@a.io", "admin_name": "A"})
         pat = _make_token(c, boot.json()["token"])["token"]
@@ -214,7 +223,8 @@ def test_a_read_only_token_cannot_use_a_write_tool(client, world):  # noqa: F811
 
 def test_tool_calls_are_rate_limited_per_token(tmp_path):
     cfg = Settings(database_url=f"sqlite+aiosqlite:///{tmp_path / 'r.db'}", llm_mode="offline",
-                   keys_dir=tmp_path / "keys", faces_enabled=False, mcp_calls_per_minute=3)
+                   keys_dir=tmp_path / "keys", faces_enabled=False, mcp_calls_per_minute=3,
+                   mcp_tokens_need_password=False)
     with TestClient(create_app(cfg)) as c:
         admin = c.post("/bootstrap", json={"workspace_name": "A", "admin_email": "a@a.io",
                                            "admin_name": "A"}).json()["token"]
@@ -383,7 +393,7 @@ async def test_a_real_mcp_client_round_trip(tmp_path):
     from mcp.client.streamable_http import streamable_http_client
 
     cfg = Settings(database_url=f"sqlite+aiosqlite:///{tmp_path / 'c.db'}", llm_mode="offline",
-                   keys_dir=tmp_path / "keys", faces_enabled=False)
+                   keys_dir=tmp_path / "keys", faces_enabled=False, mcp_tokens_need_password=False)
     app = create_app(cfg)
 
     async with app.router.lifespan_context(app):
@@ -418,3 +428,42 @@ async def test_the_database_never_holds_a_token_in_the_clear(client, world):  # 
     assert not any(made["token"] in d for d in details)
 
 
+
+
+async def test_an_auditor_cannot_comment_through_mcp_either(client, world):  # noqa: F811
+    pat = _make_token(client, world["reviewer"], scopes=("read", "write"))["token"]
+    async with client.app.state.db.sessionmaker() as s:
+        (await s.scalar(select(User).where(User.email == "reviewer@acme.io"))).role = Role.auditor
+        await s.commit()
+    cid = _submit(client, world["creator"])
+    is_error, msg = _call(client, pat, "add_comment", content_id=cid, text="Looks fine to me")
+    assert is_error and "needs role" in msg
+
+
+def test_search_cannot_be_used_to_spell_out_a_codename(client, world):  # noqa: F811
+    admin = _auth(world["admin"])
+    # The shared fixture may already hold it.
+    assert client.post("/confidential-terms", headers=admin, json={"term": "Project Lumen"}).status_code in (201, 409)
+    _submit(client, world["creator"], body="Teaser: Project Lumen lands soon, stay tuned.")
+    pat = _make_token(client, world["creator"])["token"]
+    # Every piece of the codename, whole or partial, finds the same nothing as a word that isn't there.
+    for probe in ("Project Lumen", "Project Lu", "lumen", "project  LUM", "Project Zzz"):
+        is_error, body = _call(client, pat, "search", query=probe)
+        assert not is_error and body["hits"] == [], probe
+    # An ordinary word still searches.
+    _, body = _call(client, pat, "search", query="Teaser")
+    assert body["hits"]
+
+
+def test_tokens_are_only_for_accounts_with_their_own_password(tmp_path):
+    cfg = Settings(database_url=f"sqlite+aiosqlite:///{tmp_path / 'p.db'}", llm_mode="offline",
+                   keys_dir=tmp_path / "keys", faces_enabled=False)
+    with TestClient(create_app(cfg)) as c:
+        boot = c.post("/bootstrap", json={"workspace_name": "A", "admin_email": "a@a.io", "admin_name": "A"})
+        made = c.post("/me/tokens", headers=_auth(boot.json()["token"]), json={"name": "x", "scopes": ["read"]})
+        assert made.status_code == 403 and "own account" in made.json()["detail"]
+
+
+def test_bad_tokens_from_one_address_are_slowed_down(client):
+    statuses = [_rpc(client, "vt_pat_" + "x" * 43, "tools/list").status_code for _ in range(25)]
+    assert statuses[:20] == [401] * 20 and statuses[-1] == 429

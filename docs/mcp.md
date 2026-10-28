@@ -18,6 +18,11 @@ A token starts with `vt_pat_`. You can hold up to five active tokens. Revoke one
 working on the next request. The same can be done over the API (`POST`, `GET` and `DELETE /me/tokens`) with
 your web session.
 
+Tokens are for your own account: one with a password, made at sign up. The people in the demo's picker are
+shared by every visitor who picks them, so they can't make tokens (set `VERYTAS_MCP_TOKENS_NEED_PASSWORD=false`
+where a brand admin issues accounts without passwords). Signing out of the web app does not revoke your
+tokens, the way signing out of a code host leaves your access tokens alone; revoke them in Settings.
+
 ## Connect a client
 
 Claude Code:
@@ -87,10 +92,14 @@ A token can only narrow what its person can do. It never widens it.
   Confidential-tier pieces and rules do not appear in any result.
 - **Confidential terms never appear.** Every string in every result is passed through the same redaction used
   before text goes to a model, so a codename that sits in a piece or a finding comes back as `[[TERM_1]]`.
-  There is no tool that lists terms.
-- **Scopes.** A read-only token that calls a write tool gets a tool error, not a crash, and the attempt is
-  audited.
-- **Rate limit.** 60 tool calls a minute per token, counted in the API process (`VERYTAS_MCP_CALLS_PER_MINUTE`).
+  There is no tool that lists terms. Search matches stored text before redaction, so a query that is part of
+  a codename ("Project Lu") finds nothing, the same nothing as a word that isn't there; it can't be used to
+  spell a term out one letter at a time.
+- **Scopes and roles.** A read-only token that calls a write tool gets a tool error, not a crash, and the
+  attempt is audited. A write tool also checks the person's role exactly as the app does, so an auditor's
+  token can't comment even with write access.
+- **Rate limit.** 60 tool calls a minute per token, counted in the API process (`VERYTAS_MCP_CALLS_PER_MINUTE`),
+  and 240 requests of any kind. Bad tokens from one address are slowed to 20 a minute (429) and logged.
 - **Origin check.** A request that carries an `Origin` header is refused unless that origin is listed in
   `VERYTAS_MCP_ALLOWED_ORIGINS` (empty by default). AI clients are not browsers and send no `Origin`, so they
   pass; a web page, including one using DNS rebinding, does not. The check runs before the token is read.

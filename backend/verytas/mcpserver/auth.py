@@ -29,6 +29,19 @@ SCOPE_KEY = "verytas.principal"
 # this often per token.
 LAST_USED_EVERY = timedelta(minutes=1)
 _MAX_TOKEN_LEN = 128
+REQUESTS_PER_MINUTE = 240
+FAILURES_PER_MINUTE = 20
+
+
+def _client(scope: Scope) -> str:
+    """The caller's address. Behind the local Caddy every request comes from loopback, so the first
+    forwarded hop is used then, and only then: from anywhere else the header is the caller's to forge."""
+    host = (scope.get("client") or ("", 0))[0]
+    if host in ("127.0.0.1", "::1"):
+        forwarded = Headers(scope=scope).get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return host
 
 
 @dataclass(frozen=True)
@@ -70,6 +83,12 @@ class CallLimiter:
         self._calls: dict[int, deque[float]] = {}
         self._noted: dict[int, float] = {}
 
+    def blocked(self, key) -> bool:
+        """Whether `key` has used up this window, without counting a call."""
+        recent = self._calls.get(key)
+        now = time.monotonic()
+        return bool(recent) and len([t for t in recent if now - t <= 60]) >= self.per_minute
+
     def take(self, token_id: int) -> tuple[bool, bool]:
         """Returns (allowed, first refusal in this window). The caller audits only the first refusal, so
         a loop hammering a limited token can't fill the audit chain."""
@@ -90,6 +109,11 @@ class CallLimiter:
         return True, False
 
 
+def _slow_down() -> JSONResponse:
+    return JSONResponse({"error": "rate_limited", "error_description": "too many requests; wait a minute"},
+                        status_code=429, headers={"Retry-After": "60"})
+
+
 def _unauthorised(*, had_credentials: bool) -> JSONResponse:
     challenge = 'Bearer realm="verytas-mcp"' + (', error="invalid_token"' if had_credentials else "")
     return JSONResponse({"error": "unauthorized", "error_description": "a valid personal token is required"},
@@ -107,6 +131,10 @@ class McpGate:
 
     def __init__(self, session_manager) -> None:
         self._manager = session_manager
+        # Tool calls have their own per-token limit (tools.py). These cover everything else a caller can send:
+        # each request costs a token lookup, and a stream of bad tokens is a guessing attempt.
+        self._requests = CallLimiter(REQUESTS_PER_MINUTE)
+        self._failures = CallLimiter(FAILURES_PER_MINUTE)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -120,13 +148,25 @@ class McpGate:
             await JSONResponse({"error": "forbidden", "error_description": "origin not allowed"},
                                status_code=403)(scope, receive, send)
             return
+        caller = _client(scope)
+        if self._failures.blocked(caller):
+            await _slow_down()(scope, receive, send)
+            return
         scheme, _, credential = headers.get("authorization", "").partition(" ")
         credential = credential.strip()
         principal = None
         if scheme.lower() == "bearer" and credential:
             principal = await authenticate(app, credential)
         if principal is None:
+            if credential:
+                _, first = self._failures.take(caller)
+                if first:
+                    log.warning("mcp: repeated bad tokens from one address; slowing it down")
             await _unauthorised(had_credentials=bool(credential))(scope, receive, send)
+            return
+        allowed, _ = self._requests.take(principal.token_id)
+        if not allowed:
+            await _slow_down()(scope, receive, send)
             return
         scope[SCOPE_KEY] = principal
         await self._manager.handle_request(scope, receive, send)
