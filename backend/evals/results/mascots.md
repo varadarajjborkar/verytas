@@ -15,13 +15,13 @@ cached (`evals.mascots.cache`); every row below is a replay of the same outputs 
 | Variant | Before | After | True mask |
 |---|---|---|---|
 | plain | 4/30 | 3/30 | 1/30 |
-| busy background | 16/30 | 11/30 | 1/30 |
+| busy background | 16/30 | 10/30 | 1/30 |
 | small | 1/30 | 1/30 | 1/30 |
-| rotated | 19/30 | 14/30 | 9/30 |
-| JPEG | 18/30 | 13/30 | 4/30 |
+| rotated | 19/30 | 16/30 | 9/30 |
+| JPEG | 18/30 | 14/30 | 4/30 |
 | redrawn | 6/30 | 6/30 | 5/30 |
-| **all acceptable** | **64/180** | **48/180** | 21/180 |
-| posed (arms up, wide) | 36/56 | 26/56 | |
+| **all acceptable** | **64/180** | **50/180** | 21/180 |
+| posed (arms up, wide) | 36/56 | 30/56 | |
 
 Most remaining false alarms are still the cut-out: with the true mask they fall to 21/180.
 
@@ -32,9 +32,9 @@ own table counts any parts finding, which credits a missing arm "caught" as clip
 
 | Defect | Before | After |
 |---|---|---|
-| stretched body | 0/30 | **19/30** |
+| stretched body | 0/30 | **18/30** |
 | recolour | 30/30 | 30/30 |
-| swapped colours | 22/30 | 20/30 |
+| swapped colours (flagged at all; named as a colour 12 then 11) | 22/30 | 20/30 |
 | extra eye | 25/28 | 25/28 |
 | extra limb | 17/22 | 17/22 |
 | extra tail piece | 3/11 | 3/11 |
@@ -69,8 +69,16 @@ cut-out gates it. Caught / flagged among 236 acceptable and posed scenes / among
 | **1.20** | 22 / 9 / 6 | 21 / 1 / 2 | **19 / 0 / 0** | 17 / 0 / 0 |
 | 1.25 | 22 / 7 / 6 | 21 / 0 / 2 | 19 / 0 / 0 | 17 / 0 / 0 |
 
-Chosen: 1.20 and 0.88. The thresholds were set on this benchmark, which stretches only one way by one
-amount; a brand's real artwork should be checked against reviewer decisions.
+Chosen: 1.20 and 0.88, plus a third condition: the ratio of the silhouette's own two spreads must change by
+1.05 or more. A turn leaves that ratio exactly as it was, and without it an oval body turned 90 degrees read
+as "104% taller" (the rotation search cannot tell which way a symmetric body faces). It costs one stretched
+body: 18/30 are named, still with none of the 236 acceptable or posed scenes and none of the 185 other
+defects called stretched.
+
+All three thresholds were set on this benchmark, which stretches only horizontally and only by 1.35x, so the
+figures are optimistic; a brand's real artwork should be checked against reviewer decisions. A character
+that is both mirrored and stretched is not read as stretched (the map is fitted over rotations only), and
+mascots have no mirror check yet.
 
 ## Tried and not adopted
 

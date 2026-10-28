@@ -233,7 +233,7 @@ method and the full results.
 | Engine | Tested on | Result |
 | --- | --- | --- |
 | [Artwork](backend/evals/results/assets.md) | 1,200 scenes | **96%** of misuse caught, **4.7%** false alarms; recoloured app icons **24/24** (33% before), found by outline when the colours are swapped |
-| [Mascots](backend/evals/mascots) | 425 scenes | every character found; what changed named in 73 to 100% of cases, a stretched body in 19/30 (was 0); false alarms on acceptable characters 48/180 (was 64) ([details](backend/evals/results/mascots.md)) |
+| [Mascots](backend/evals/mascots) | 425 scenes | every character found; most defects named (extra eyes 25/28, recolours 30/30), a stretched body 18/30 (was 0); false alarms on acceptable characters 50/180 (was 64) ([details](backend/evals/results/mascots.md)) |
 | [Text in images](backend/evals/results/ocr.md) | 240 images | **88%** of prices, codes and names read exactly |
 | [Speech](backend/evals/results/speech.md) | 104 clips | about **10%** word error in English; Hindi much weaker, so codenames are also matched by sound |
 | [Video](backend/evals/results/video.md) | 36 videos | on-screen claims **11/11**, spoken claims **8/10**, artwork misuse 32/45, each at the right moment |
@@ -248,7 +248,7 @@ method and the full results.
 
 ## What comes next
 
-- **Sharper visual checks on busy backgrounds**, where a mascot's cut-out still clips or takes in background: a better segmenter for thin appendages would close most of the gap to the true mask (48 against 21 false alarms in 180).
+- **Sharper visual checks on busy backgrounds**, where a mascot's cut-out still clips or takes in background: a better segmenter for thin appendages would close most of the gap to the true mask (50 against 21 false alarms in 180).
 - **Performance from the platforms themselves:** Instagram's insights first, pulled for posts whose link is recorded, so the numbers no longer need typing.
 - **A GPU** for the language, vision and Hindi speech models once AWS grants the quota; the general speech model still mishears much Hindi.
 
