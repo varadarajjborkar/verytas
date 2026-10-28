@@ -110,26 +110,24 @@ export function SideNav() {
           })}
         </ul>
       </nav>
-      {me && !collapsed && (
-        <div className="hidden px-5 pb-1 md:mt-auto md:block">
-          <p className="truncate text-xs font-medium">{me.name}</p>
-          <p className="truncate text-[11px] text-subtle">
-            {side === "creator" ? "Creator" : `Brand team · ${ROLE_LABEL[me.role] ?? me.role}`}
-          </p>
-          {demo && (
-            <button type="button" onClick={switchAccount}
-              className="mt-2 block text-xs font-medium text-accent underline-offset-2 hover:underline">
-              Switch account
-            </button>
-          )}
-          <AiInfoButton className="mt-2 inline-block text-left text-[11px] text-subtle underline-offset-2 hover:text-ink hover:underline">
-            AI-assisted · how AI is used
-          </AiInfoButton>
+      {/* The account, and its settings behind the gear: one card at the foot of the rail. */}
+      {me && !collapsed ? (
+        <div className="hidden flex-col gap-1.5 px-3 pb-3 md:mt-auto md:flex">
+          <div className="flex items-center gap-3 px-2 text-[11px]">
+            {demo && (
+              <button type="button" onClick={switchAccount} className="font-medium text-accent underline-offset-2 hover:underline">
+                Switch account
+              </button>
+            )}
+            <AiInfoButton className="ml-auto text-subtle underline-offset-2 hover:text-ink hover:underline">How AI is used</AiInfoButton>
+          </div>
+          <SettingsMenu account={{ name: me.name, role: side === "creator" ? "Creator" : `Brand team · ${ROLE_LABEL[me.role] ?? me.role}` }} />
+        </div>
+      ) : (
+        <div className={`hidden md:mt-auto md:block ${collapsed ? "px-2.5 py-3 [&>button]:mx-auto" : "p-3"}`}>
+          <SettingsMenu compact={collapsed} />
         </div>
       )}
-      <div className={`hidden md:block ${me && !collapsed ? "" : "md:mt-auto"} ${collapsed ? "px-2.5 py-3 [&>button]:mx-auto" : "p-3"}`}>
-        <SettingsMenu compact={collapsed} />
-      </div>
     </header>
   );
 }

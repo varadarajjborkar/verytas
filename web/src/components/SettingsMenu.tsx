@@ -39,8 +39,9 @@ type Tab = SettingsTab;
 /** Dispatched on window (detail: a tab) by anything that wants Settings opened there, such as the search bar. */
 export const OPEN_SETTINGS = "vt-open-settings";
 
-/** The settings button, and the settings window it opens over a blurred page. */
-export function SettingsMenu({ compact = false }: { compact?: boolean }) {
+/** The settings button, and the settings window it opens over a blurred page. Given the signed-in account, the
+ * button is that account's card: who you are, and the gear that opens your settings. */
+export function SettingsMenu({ compact = false, account }: { compact?: boolean; account?: { name: string; role: string } }) {
   const [open, setOpen] = useState(false);
   const [first, setFirst] = useState<Tab>("profile");
   const button = useRef<HTMLButtonElement>(null);
@@ -64,13 +65,21 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
   return (
     <>
       <button ref={button} type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open}
-        aria-label="Settings" data-tour="settings"
+        aria-label={account && !compact ? `Settings: ${account.name}, ${account.role}` : "Settings"} data-tour="settings"
         className={compact
           ? "grid h-10 w-10 place-items-center rounded-xl text-muted transition hover:bg-sunken hover:text-ink"
-          : "group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-muted transition hover:bg-sunken hover:text-ink"}>
+          : account
+            ? "group flex w-full items-center gap-2.5 rounded-xl border border-line bg-raised/60 px-3 py-2 text-left transition hover:border-line-strong hover:bg-raised"
+            : "group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-muted transition hover:bg-sunken hover:text-ink"}>
+        {account && !compact && (
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block truncate text-[13px] font-medium text-ink">{account.name}</span>
+            <span className="block truncate text-[11px] text-subtle">{account.role}</span>
+          </span>
+        )}
         <SettingsIcon size={compact ? 20 : 18} strokeWidth={1.75}
-          className="shrink-0 transition-transform duration-500 ease-out group-hover:rotate-45" />
-        {!compact && <span className="text-sm font-medium">Settings</span>}
+          className="shrink-0 text-muted transition-transform duration-500 ease-out group-hover:rotate-45 group-hover:text-ink" />
+        {!compact && !account && <span className="text-sm font-medium">Settings</span>}
       </button>
       {open && <SettingsDialog onClose={close} first={first} />}
     </>
