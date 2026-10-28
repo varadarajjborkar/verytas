@@ -4,7 +4,7 @@
 
 | Artwork | Scenes | Found | False alarms |
 |---|---|---|---|
-| icon | 168 | 98% | 2% |
+| icon | 168 | 99% | 2% |
 | logo | 168 | 100% | 2% |
 | none (absent) | 24 | n/a | 0% |
 | pack | 168 | 100% | 1% |
@@ -28,7 +28,7 @@
 | competitor | competitor | 24 | 100% | n/a |
 | mirrored | logo | 24 | 100% | n/a |
 | mirrored | wordmark | 24 | 96% | nothing (1) |
-| recoloured | icon | 24 | 33% | nothing (16) |
+| recoloured | icon | 24 | 100% | n/a |
 | recoloured | logo | 24 | 96% | nothing (1) |
 | recoloured | pack | 24 | 100% | n/a |
 | recoloured | wordmark | 24 | 92% | VIS-ASSET-RETIRED (1), nothing (1) |
@@ -47,4 +47,4 @@
 | stretched | pack | 24 | 100% | n/a |
 | stretched | wordmark | 24 | 92% | VIS-ASSET-ALTERED (1), nothing (1) |
 
-Overall: false alarms 4.7% of 696 correct scenes; caught 92.9% of 504 misuses. Time per scene (6 library assets): median 2.76 s, p95 9.07 s.
+Overall: false alarms 4.7% of 696 correct scenes; caught 96.0% of 504 misuses. Time per scene (6 library assets, one process, first 150 scenes): median 1.74 s, p95 17.4 s (9.5 s p95 and 2.49 s median for the previous matcher on the same scenes, run earlier on the same machine). The full run was sharded over 7 processes, so its own timings are not comparable.
