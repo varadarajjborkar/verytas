@@ -491,3 +491,17 @@ export type PinnedComment = {
   span_start: number | null; span_end: number | null; media_id: string | null;
   time_start: number | null; time_end: number | null; box: number[] | null; marks: Mark[] | null; created_at: string;
 };
+
+/** GET /contents/{id}/result: the live post's link and the numbers someone recorded. */
+export type PostMetrics = Partial<Record<"views" | "reach" | "likes" | "comments" | "shares" | "saves" | "watch_seconds", number>>;
+export type PostResult = {
+  content_id: number; url: string; platform: string; posted_on: string | null; metrics: PostMetrics;
+  source: "manual" | "csv"; recorded_by: number; engagement_rate: number | null;
+};
+
+/** GET /insights/performance: per rule, live posts that ran into it against those that didn't. */
+export type PerformanceReport = {
+  live_pieces: number; with_link: number; with_numbers: number; min_posts: number;
+  rules: { rule_id: number; code: string; title: string; needed: number; clean: number;
+    median_needed?: number; median_clean?: number; difference_90?: [number, number] }[];
+};

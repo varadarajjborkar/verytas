@@ -4,7 +4,7 @@
 import type {
   ApprovedPerson, BrandAsset, BrandEvent, ContentDetail, CreatorRow, CreatorTrack, EscalationRequest, EventImpact, PublicContact, ContentRow, ContentStatus, Decision, Dispute, Fact, Finding, Level, Me, Person, Precheck,
   IntakeBatch, IntakeBatchDetail, IntakeDraft, IntakeItem, IntakeItemIn, Onboarding, SampleKit,
-  Mark, PersonalToken, CreatedToken, PinnedComment, Review, Rule, RuleClarification, RuleDraft, SearchHit, Term, Timeline, UploadedMedia,
+  Mark, PerformanceReport, PersonalToken, CreatedToken, PinnedComment, PostMetrics, PostResult, Review, Rule, RuleClarification, RuleDraft, SearchHit, Term, Timeline, UploadedMedia,
 } from "./types";
 
 export class ApiError extends Error {
@@ -140,6 +140,13 @@ export const versionImageUrl = (contentId: number, versionId: number, imageId: s
   `/api/v/contents/${contentId}/versions/${versionId}/images/${encodeURIComponent(imageId)}`;
 export const versionVideoUrl = (contentId: number, versionId: number, videoId: string) =>
   `/api/v/contents/${contentId}/versions/${versionId}/videos/${encodeURIComponent(videoId)}`;
+export const getResult = (contentId: number) => api<PostResult | null>(`contents/${contentId}/result`);
+export const saveResult = (contentId: number, body: { url: string; posted_on: string | null; metrics: PostMetrics }) =>
+  api<PostResult>(`contents/${contentId}/result`, send("PUT", body));
+export const removeResult = (contentId: number) => api<null>(`contents/${contentId}/result`, send("DELETE"));
+export const importResults = (csv: string) =>
+  api<{ updated: number; skipped: { row: number; reason: string }[] }>("results/import", json({ csv }));
+export const performanceReport = () => api<PerformanceReport>("insights/performance");
 export const listComments = (contentId: number) => api<PinnedComment[]>(`contents/${contentId}/comments`);
 /** A comment pinned to a stretch of a video or drawn onto an image. */
 export const addPinnedComment = (contentId: number, pin: {

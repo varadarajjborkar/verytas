@@ -19,6 +19,7 @@ import { Details, Meter, tabKeys } from "../ui";
 import { Activity } from "./Activity";
 import { AgentTree, Sources } from "./AgentTree";
 import { Attachments } from "./Attachments";
+import { LiveResult } from "./LiveResult";
 import { DocumentPages } from "./DocumentPages";
 import { Checklist, emptyRow, rowCall, type RowState, sortFindings } from "./Checklist";
 import { callOf, type DecideFn } from "./DecisionControls";
@@ -514,6 +515,9 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
             )}
           </article>
           {route && <JourneyMap journey={route} status={status} />}
+          {(status === "approved" || status === "published") && (
+            <LiveResult key={contentId} contentId={contentId} canRecord={role !== "auditor"} />
+          )}
         </div>
 
         {/* The issues, most urgent first; each opens where it is. Pinned beside a long piece. */}

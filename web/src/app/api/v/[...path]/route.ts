@@ -87,6 +87,12 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^findings\/\d+\/escalations$/],
   ["GET", /^escalations$/],
   ["GET", /^insights\/creators$/],
+  // How pieces did once live (api/results.py).
+  ["GET", /^contents\/\d+\/result$/],
+  ["PUT", /^contents\/\d+\/result$/],
+  ["DELETE", /^contents\/\d+\/result$/],
+  ["POST", /^results\/import$/],
+  ["GET", /^insights\/performance$/],
   ["GET", /^insights\/creators\/\d+$/],
   ["GET", /^escalations\/count$/],
   ["GET", /^escalations\/\d+$/],
