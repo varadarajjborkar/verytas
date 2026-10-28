@@ -5,8 +5,10 @@ import contextlib
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import StatementError
 
 from verytas import __version__
 from verytas.api import (
@@ -100,6 +102,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
     )
+
+    # An id past 64 bits passes int validation but can't be bound to SQLite. Nothing has such an id, so
+    # it is the same answer as any unknown one, given once here rather than capped on every route.
+    @app.exception_handler(OverflowError)
+    async def _too_big(_: Request, __: OverflowError) -> JSONResponse:
+        return JSONResponse({"detail": "not found"}, status_code=404)
+
+    @app.exception_handler(StatementError)
+    async def _unbindable(request: Request, exc: StatementError) -> JSONResponse:
+        if isinstance(exc.orig, OverflowError):
+            return JSONResponse({"detail": "not found"}, status_code=404)
+        raise exc
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict:
