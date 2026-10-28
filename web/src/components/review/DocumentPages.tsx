@@ -5,6 +5,7 @@ import type { ContentDetail, Finding, SourceInfo } from "@/lib/types";
 import { ChevronIcon } from "../Icons";
 import { DocumentPreviewPane, SheetTable } from "./DocumentPreview";
 import { HighlightedBody } from "./parts";
+import { reveal } from "@/lib/reveal";
 
 type Version = ContentDetail["versions"][number];
 // pinned: about particular words, marked where they are; whole: about the page as a whole (tone, a missing
@@ -59,8 +60,7 @@ export function DocumentPages({ contentId, version, sources, findings, active, o
   }, [docs, active]);
   useEffect(() => {
     if (active == null || activeKey == null) return;
-    requestAnimationFrame(() => box.current?.querySelector(`[data-id="${active}"]`)
-      ?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    requestAnimationFrame(() => reveal(box.current?.querySelector(`[data-id="${active}"]`), { bottom: 96 }));
   }, [active, activeKey]);
 
   if (docs.length === 0) return null;

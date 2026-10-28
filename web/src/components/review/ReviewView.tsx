@@ -26,6 +26,7 @@ import { callOf, type DecideFn } from "./DecisionControls";
 import { AiEditBox, CleanResult, CoverageTag, findingKey, HighlightedBody } from "./parts";
 import { VersionCompare } from "./VersionCompare";
 import { channelName } from "@/lib/channels";
+import { reveal } from "@/lib/reveal";
 import { AiInfoButton } from "../AiInfo";
 
 type Phase = "loading" | "checking" | "ready" | "failed" | "missing";
@@ -87,6 +88,9 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
   const [sent, setSent] = useState<{ to: ContentStatus; changes: number } | null>(null);
   const [requests, setRequests] = useState<Record<number, EscalationRequest>>({});
   const textRef = useRef<HTMLElement | null>(null);
+  const split = useRef<HTMLDivElement>(null);
+  // The split mounts with the piece; before that the view is a placeholder.
+  useFillViewport(split, content != null);
   const live = useRef(contentId);
   // Stops polling a review nobody is looking at any more.
   const polling = useRef<AbortController | null>(null);
@@ -178,10 +182,10 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
     };
   }, [load]);
 
-  // Selecting an issue brings its words into view.
+  // Selecting an issue brings its words into view in the piece's own column; the page itself stays put.
   useEffect(() => {
     if (active == null) return;
-    textRef.current?.querySelector(`[data-id="${active}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    reveal(textRef.current?.querySelector(`[data-id="${active}"]`), { bottom: 96 });
   }, [active]);
 
   const latest = content?.versions.at(-1);
@@ -393,7 +397,7 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
   const activityCount = route ? route.comments + route.decisions : 0;
 
   return (
-    <div className="flex flex-col gap-5 pb-28">
+    <div className="flex flex-col gap-5 pb-28 xl:pb-0">
       <p className="sr-only" role="status" aria-live="polite">{announce}</p>
       {/* Header: what this is and where it stands; what to do next lives in the bar at the bottom. */}
       <header className="flex flex-col gap-3 md:flex-row md:items-center">
@@ -450,8 +454,10 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
       {error && <p role="alert" className="rounded-xl bg-[var(--vt-blocker-bg)] px-4 py-3 text-sm text-[var(--vt-blocker)]">{error}</p>}
       {notice && <p className="rounded-xl bg-sunken px-4 py-2.5 text-xs text-muted">{notice}</p>}
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
-        <div className="flex min-w-0 flex-col gap-5">
+      {/* On a wide screen the piece and its issues are two columns that fill the window and scroll on their own,
+          so the page never scrolls under either of them; narrower, they stack and the page scrolls as one. */}
+      <div ref={split} className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_24rem] xl:items-stretch">
+        <div className="vt-column flex min-w-0 flex-col gap-5 xl:pb-28">
           {/* The piece itself, with every issue marked where it is. */}
           <article className="vt-paper min-w-0 p-5 md:px-8 md:py-7" aria-label={manager && !author ? "The piece" : "Your piece"}>
             <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -522,8 +528,7 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
         </div>
 
         {/* The issues, most urgent first; each opens where it is. Pinned beside a long piece. */}
-        <aside className="flex min-w-0 flex-col gap-4 xl:sticky xl:top-[4.5rem] xl:max-h-[calc(100dvh-6rem)] xl:overflow-y-auto xl:pb-24"
-          aria-label="Issues">
+        <aside className="vt-column flex min-w-0 flex-col gap-4 xl:pb-10" aria-label="Issues">
           <div className="flex items-baseline gap-2 px-1">
             <h3 className="text-sm font-semibold">Issues</h3>
             {!checking && review && findings.length > 0 && (
@@ -679,6 +684,45 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
       )}
     </div>
   );
+}
+
+/**
+ * Sizes the two-column review to the rest of the window on wide screens, so each column scrolls by itself
+ * and the page has nothing left to scroll. Remeasured whenever anything above it changes height (a notice,
+ * a wrapped title) and when the window resizes; below the wide breakpoint it lets go and the page scrolls.
+ */
+function useFillViewport(ref: React.RefObject<HTMLDivElement | null>, mounted: boolean) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const wide = matchMedia("(min-width: 1280px)");
+    let frame = 0;
+    const fit = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (!wide.matches) { el.style.height = ""; return; }
+        const main = el.closest("main");
+        const gap = main ? parseFloat(getComputedStyle(main).paddingBottom) : 0;
+        const top = el.getBoundingClientRect().top + window.scrollY;
+        el.style.height = `${Math.max(480, Math.floor(window.innerHeight - top - gap))}px`;
+      });
+    };
+    fit();
+    // The body for anything that moves the split down; the view itself for things above it that shrink,
+    // which the body can't see while a min-height holds it at the window's size.
+    const watch = new ResizeObserver(fit);
+    watch.observe(document.body);
+    if (el.parentElement) watch.observe(el.parentElement);
+    wide.addEventListener("change", fit);
+    window.addEventListener("resize", fit);
+    return () => {
+      cancelAnimationFrame(frame);
+      watch.disconnect();
+      wide.removeEventListener("change", fit);
+      window.removeEventListener("resize", fit);
+      el.style.height = "";
+    };
+  }, [ref, mounted]);
 }
 
 // Portalled to the body: the app's glass panels blur what is behind them, which pins a fixed child to the panel

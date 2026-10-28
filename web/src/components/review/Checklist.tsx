@@ -6,6 +6,7 @@ import type { Dispute, EscalationRequest, Finding, Level, Person } from "@/lib/t
 import { CALL_LABEL, callOf, type CallState, type DecideFn, DecisionControls } from "./DecisionControls";
 import { type EscalateFn, EscalationBox } from "./EscalationBox";
 import { CheckIcon, ChevronIcon } from "../Icons";
+import { reveal } from "@/lib/reveal";
 
 export type RowState = { done: boolean; apply: boolean; dispute: string; language: string; disputing: boolean };
 export const emptyRow = (): RowState => ({ done: false, apply: false, dispute: "", language: "", disputing: false });
@@ -85,10 +86,16 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
   creatorCalls?: boolean;
 }) {
   const list = useRef<HTMLUListElement>(null);
-  // A highlight picked in the text opens its row here; bring that row into view too.
+  // A highlight picked in the text, or the next issue on a walk, opens its row here: bring it into view. A row
+  // opened by hand is already under the pointer; it only shows the part that opened below it, never more.
+  // The issue opened for the reader on arrival is not a pick, so the page doesn't move for it.
+  const arrival = useRef<number | null | undefined>(active);
   useEffect(() => {
-    if (active == null) return;
-    list.current?.querySelector(`[data-finding="${active}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // Closing a row ends the arrival too: opening that issue again is a pick like any other.
+    if (active == null) { arrival.current = undefined; return; }
+    if (active === arrival.current) return;
+    arrival.current = undefined;
+    reveal(list.current?.querySelector(`[data-finding="${active}"]`), { page: true, bottom: 96 });
   }, [active]);
   // Fixes that land in the text itself; a change inside an attachment has to be made by hand.
   const fixable = findings.filter((f) => f.suggestions[0] && (f.source ?? "body") === "body");

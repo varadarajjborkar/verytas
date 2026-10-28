@@ -302,6 +302,16 @@ ins.vt-fix[data-active="true"] { outline: 2px solid var(--vt-accent); }
   box-shadow: 0 1px 2px light-dark(rgba(18, 24, 40, 0.06), rgba(0, 0, 0, 0.3)),
     0 24px 50px -24px light-dark(rgba(18, 24, 40, 0.22), rgba(0, 0, 0, 0.6)); }
 
+/* The review's two columns on a wide screen, each its own scroller. The padding gives the sheet's shadow and
+   a picked row's ring room inside the clip (the negative margin keeps the columns where they were), and the
+   short fades at both ends say there is more instead of cutting a card off on a hard edge. */
+@media (min-width: 1280px) {
+  .vt-column { height: calc(100% + 1.5rem); min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+    margin: -0.75rem; padding-top: 0.75rem; padding-inline: 0.75rem;
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 0.75rem, #000 calc(100% - 1.5rem), transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 0.75rem, #000 calc(100% - 1.5rem), transparent); }
+}
+
 /* The review's one bar: progress and the next thing to do, floating over the bottom edge. */
 /* Centred by auto margins, not a transform: the entrance animation owns transform and would undo it. */
 .vt-dock { position: fixed; inset-inline: 0; margin-inline: auto; width: max-content; bottom: max(1.25rem, env(safe-area-inset-bottom)); z-index: 30;
