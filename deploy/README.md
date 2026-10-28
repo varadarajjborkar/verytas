@@ -42,8 +42,9 @@ A deploy restarts the API. Reviews running or waiting at that moment are queued 
 Brand material being read in Intake is marked for a person to retry.
 
 **Round 3 setup, once per server:** `ssh ubuntu@<server> 'bash -s' < deploy/setup-round3.sh` installs and
-locks down Redis, adds `VERYTAS_REDIS_URL` to `api.env`, installs the keep-warm units from the deployed
-commit and restarts the API. It checks before it changes anything, so it is safe to run again. Without Redis,
+locks down Redis, adds `VERYTAS_REDIS_URL` to `api.env`, makes Inki's memory directory under the data
+directory (`VERYTAS_MEMORY_DIR`, with mem0's telemetry off) and fetches its two embedding models into it,
+installs the keep-warm units from the deployed commit and restarts the API. It checks before it changes anything, so it is safe to run again. Without Redis,
 conversations still work in one process.
 
 Spend is capped by an AWS budget that stops both instances automatically at its limit.

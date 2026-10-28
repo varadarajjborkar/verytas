@@ -8,6 +8,7 @@
 #    VERYTAS_REDIS_URL in api.env; without it, conversations still work in one process.
 # 2. The keep-warm timer for the vision worker (deploy/systemd/verytas-keepwarm.*). Its dates, hours and
 #    10 USD cap are in the unit file; before 31 Oct it does nothing.
+# 3. Inki's memory directory in the data directory, and its embedding models fetched into it.
 #
 # Safe to run twice: every step checks before it changes anything.
 set -euo pipefail
@@ -31,6 +32,18 @@ sudo systemctl restart redis-server
 if ! sudo grep -q '^VERYTAS_REDIS_URL=' "$ENV"; then
   echo 'VERYTAS_REDIS_URL=redis://127.0.0.1:6379/0' | sudo tee -a "$ENV" >/dev/null
 fi
+
+# Inki's memory lives in the data directory, the one place the service may write (ProtectSystem=strict). Its
+# embedding models are fetched here once, so neither a restart nor the first question waits on a download.
+MEM=/srv/verytas/data/memory
+sudo install -d -o verytas -g verytas -m 0750 "$MEM" "$MEM/models"
+sudo grep -q '^VERYTAS_MEMORY_DIR=' "$ENV" || echo "VERYTAS_MEMORY_DIR=$MEM" | sudo tee -a "$ENV" >/dev/null
+sudo grep -q '^MEM0_TELEMETRY=' "$ENV" || echo 'MEM0_TELEMETRY=False' | sudo tee -a "$ENV" >/dev/null
+sudo -u verytas HOME=/srv/verytas /srv/verytas/venv/bin/python -c "
+from fastembed import SparseTextEmbedding, TextEmbedding
+TextEmbedding('BAAI/bge-small-en-v1.5', cache_dir='$MEM/models')
+SparseTextEmbedding('Qdrant/bm25', cache_dir='$MEM/models')" \
+  || echo "warning: Inki's embedding models were not fetched; the API fetches them when it starts" >&2
 
 # A release holds only backend/ and web/; the unit files come from the deployed commit in the server's clone.
 for unit in verytas-keepwarm.service verytas-keepwarm.timer; do

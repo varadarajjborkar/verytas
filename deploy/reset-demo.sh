@@ -29,6 +29,9 @@ if ! HOME=/srv/verytas timeout "${SEED_TIMEOUT:-90m}" /srv/verytas/venv/bin/pyth
 fi
 sudo /usr/bin/systemctl stop verytas-api
 rm -rf "$D/keys" "$D/showcase.db" "$D/showcase.db-wal" "$D/showcase.db-shm"
+# What Inki kept about people is keyed by their ids, which the new data hands out again: it goes with the old
+# data, or one demo person would inherit another's. The embedding model in memory/models stays.
+rm -rf "$D/memory/personal"
 mv "$D/next/showcase.db" "$D/showcase.db" && mv "$D/next/keys" "$D/keys" && mv "$D/next/demo-accounts.json" "$D/demo-accounts.json"
 rmdir "$D/next"
 rm -f "$D/reset-failed"
