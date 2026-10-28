@@ -527,6 +527,12 @@ async def version_video(content_id: int, version_id: int, video_id: str, session
 
 @router.get("/reviews/{review_id}", response_model=ReviewOut)
 async def get_review(review_id: int, request: Request, session: Session, user: CurrentUser) -> ReviewOut:
+    return await review_view(session, user, review_id, request.app.state.prism.keyring)
+
+
+async def review_view(session, user: User, review_id: int, keyring) -> ReviewOut:
+    """A review as `user` may see it. Shared with the MCP tools, so what an AI client reads is exactly what
+    the review screen shows this person and nothing more."""
     review = await session.scalar(
         select(Review).where(Review.id == review_id).options(
             selectinload(Review.findings).selectinload(Finding.suggestions),
@@ -539,7 +545,6 @@ async def get_review(review_id: int, request: Request, session: Session, user: C
     version = await session.get(ContentVersion, review.version_id)
     await _content(session, user, version.content_id)  # workspace + clearance check
 
-    keyring = request.app.state.prism.keyring
     out = ReviewOut.model_validate(review, from_attributes=True)
     if user.role is Role.creator and out.coverage:
         # Decision counts and per-rule fix tallies describe other people's pieces.

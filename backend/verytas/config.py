@@ -99,6 +99,17 @@ class Settings(BaseSettings):
 
     environment: str = "development"
     cors_origins: list[str] = ["http://localhost:3000"]
+
+    # The /mcp endpoint, for a person's own AI client (docs/mcp.md).
+    mcp_enabled: bool = True
+    # Browser origins allowed to call /mcp. Empty by default: AI clients are not browsers and send no Origin
+    # header, so any request that carries one is refused (the MCP transport guidance against DNS rebinding).
+    mcp_allowed_origins: list[str] = []
+    # Tool calls per personal token per minute, counted in this process.
+    mcp_calls_per_minute: int = Field(default=60, ge=1)
+    # The highest tier a token can read, whatever the person's own clearance. Material leaving for an AI
+    # client is hosted by a third party, so confidential material stays out unless a deployment opts in.
+    mcp_max_tier: Literal["public", "internal", "confidential"] = "internal"
     # Error monitoring is opt-in; nothing is sent unless a DSN is configured.
     sentry_dsn: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("SENTRY_DSN", "VERYTAS_SENTRY_DSN")

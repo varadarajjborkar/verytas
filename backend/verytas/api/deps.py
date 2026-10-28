@@ -19,10 +19,25 @@ _bearer = HTTPBearer(auto_error=False)
 bearer = _bearer
 
 
+# Personal tokens for the /mcp endpoint (api/tokens.py). A different audience from the web session token:
+# the REST routes never accept one, and /mcp never accepts a session token.
+PAT_PREFIX = "vt_pat_"
+
+
 def new_token() -> tuple[str, str]:
     """Returns (token shown once to the user, hash we store)."""
     token = "vt_" + secrets.token_urlsafe(32)
+    # token_urlsafe can, rarely, start with "pat_"; keep the two prefixes disjoint so a session token is
+    # never mistaken for a personal one.
+    while token.startswith(PAT_PREFIX):
+        token = "vt_" + secrets.token_urlsafe(32)
     return token, hash_token(token)
+
+
+def new_personal_token() -> tuple[str, str, str]:
+    """Returns (token shown once, hash we store, display prefix: the first 8 characters after the scheme)."""
+    body = secrets.token_urlsafe(32)
+    return PAT_PREFIX + body, hash_token(PAT_PREFIX + body), body[:8]
 
 
 def hash_token(token: str) -> str:
@@ -47,6 +62,11 @@ async def current_user(
 ) -> User:
     if creds is None or creds.scheme.lower() != "bearer":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing bearer token",
+                            headers={"WWW-Authenticate": "Bearer"})
+    if creds.credentials.startswith(PAT_PREFIX):
+        # Its hash is not in `users` and would fail below anyway; refusing it by name says why, and keeps the
+        # separation from depending on that.
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "personal tokens are only accepted at /mcp",
                             headers={"WWW-Authenticate": "Bearer"})
     user = await session.scalar(select(User).where(User.token_hash == hash_token(creds.credentials)))
     if user is None:

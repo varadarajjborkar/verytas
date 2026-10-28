@@ -27,10 +27,12 @@ from verytas.api import (
     onboarding,
     people,
     search,
+    tokens,
 )
 from verytas.config import Settings, get_settings
 from verytas.db import Database
 from verytas.intake import pipeline as intake_pipeline
+from verytas.mcpserver import mount_mcp
 from verytas.media import storage
 from verytas.prism.orchestrator import Prism
 from verytas.services.messages import MessageHub, MessageSeal
@@ -63,6 +65,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     hub = MessageHub(settings.redis_url, settings.message_cache_size, settings.redis_namespace)
     seal = MessageSeal(settings.keys_dir)
 
+    mcp_manager = None
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await db.create_all()
@@ -75,7 +79,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         seal.ensure_key()
         await hub.start()
         try:
-            yield
+            if mcp_manager is None:
+                yield
+            else:
+                # The SDK's session manager owns a task group that must live as long as the app does.
+                async with mcp_manager.run():
+                    yield
         finally:
             # Stopped and finished before the database closes under it.
             sweep.cancel()
@@ -122,9 +131,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # media before content: /contents/precheck must not be read as a content id.
     routers = (admin, accounts, knowledge, people, media, intake, content, governance, insights, chats, assistant,
-               assist, search, onboarding, messages)
+               assist, search, onboarding, messages, tokens)
     for module in routers:
         app.include_router(module.router)
+    if settings.mcp_enabled:
+        mcp_manager = mount_mcp(app)
     return app
 
 

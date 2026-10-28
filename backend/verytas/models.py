@@ -141,6 +141,30 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class PersonalToken(Base):
+    """A token a person hands to their own AI client so it can use the /mcp endpoint as them (api/tokens.py).
+
+    A separate table from User.token_hash on purpose: the web session token and this one are different
+    audiences, and neither lookup can ever find the other's hash. Only the SHA-256 is stored; `prefix` is the
+    start of the random part, kept so a person can tell their tokens apart in a list.
+    """
+
+    __tablename__ = "personal_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    prefix: Mapped[str] = mapped_column(String(8))
+    # A subset of ["read", "write"] that always includes "read".
+    scopes: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["read"])
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Rule(Base):
     __tablename__ = "rules"
     __table_args__ = (UniqueConstraint("workspace_id", "code", "version"),)
