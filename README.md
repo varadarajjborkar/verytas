@@ -41,6 +41,8 @@ A brand works with dozens of creators and agencies who post every day, in many l
 | **Easy to pick up** | A guided tour on the first visit to each side, plain-word summaries of any piece, and every status, score and empty page explained where it appears. Shaped by [user testing](docs/research/user-testing.md) with three first-time users. |
 | **Talks it through** | *Conversations* between a creator and the brand team, next to the piece in question: replies, edits, deletes, files with previews, and meeting links that become a Join card. Encrypted at rest, live over Redis (it falls back to one process without it). Mention **@Inki** and the assistant answers from the record, only after the person asking has agreed that it may read the conversation. |
 | **Marks the exact spot** | Videos play in the review with each issue on the timeline; drag along it to comment on a stretch, at 0.5x to 2x, with no download. Images take a marker, an eraser and text, saved with the comment, so the creator sees what to change in place. |
+| **Learns how posts did** | Once a piece is live, its link and the platform's numbers go on the piece (typed, or a sheet for the brand team). Guideline health then shows, per rule, how posts that ran into it did against those that didn't, as a range, and only once there are enough posts. Nothing is read from the platforms. |
+| **Works from your AI client** | A personal token lets Claude Desktop, Claude Code or any MCP client read your reviews, search and submit text as you, never more: no approving, no confidential terms ([how](docs/mcp.md)). |
 | **Learns from decisions** | Rules that reviewers keep overriding are surfaced as unclear, and model-judged rules tune how confident they must be before flagging. |
 
 ## Try it in 60 seconds
@@ -247,7 +249,7 @@ method and the full results.
 ## What comes next
 
 - **Sharper visual checks on busy backgrounds**, where a mascot's cut-out still takes in some background and raises false alarms: a mask quality gate, point prompts and picking the cut-out by silhouette.
-- **Performance after posting:** the live link and its numbers captured back onto the piece, so a rule's cost can be weighed against what the post earned.
+- **Performance from the platforms themselves:** Instagram's insights first, pulled for posts whose link is recorded, so the numbers no longer need typing.
 - **A GPU** for the language, vision and Hindi speech models once AWS grants the quota; the general speech model still mishears much Hindi.
 
 ## Run it locally
