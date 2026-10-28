@@ -18,10 +18,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script>
-  // Theme before first paint, so a dark reader never sees a white flash.
+  // Theme before first paint, so a dark reader never sees a white flash. One key for the whole site
+  // (the app's Settings write it too), so a choice made here or there holds everywhere; none means the
+  // system's. An older landing-only choice is carried over once.
   (function () {
     var t = null;
-    try { t = localStorage.getItem("vt-landing-theme"); } catch (e) {}
+    try {
+      t = localStorage.getItem("vt-theme");
+      var old = localStorage.getItem("vt-landing-theme");
+      if (old) { if (!t) { t = old; localStorage.setItem("vt-theme", old); } localStorage.removeItem("vt-landing-theme"); }
+    } catch (e) {}
     if (!t) t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     if (t === "dark") document.documentElement.classList.add("dark");
   })();
