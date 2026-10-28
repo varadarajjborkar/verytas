@@ -230,7 +230,7 @@ method and the full results.
 
 | Engine | Tested on | Result |
 | --- | --- | --- |
-| [Artwork](backend/evals/results/assets.md) | 1,200 scenes | **93%** of misuse caught, **4.7%** false alarms (recoloured icons still weak, 33%) |
+| [Artwork](backend/evals/results/assets.md) | 1,200 scenes | **96%** of misuse caught, **4.7%** false alarms; recoloured app icons **24/24** (33% before), found by outline when the colours are swapped |
 | [Mascots](backend/evals/mascots) | 425 scenes | every character found; what changed named in 73 to 100% of cases (a stretched body in 23%) |
 | [Text in images](backend/evals/results/ocr.md) | 240 images | **88%** of prices, codes and names read exactly |
 | [Speech](backend/evals/results/speech.md) | 104 clips | about **10%** word error in English; Hindi much weaker, so codenames are also matched by sound |
@@ -240,7 +240,7 @@ method and the full results.
 | [Suggested fixes](backend/evals/results/summary.md) | 73 findings | **82%** useful (45% before), **0** invented numbers |
 | [Black-box simulator](blackbox/README.md) | 216 cases | **96%** recall, **0%** false alarms on clean posts |
 
-- **Over 630 backend tests** run offline on every push, with type checks, lint and a production build for the web apps.
+- **Over 700 backend tests** run offline on every push, including a sweep that sends every API route input nobody should send and fails on any server error, with type checks, lint and a production build for the web apps.
 - **Tried by people.** Three first-time users outside the team used the live demo and wrote up what confused them. Each point has a shipped change, listed in the [user testing report](docs/research/user-testing.md).
 - **Tested from the outside.** [`blackbox/`](blackbox/README.md) knows Verytas only through its API: it invents brands and posts with planted violations and steers each round toward what Verytas misses.
 
