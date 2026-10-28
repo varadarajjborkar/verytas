@@ -242,8 +242,27 @@ def official_reference(img: Image.Image) -> tuple[np.ndarray, np.ndarray]:
     return rgba[..., :3], mask
 
 
-def compare(official: tuple[np.ndarray, np.ndarray], candidate: tuple[np.ndarray, np.ndarray]) -> Fidelity:
-    """Differences between official artwork and a cut-out of the same character, each as (rgb, mask)."""
+def _working_sizes(o: tuple[np.ndarray, np.ndarray], c: tuple[np.ndarray, np.ndarray]) -> tuple[int, ...]:
+    """The size at which the two cropped sides are compared (see the note in `compare`)."""
+    drawn = max(o[0].shape[:2]) * (float(c[1].sum()) / max(1.0, float(o[1].sum()))) ** 0.5
+    return (int(min(max(o[0].shape[:2]), drawn)),)
+
+
+def palette_for(official: tuple[np.ndarray, np.ndarray], candidate: tuple[np.ndarray, np.ndarray]) -> list:
+    """The palette `compare` will use for this pair, so a caller that needs it first (to reclaim clipped
+    parts of the cut-out in the artwork's colours) sees the same colours the comparison does."""
+    o, c = _cropped(*official), _cropped(*candidate)
+    (native,) = _working_sizes(o, c)
+    if native < SIDE:
+        o = _shrunk(*o, native)
+    return _palette(*_normalised(*o))
+
+
+def compare(official: tuple[np.ndarray, np.ndarray], candidate: tuple[np.ndarray, np.ndarray],
+            palette: list | None = None) -> Fidelity:
+    """Differences between official artwork and a cut-out of the same character, each as (rgb, mask).
+
+    `palette` is the artwork's palette from `palette_for`, when the caller already has it."""
     o, c = _cropped(*official), _cropped(*candidate)
     o_full = _normalised(*o)
     # Colours are compared at the coarser of the two resolutions. A character drawn 150 pixels tall has
@@ -251,13 +270,12 @@ def compare(official: tuple[np.ndarray, np.ndarray], candidate: tuple[np.ndarray
     # them back; the artwork is first brought down to that size so both lose the same detail. The cut-out's
     # size is read from its area, not its box: a missing tail shrinks the box and would shrink the artwork
     # with it, hiding exactly the parts being checked.
-    drawn = max(o[0].shape[:2]) * (float(c[1].sum()) / max(1.0, float(o[1].sum()))) ** 0.5
-    native = int(min(max(o[0].shape[:2]), drawn))
+    (native,) = _working_sizes(o, c)
     if native < SIDE:
         o, c = _shrunk(*o, native), _shrunk(*c, native)
     o_rgb, o_mask = _normalised(*o)
     c_rgb, c_mask = _normalised(*c)
-    palette = _palette(o_rgb, o_mask)
+    palette = palette if palette is not None else _palette(o_rgb, o_mask)
     out = Fidelity(official_palette=palette)
     o_lab, c_lab = _assign(o_rgb, o_mask, palette), _assign(c_rgb, c_mask, palette)
     o_area, c_area = int(o_mask.sum()), int(c_mask.sum())
