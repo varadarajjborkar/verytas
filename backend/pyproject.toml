@@ -21,6 +21,7 @@ dependencies = [
     "python-docx>=1.1",
     "sentry-sdk[fastapi]>=2.0",
     "redis>=5.2",                   # conversations: live delivery and a recent-message cache, optional
+    "mcp>=1.30,<2",                 # the /mcp endpoint; 1.x pinned, 2.x is a rewrite that pulls a different HTTP stack
     # Local media stack: nothing here calls out to a service.
     "pypdfium2>=5.0",               # PDF text layers, page renders, embedded images
     "rapidocr>=3.10",               # OCR (PP-OCR models on onnxruntime, CPU)
