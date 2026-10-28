@@ -7,6 +7,8 @@ import { useOnRefresh } from "@/lib/refresh";
 import { ApiError, creatorTrack, listCreators, relativeTime } from "@/lib/review-client";
 import type { CreatorRow, CreatorTrack } from "@/lib/types";
 import { BackButton } from "../BackButton";
+import { ForBrandTeam } from "../library/LibraryView";
+import { useViewer } from "../Viewer";
 import { Panel } from "../ui";
 import { byWaiting, CreatorTable } from "./CreatorTable";
 import { DriftChart } from "./DriftChart";
@@ -23,6 +25,10 @@ const STATUS: Record<string, string> = {
 /** /creators lists everyone writing for the brand; /creators?id= is one person's record and line. */
 export function CreatorsView() {
   const id = Number(useSearchParams().get("id")) || null;
+  const { side, loading } = useViewer();
+  // A creator who opens this link gets the same note as the library, not a refused request.
+  if (loading) return <div className="h-64 animate-pulse rounded-[14px] bg-sunken" aria-busy="true" aria-label="Loading" />;
+  if (side === "creator") return <ForBrandTeam />;
   return id ? <Profile id={id} key={id} /> : <Roster />;
 }
 
