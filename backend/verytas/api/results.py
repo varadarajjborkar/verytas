@@ -14,14 +14,17 @@ from __future__ import annotations
 import csv
 import io
 import random
+import re
 import statistics
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from verytas.api.content import _content
 from verytas.api.deps import CurrentUser, Session, require
@@ -29,6 +32,8 @@ from verytas.models import (
     Content,
     ContentStatus,
     ContentVersion,
+    Decision,
+    DecisionAction,
     Finding,
     PostResult,
     Review,
@@ -57,19 +62,41 @@ MIN_POSTS = 5
 MAX_IMPORT_ROWS = 2000
 # Share-sheet parameters that say who shared, not which post; YouTube's v= and the like are kept.
 TRACKING = {"si", "igsh", "igshid", "fbclid", "gclid", "ref", "ref_src", "s", "t", "feature", "mibextid"}
+# An ASCII host name: an internationalised one arrives here as punycode or not at all, so a look-alike
+# spelled in another script can't pass for a platform's address.
+HOST = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)+")
+URL_MAX = 500  # the column's width
+# Reasons that clear a finding as not a breach; a post whose only brush with a rule was one of these didn't
+# run into it.
+CLEARED = ("false_positive", "not_applicable")
 
 
 def canonical(url: str) -> str:
     """The link as it identifies the post: https, lower-case host, no fragment and no tracking parameters,
-    so the same post pasted twice (or once from a share sheet) is one address."""
+    so the same post pasted twice (or once from a share sheet) is one address. A platform's www. and
+    mobile hosts are the platform, and a YouTube short link or Short is its watch page."""
     parts = urlsplit(url.strip())
     if parts.scheme.lower() != "https" or not parts.hostname or parts.username or parts.password:
         raise ValueError("a live post's link starts with https:// and names the site")
-    query = urlencode([(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
-                       if not (k.lower().startswith("utm_") or k.lower() in TRACKING)])
-    host = parts.hostname.lower()
+    host = parts.hostname.lower().rstrip(".")
+    if not HOST.fullmatch(host):
+        raise ValueError("that link's site name isn't a plain web address")
+    bare = re.sub(r"^(www|m|mobile)\.", "", host)
+    if bare in PLATFORMS:
+        host = bare
+    path = parts.path.rstrip("/") or "/"
+    pairs = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+             if not (k.lower().startswith("utm_") or k.lower() in TRACKING)]
+    short = host == "youtube.com" and path.startswith("/shorts/")
+    video = path[1:] if host == "youtu.be" else path[len("/shorts/"):] if short else ""
+    if video and "/" not in video:
+        host, path = "youtube.com", "/watch"
+        pairs = [("v", video), *(p for p in pairs if p[0] != "v")]
     netloc = host if parts.port in (None, 443) else f"{host}:{parts.port}"
-    return urlunsplit(("https", netloc, parts.path.rstrip("/") or "/", query, ""))
+    out = urlunsplit(("https", netloc, path, urlencode(sorted(pairs)), ""))
+    if len(out) > URL_MAX:
+        raise ValueError("that link is too long to be a post's address")
+    return out
 
 
 def platform_of(url: str) -> str:
@@ -112,10 +139,11 @@ class ResultOut(BaseModel):
     engagement_rate: float | None
 
 
-def engagement(metrics: dict[str, int]) -> float | None:
+def engagement(metrics: dict[str, int], basis: str | None = None) -> float | None:
     """Interactions per person reached (or per view when reach isn't known): the one number comparable
-    across posts of different sizes. None when there is nothing to divide by."""
-    base = metrics.get("reach") or metrics.get("views")
+    across posts of different sizes. None when there is nothing to divide by. With a basis, only that
+    denominator is used, so a comparison never sets per-reach rates against per-view ones."""
+    base = metrics.get(basis) if basis else metrics.get("reach") or metrics.get("views")
     if not base:
         return None
     acts = sum(metrics.get(k) or 0 for k in ("likes", "comments", "shares", "saves"))
@@ -128,11 +156,11 @@ def _out(r: PostResult) -> ResultOut:
                      engagement_rate=engagement(r.metrics or {}))
 
 
-async def _may_record(session, user: User, content_id: int) -> Content:
+async def _may_record(session, user: User, content_id: int, *, live: bool = True) -> Content:
     content = await _content(session, user, content_id)
     if user.role not in (Role.creator, Role.reviewer, Role.approver, Role.brand_admin):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "your role reads results but doesn't record them")
-    if content.status not in LIVE_STATUSES:
+    if live and content.status not in LIVE_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "only an approved piece can have gone live")
     return content
 
@@ -163,7 +191,13 @@ async def record_result(content_id: int, body: ResultIn, session: Session, user:
     else:
         row.url, row.platform, row.posted_on = body.url, platform_of(body.url), body.posted_on
         row.metrics, row.source, row.recorded_by = metrics, "manual", user.id
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # Two first saves for one piece at once: the other one won.
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "this piece's link was saved at the same moment; reload") from None
     await append(session, workspace_id=content.workspace_id, actor=f"user:{user.id}", action="result.recorded",
                  object_type="content", object_id=content_id,
                  detail={"platform": row.platform, "metrics": sorted(metrics)})
@@ -173,7 +207,8 @@ async def record_result(content_id: int, body: ResultIn, session: Session, user:
 
 @router.delete("/contents/{content_id}/result", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_result(content_id: int, session: Session, user: CurrentUser) -> Response:
-    await _may_record(session, user, content_id)
+    # Not gated on the status: a mistaken link must stay removable after the piece goes back to review.
+    await _may_record(session, user, content_id, live=False)
     row = await session.scalar(select(PostResult).where(PostResult.content_id == content_id))
     if row is not None:
         await session.delete(row)
@@ -189,28 +224,53 @@ class ImportIn(BaseModel):
 
 class ImportOut(BaseModel):
     updated: int
-    skipped: list[dict]
+    skipped: list[dict]  # the first 50
+    skipped_total: int
+
+
+def _count(raw: str, european: bool = False) -> int:
+    """A count as a sheet writes it: "2,400", "2400" or "2400.0", or "2.400" and "2400,0" in a semicolon
+    sheet, where the comma is the decimal mark. Anything else, including 1e999, inf and negatives, is not
+    a count."""
+    thousands, decimal = (".", ",") if european else (",", ".")
+    text = raw.replace(thousands, "").replace(" ", "").replace("\u00a0", "").replace(decimal, ".")
+    if not re.fullmatch(r"\d{1,13}(\.\d*)?", text):
+        raise ValueError(raw)
+    try:
+        return int(Decimal(text))
+    except InvalidOperation:
+        raise ValueError(raw) from None
 
 
 @router.post("/results/import", response_model=ImportOut)
 async def import_results(body: ImportIn, session: Session, user: Brand) -> ImportOut:
     """A sheet of numbers, one post a row, matched by link to results already recorded: the export most
     platforms' insights pages give, trimmed to a url column and any of the metric columns."""
-    reader = csv.DictReader(io.StringIO(body.csv))
+    text = body.csv.lstrip("\ufeff")  # Excel's byte-order mark would otherwise stick to the first header
+    first = text.split("\n", 1)[0]
+    # Excel in much of Europe writes semicolons; a tab-separated paste is the other common shape.
+    delimiter = max((",", ";", "\t"), key=first.count)
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     header = {(h or "").strip().lower() for h in (reader.fieldnames or [])}
     if "url" not in header:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "the sheet needs a url column")
     if not header & set(METRICS):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
                             f"the sheet needs at least one of: {', '.join(METRICS)}")
-    known = {r.url: r for r in (await session.scalars(select(PostResult).where(
-        PostResult.workspace_id == user.workspace_id))).all()}
+    # Only results on pieces this reviewer may see, and that are still live: a sheet must not write to a
+    # restricted piece, nor say by "updated" that a restricted piece has a given link.
+    tiers = [t for t in Tier if t.rank <= user.clearance.rank]
+    known = {r.url: r for r in (await session.scalars(
+        select(PostResult).join(Content, Content.id == PostResult.content_id).where(
+            PostResult.workspace_id == user.workspace_id, Content.tier.in_(tiers),
+            Content.status.in_(LIVE_STATUSES)))).all()}
     updated, skipped = 0, []
     for n, raw in enumerate(reader, start=2):
         if n - 1 > MAX_IMPORT_ROWS:
             skipped.append({"row": n, "reason": f"only the first {MAX_IMPORT_ROWS} rows are read"})
             break
-        row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
+        # A row longer than the header puts its extra cells under None, as a list; they belong to no column.
+        row = {k.strip().lower(): (v if isinstance(v, str) else "").strip() for k, v in raw.items() if k is not None}
         try:
             url = canonical(row.get("url", ""))
         except ValueError as exc:
@@ -221,11 +281,11 @@ async def import_results(body: ImportIn, session: Session, user: Brand) -> Impor
             skipped.append({"row": n, "reason": "no piece has this link yet; record it on the piece first"})
             continue
         try:
-            numbers = {k: int(float(row[k].replace(",", ""))) for k in METRICS if row.get(k)}
+            numbers = {k: _count(row[k], european=delimiter == ";") for k in METRICS if row.get(k)}
         except ValueError:
-            skipped.append({"row": n, "reason": "a number column has something that isn't a number"})
+            skipped.append({"row": n, "reason": "a number column has something that isn't a whole, positive number"})
             continue
-        if any(v < 0 or v > 10**12 for v in numbers.values()):
+        if any(v > 10**12 for v in numbers.values()):
             skipped.append({"row": n, "reason": "a number is out of range"})
             continue
         result.metrics = {**(result.metrics or {}), **numbers}
@@ -235,12 +295,14 @@ async def import_results(body: ImportIn, session: Session, user: Brand) -> Impor
         await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="result.imported",
                      object_type="workspace", object_id=user.workspace_id, detail={"rows": updated})
     await session.commit()
-    return ImportOut(updated=updated, skipped=skipped[:50])
+    return ImportOut(updated=updated, skipped=skipped[:50], skipped_total=len(skipped))
 
 
 def _interval(a: list[float], b: list[float], seed: int) -> tuple[float, float]:
     """A 90% bootstrap interval for the difference in medians (a minus b), seeded so a page reload shows
     the same numbers."""
+    # Sorted first: the draws then depend on the numbers alone, not on the order a query returned them in.
+    a, b = sorted(a), sorted(b)
     rnd = random.Random(seed)
     diffs = sorted(statistics.median(rnd.choices(a, k=len(a))) - statistics.median(rnd.choices(b, k=len(b)))
                    for _ in range(1000))
@@ -249,7 +311,13 @@ def _interval(a: list[float], b: list[float], seed: int) -> tuple[float, float]:
 
 @router.get("/insights/performance")
 async def performance(session: Session, user: Analyst) -> dict:
-    """Per rule: how posts that needed its fix did against those that didn't, by engagement rate."""
+    """Per rule: how posts that ran into it did against posts that didn't, by engagement rate.
+
+    Three things keep the comparison honest without a model of the audience. Every rate uses the same
+    denominator (reach where most posts have it, else views). A finding cleared as not a breach doesn't
+    count as running into the rule. And the posts that didn't are drawn only from the platforms the posts
+    that did went out on, so a rule hit mostly on one platform isn't measured against another's numbers.
+    """
     tiers = [t for t in Tier if t.rank <= user.clearance.rank]
     pieces = (await session.scalars(select(Content).where(
         Content.workspace_id == user.workspace_id, Content.tier.in_(tiers),
@@ -257,14 +325,22 @@ async def performance(session: Session, user: Analyst) -> dict:
     ids = [c.id for c in pieces]
     results = {r.content_id: r for r in (await session.scalars(
         select(PostResult).where(PostResult.content_id.in_(ids)))).all()} if ids else {}
-    rates = {cid: e for cid, r in results.items() if (e := engagement(r.metrics or {})) is not None}
-    # Which rules each live piece ran into, over every version's review: a fix made before posting counts.
+    with_reach = sum(1 for r in results.values() if (r.metrics or {}).get("reach"))
+    with_views = sum(1 for r in results.values() if (r.metrics or {}).get("views"))
+    basis = "reach" if with_reach >= with_views else "views"
+    rates = {cid: e for cid, r in results.items() if (e := engagement(r.metrics or {}, basis)) is not None}
+    platform = {cid: results[cid].platform for cid in rates}
+    # Which rules each live piece ran into, over every version's review: a fix made before posting counts,
+    # since the question is whether what the rule catches costs engagement.
     hit: dict[int, set[int]] = {}
     if rates:
+        cleared = select(Decision.finding_id).where(
+            Decision.action == DecisionAction.rejected, Decision.reason_code.in_(CLEARED))
         rows = (await session.execute(
             select(ContentVersion.content_id, Finding.rule_id)
             .join(Review, Review.version_id == ContentVersion.id).join(Finding, Finding.review_id == Review.id)
-            .where(ContentVersion.content_id.in_(list(rates)), Finding.rule_id.is_not(None)))).all()
+            .where(ContentVersion.content_id.in_(list(rates)), Finding.rule_id.is_not(None),
+                   Finding.id.not_in(cleared)))).all()
         for cid, rid in rows:
             hit.setdefault(rid, set()).add(cid)
     rules = {r.id: r for r in (await session.scalars(select(Rule).where(
@@ -274,9 +350,11 @@ async def performance(session: Session, user: Analyst) -> dict:
         rule = rules.get(rid)
         if rule is None:
             continue
+        where = {platform[c] for c in needed}
         a = [rates[c] for c in needed]
-        b = [v for c, v in rates.items() if c not in needed]
-        row = {"rule_id": rid, "code": rule.code, "title": rule.title, "needed": len(a), "clean": len(b)}
+        b = [v for c, v in rates.items() if c not in needed and platform[c] in where]
+        row = {"rule_id": rid, "code": rule.code, "title": rule.title, "needed": len(a), "clean": len(b),
+               "platforms": sorted(where)}
         if len(a) >= MIN_POSTS and len(b) >= MIN_POSTS:
             lo, hi = _interval(a, b, seed=rid)
             row |= {"median_needed": round(statistics.median(a), 4), "median_clean": round(statistics.median(b), 4),
@@ -284,4 +362,4 @@ async def performance(session: Session, user: Analyst) -> dict:
         out.append(row)
     out.sort(key=lambda r: (-(r["needed"] >= MIN_POSTS and r["clean"] >= MIN_POSTS), -r["needed"]))
     return {"live_pieces": len(pieces), "with_link": len(results), "with_numbers": len(rates),
-            "min_posts": MIN_POSTS, "rules": out}
+            "basis": basis, "min_posts": MIN_POSTS, "rules": out}
