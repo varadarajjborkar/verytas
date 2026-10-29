@@ -223,7 +223,7 @@ export function ConversationsView() {
                 <SearchIcon size={14} className="pointer-events-none absolute left-2.5 text-subtle" />
                 <input ref={search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search"
                   onKeyDown={(e) => { if (e.key === "Escape") { setQuery(""); e.currentTarget.blur(); } }}
-                  className="vt-input h-9 w-40 pl-8 pr-8 text-sm sm:w-56" />
+                  className="vt-input vt-input-quiet h-9 w-40 pl-8 pr-8 text-sm sm:w-56" />
                 <kbd aria-hidden className="pointer-events-none absolute right-2 rounded border border-line px-1 text-[10px] text-subtle">/</kbd>
               </label>
               {!auditor && (

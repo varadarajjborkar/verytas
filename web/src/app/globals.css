@@ -200,6 +200,8 @@ table, .tabular-nums { font-variant-numeric: tabular-nums; }
   }
   select.vt-input option { background: var(--vt-raised); color: var(--vt-ink); }
   .vt-input:focus { outline: none; border-color: var(--vt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vt-accent) 18%, transparent); }
+  /* For a search box in a toolbar the accent ring is loud: a darker edge still says where the focus is. */
+  .vt-input-quiet:focus { border-color: var(--vt-line-strong); box-shadow: none; }
 }
 
 /* --- glass ---------------------------------------------------------------- */
