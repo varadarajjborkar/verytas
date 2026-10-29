@@ -15,6 +15,7 @@ import { StageDots } from "../Journey";
 import { PipelineFlow } from "../home/PipelineFlow";
 import { today } from "../library/parts";
 import { PriorityPill } from "../review/Checklist";
+import { NewsList, UnreadCount } from "../news/News";
 import { HBars, Meter, Panel, RuleCode, Stat, TrendBars } from "../ui";
 
 export type DashData = {
@@ -36,6 +37,8 @@ export type WidgetDef = {
   blurb: string;
   size: Size;
   link?: { href: string; label: string };
+  /** Shown beside the title in place of a link. */
+  aside?: ReactNode;
   /** Drawn without a panel: its own tiles are the containers (no card inside a card). */
   bare?: boolean;
   render: (d: DashData) => ReactNode;
@@ -86,6 +89,11 @@ export const WIDGETS: Record<string, WidgetDef> = {
         </div>
       );
     },
+  },
+  news: {
+    title: "Since you were last here", blurb: "What creators did that waits on you: sent in, escalated, disputed.", size: "half",
+    aside: <UnreadCount />,
+    render: () => <NewsList empty="Nothing new from creators in the last two weeks." />,
   },
   queue: {
     title: "Needs your decision", blurb: "The waiting pieces, most urgent first.", size: "half",
@@ -287,11 +295,12 @@ export const WIDGETS: Record<string, WidgetDef> = {
 };
 
 export const DEFAULT_LAYOUT: { id: string; size: Size }[] = [
-  // Halves alternate between the two columns, so neighbours are paired by height: decisions beside
-  // creators, the flow beside the asks.
-  { id: "knows", size: "full" }, { id: "queue", size: "half" }, { id: "creators", size: "half" },
-  { id: "flow", size: "half" }, { id: "escalations", size: "half" }, { id: "trend", size: "full" },
-  { id: "sources", size: "half" }, { id: "rules", size: "half" },
+  // Halves alternate between the two columns: what is new beside what needs a decision, first under the
+  // tiles; then the creators beside their asks, and the events beside the flow (the shorter pair evens the columns).
+  { id: "knows", size: "full" }, { id: "news", size: "half" }, { id: "queue", size: "half" },
+  { id: "creators", size: "half" }, { id: "escalations", size: "half" }, { id: "events", size: "half" },
+  { id: "flow", size: "half" }, { id: "trend", size: "full" }, { id: "sources", size: "half" },
+  { id: "rules", size: "half" },
 ];
 
 /** A widget in its panel, used both in place and while editing. */
@@ -304,7 +313,7 @@ export function WidgetPanel({ id, d, editing = false }: { id: string; d: DashDat
   return (
     <Panel title={w.title} className="h-full" scroll={!FIXED_HEIGHT.has(id)}
       // While editing, the corner controls sit where the link would be; the link is no use then anyway.
-      aside={w.link && !editing ? <Link href={w.link.href} className="text-xs font-medium text-accent hover:underline">{w.link.label}</Link> : undefined}>
+      aside={editing ? undefined : w.aside ?? (w.link ? <Link href={w.link.href} className="text-xs font-medium text-accent hover:underline">{w.link.label}</Link> : undefined)}>
       {w.render(d)}
     </Panel>
   );

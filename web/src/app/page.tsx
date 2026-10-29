@@ -3,7 +3,6 @@ import { Suspense } from "react";
 import { CustomizeButton, ManagerDashboard } from "@/components/dashboard/ManagerDashboard";
 import { CreatorHome } from "@/components/home/CreatorHome";
 import { GettingStarted } from "@/components/home/GettingStarted";
-import { NewsHighlights } from "@/components/news/News";
 import { PageHeader, PageSkeleton, SourceBadge } from "@/components/ui";
 import { getGuidelineHealth, getOverview, getRecurring, getViewer } from "@/lib/backend";
 import { sideOf } from "@/lib/roles";
@@ -16,7 +15,6 @@ async function Home() {
     return (
       <>
         <PageHeader title="My work" lead="Your pieces, what each one needs next, and what the brand team said." refresh />
-        <NewsHighlights />
         <GettingStarted />
         <CreatorHome />
       </>
@@ -28,7 +26,6 @@ async function Home() {
     <>
       <PageHeader title="Dashboard" lead="What needs a decision, how work is flowing, and what Verytas caught." refresh
         aside={<div className="flex items-center gap-2"><SourceBadge source={source} /><CustomizeButton /></div>} />
-      <NewsHighlights />
       <GettingStarted />
       <ManagerDashboard overview={overview.data} recurring={recurring.data} health={health.data} />
     </>

@@ -5,14 +5,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { isOffline, listContents, relativeTime, STATUS_HINT, STATUS_LABEL } from "@/lib/review-client";
 import type { ContentRow } from "@/lib/types";
 import { ArrowRightIcon, PlusIcon } from "../Icons";
-import { NewsList } from "../news/News";
+import { NewsPanel } from "../news/News";
 import { StageDots } from "../Journey";
 import { TalkCard } from "../conversations/TalkCard";
 import { Panel } from "../ui";
 import { useOnRefresh } from "@/lib/refresh";
 import { onLive } from "@/lib/live";
 
-/** A creator's front page: what needs them, what is with the brand team, and what the team said. */
+/** A creator's front page: what the brand team did since they were last here and what needs them, side by side
+ * under the counts, then what is with the team and what is out. */
 export function CreatorHome() {
   const [rows, setRows] = useState<ContentRow[] | null>(null);
   const [demo, setDemo] = useState(false);
@@ -64,17 +65,15 @@ export function CreatorHome() {
         ))}
       </section>
 
-      <div className="grid gap-5 xl:grid-cols-5">
-        <Panel title="Needs you" className="xl:col-span-3" scroll
+      <div className="grid gap-5 xl:grid-cols-2">
+        <NewsPanel empty="No decisions or comments on your pieces in the last two weeks." />
+        <Panel title="Needs you" scroll
           aside={<Link href="/review" className="vt-btn vt-btn-primary vt-btn-sm"><PlusIcon size={14} /> New review</Link>}>
           {rows === null ? <Skeleton /> : groups.fix.length === 0 ? (
             <p className="text-sm text-muted">Nothing to fix. Start a new review when you have something to post.</p>
           ) : (
             <PieceList rows={groups.fix} />
           )}
-        </Panel>
-        <Panel title="From the brand team" className="xl:col-span-2" scroll>
-          <NewsList empty="No decisions or comments on your pieces in the last two weeks." />
         </Panel>
       </div>
 

@@ -11,6 +11,7 @@ import { type DashData, DEFAULT_LAYOUT, type Size, WIDGETS, WidgetPanel } from "
 type Item = { id: string; size: Size };
 const HOLD_MS = 550; // press and hold on a widget to start editing, as on a phone's home screen
 const EDIT_EVENT = "vt-dashboard-edit";
+const LAYOUT_VERSION = 2;
 
 /** Sits in the page header; the dashboard below listens for it. */
 export function CustomizeButton() {
@@ -24,8 +25,13 @@ export function CustomizeButton() {
 function parse(raw: string | null): Item[] | null {
   if (!raw) return null;
   try {
-    const v = JSON.parse(raw) as { items?: Item[] };
+    const v = JSON.parse(raw) as { v?: number; items?: Item[] };
     const items = (v.items ?? []).filter((i) => i && Object.hasOwn(WIDGETS, i.id) && (i.size === "half" || i.size === "full"));
+    // A layout saved before "Since you were last here" existed gets it where the default has it: first under
+    // the tiles. One removed since then stays removed (saved as LAYOUT_VERSION).
+    if ((v.v ?? 1) < LAYOUT_VERSION && !items.some((i) => i.id === "news")) {
+      items.splice(items[0]?.id === "knows" ? 1 : 0, 0, { id: "news", size: "half" });
+    }
     return items.length ? items.filter((i, n) => items.findIndex((x) => x.id === i.id) === n) : null;
   } catch {
     return null;
@@ -86,7 +92,7 @@ export function ManagerDashboard({ overview, recurring, health }: { overview: Ov
     </div>;
   }
   if (editing) {
-    return <Arrange layout={layout} onSave={(items) => writeStored(key, items ? JSON.stringify({ v: 1, items }) : null)} onDone={() => setEditing(false)} />;
+    return <Arrange layout={layout} onSave={(items) => writeStored(key, items ? JSON.stringify({ v: LAYOUT_VERSION, items }) : null)} onDone={() => setEditing(false)} />;
   }
   const panel = (item: Item) => (
     <div key={item.id} className="min-w-0"
