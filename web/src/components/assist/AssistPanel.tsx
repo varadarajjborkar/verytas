@@ -7,6 +7,7 @@ import { readStream } from "@/lib/sse";
 import { useModalFocus } from "../Drawer";
 import { ArrowUpIcon, ChevronIcon, CloseIcon, RefreshIcon } from "../Icons";
 import { INKI, InkiIcon } from "../Inki";
+import { shownError } from "@/lib/errors";
 
 type Phase = "loading" | "ready" | "error";
 type Turn = { role: "user" | "assistant"; content: string; failed?: boolean };
@@ -57,7 +58,7 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
       setPhase("ready");
     } catch (err) {
       if (ctl.signal.aborted) return;
-      setError(err instanceof TypeError ? "Couldn't reach Verytas. Check the connection and try again." : (err as Error).message);
+      setError(err instanceof TypeError ? "Couldn't reach Verytas. Check the connection and try again." : shownError(err));
       setPhase("error");
     }
   }, [kind, id]);
@@ -97,7 +98,7 @@ export function AssistPanel({ kind, id, title, onClose }: { kind: AssistKind; id
       write((m) => (m.content.trim() ? m : { ...m, content: "I couldn't come up with an answer. Try asking it another way.", failed: true }));
     } catch (err) {
       if (ctl.signal.aborted) return;
-      const message = err instanceof TypeError ? "Couldn't reach Verytas. Check the connection and try again." : (err as Error).message;
+      const message = err instanceof TypeError ? "Couldn't reach Verytas. Check the connection and try again." : shownError(err);
       write((m) => ({ ...m, content: m.content ? `${m.content}\n\n(The answer was cut short: ${message})` : message, failed: true }));
     } finally {
       setSending(false);

@@ -28,6 +28,7 @@ import { VersionCompare } from "./VersionCompare";
 import { channelName } from "@/lib/channels";
 import { reveal } from "@/lib/reveal";
 import { AiInfoButton } from "../AiInfo";
+import { isSafeMessage, shownError } from "@/lib/errors";
 
 type Phase = "loading" | "checking" | "ready" | "failed" | "missing";
 
@@ -143,7 +144,9 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
       setActive(sortFindings(done.findings)[0]?.id ?? null);
       if (waited) loadTimeline();
       setPhase(done.status === "failed" ? "failed" : "ready");
-      if (done.status === "failed") setError(done.error ?? "The review failed. Re-check to run it again.");
+      if (done.status === "failed") {
+        setError(isSafeMessage(done.error) ? done.error : "The review failed. Re-check to run it again.");
+      }
       else if (waited) {
         // Only a review that finished while the person watched is news; one opened already done is not.
         const n = done.findings.length;
@@ -165,7 +168,7 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
       if (live.current !== contentId || poll.signal.aborted) return;
       const status = err instanceof ApiError ? err.status : 0;
       setPhase(status === 404 ? "missing" : "failed");
-      setError((err as Error).message);
+      setError(shownError(err));
     }
   // toast is stable for the app's lifetime.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -310,8 +313,8 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
       loadTimeline();
       onChanged();
     } catch (err) {
-      setError((err as Error).message);
-      toast({ kind: "error", title: "Couldn't re-check", detail: (err as Error).message });
+      setError(shownError(err));
+      toast({ kind: "error", title: "Couldn't re-check", detail: shownError(err) });
     } finally {
       setBusy(false);
     }
@@ -331,9 +334,12 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
       toast({ kind: "success", title: STATUS_LABEL[out.status] });
       onChanged();
     } catch (err) {
-      const message = (err as Error).message;
+      const message = shownError(err);
       // Approval with open blockers needs a written reason; offer that instead of a dead end.
-      if (err instanceof ApiError && err.status === 409 && /override/i.test(message)) setOverride({ to, message });
+      // Recognised from what the API said, not from the shown text, so a long or filtered message still opens it.
+      const asksOverride = err instanceof ApiError && err.status === 409
+        && /override/i.test(`${err.message} ${JSON.stringify(err.detail ?? "")}`);
+      if (asksOverride) setOverride({ to, message });
       else toast({ kind: "error", title: "Couldn't change the status", detail: message });
     } finally {
       setBusy(false);
@@ -351,7 +357,7 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
       loadTimeline();
       onChanged();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't record the decision", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't record the decision", detail: shownError(err) });
       throw err;
     }
   };

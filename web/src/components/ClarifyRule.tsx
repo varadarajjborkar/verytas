@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { clarifyRule, updateRule } from "@/lib/review-client";
 import type { RuleClarification } from "@/lib/types";
+import { shownError } from "@/lib/errors";
 
 /** Draft a clearer wording from the rule's own decided cases; the admin reads, edits, then applies or drops it. */
 export function ClarifyRule({ ruleId, code }: { ruleId: number; code: string }) {
@@ -19,7 +20,7 @@ export function ClarifyRule({ ruleId, code }: { ruleId: number; code: string }) 
       setDraft(d);
       setText(d.proposed.text);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't draft a clearer rule");
+      setError(shownError(e, "Couldn't draft a clearer rule"));
     }
     setState("idle");
   }
@@ -32,7 +33,7 @@ export function ClarifyRule({ ruleId, code }: { ruleId: number; code: string }) 
       await updateRule(draft.rule_id, { ...draft.proposed, text: text.trim() });
       setState("applied");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't apply it");
+      setError(shownError(e, "Couldn't apply it"));
       setState("idle");
     }
   }

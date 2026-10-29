@@ -5,6 +5,7 @@ import { ExternalIcon } from "@/components/Icons";
 import { useToast } from "@/components/Toaster";
 import { getResult, removeResult, saveResult } from "@/lib/review-client";
 import type { PostMetrics, PostResult } from "@/lib/types";
+import { shownError } from "@/lib/errors";
 
 const FIELDS: { key: keyof PostMetrics; label: string }[] = [
   { key: "reach", label: "Reach" }, { key: "views", label: "Views" }, { key: "likes", label: "Likes" },
@@ -68,7 +69,7 @@ export function LiveResult({ contentId, canRecord }: { contentId: number; canRec
       setEditing(false);
       toast({ kind: "success", title: "Live link saved", detail: saved.engagement_rate != null ? "The numbers count toward how rules perform." : "Add numbers any time, here or from a sheet." });
     } catch (e) {
-      setError((e as Error).message);
+      setError(shownError(e));
     } finally {
       setBusy(false);
     }
@@ -77,7 +78,7 @@ export function LiveResult({ contentId, canRecord }: { contentId: number; canRec
   const remove = async () => {
     if (!window.confirm("Remove the live link and its numbers from this piece?")) return;
     try { await removeResult(contentId); setResult(null); }
-    catch (e) { toast({ kind: "error", title: "Couldn't remove it", detail: (e as Error).message }); }
+    catch (e) { toast({ kind: "error", title: "Couldn't remove it", detail: shownError(e) }); }
   };
 
   if (loadFailed) {

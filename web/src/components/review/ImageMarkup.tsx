@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { addPinnedComment } from "@/lib/review-client";
 import type { Mark, PinnedComment } from "@/lib/types";
+import { shownError } from "@/lib/errors";
 
 /** The server's limits, so a drawing is refused here, with a reason, rather than by a 422. */
 const MAX_MARKS = 60;
@@ -156,7 +157,7 @@ export function ImageMarkup({ contentId, versionId, imageId, size, onDone, onCan
       await addPinnedComment(contentId, { body: note.trim(), version_id: versionId, media_id: imageId, marks: clean.length ? clean : undefined });
       onDone();
     } catch (err) {
-      setError((err as Error).message || "The comment wasn't saved.");
+      setError(shownError(err, "The comment wasn't saved."));
     } finally {
       setSaving(false);
     }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { addPinnedComment, versionVideoUrl } from "@/lib/review-client";
 import type { Finding, Level, PinnedComment } from "@/lib/types";
+import { shownError } from "@/lib/errors";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 const DOT: Record<Level, string> = {
@@ -147,7 +148,7 @@ export function ReviewVideo({ contentId, versionId, video, findings, comments, a
       setRange(null);
       onPinned();
     } catch (err) {
-      setError((err as Error).message || "The comment wasn't saved.");
+      setError(shownError(err, "The comment wasn't saved."));
     } finally {
       setSaving(false);
     }

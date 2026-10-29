@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -136,6 +137,8 @@ async def run_item(prism: Any, item_id: int) -> None:
                 # Our own refusals say what to do; anything else is an internal error, logged, not shown.
                 item.error = ("took too long to read" if isinstance(exc, TimeoutError)
                               else str(exc)[:500] if isinstance(exc, (ValueError, live.FetchRefused))
+                              # Parsers raise ValueError subclasses too; their text is not written for people.
+                              and not isinstance(exc, (ValidationError, UnicodeError, json.JSONDecodeError))
                               else "couldn't be read; try again or export it in another format")
                 await session.commit()
 

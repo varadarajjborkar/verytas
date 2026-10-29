@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { upload } from "@/lib/review-client";
 import { CloseIcon } from "../Icons";
+import { shownError } from "@/lib/errors";
 
 export const BRIEF_MIN = 20;
 const MAX_SECONDS = 180;
@@ -84,7 +85,7 @@ export function BriefBox({ text, audio, required, onText, onAudio }: {
         const media = await upload(file);
         if (mounted.current) onAudio({ id: media.id, seconds: length, url: URL.createObjectURL(file) });
       } catch (err) {
-        if (mounted.current) setError(`Couldn't upload the voice note: ${(err as Error).message}`);
+        if (mounted.current) setError(`Couldn't upload the voice note. ${shownError(err)}`);
       } finally {
         if (mounted.current) setBusy(false);
       }

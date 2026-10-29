@@ -6,7 +6,7 @@ import {
   GROUPS, type Group, isQueue, isSort, priority, priorityBand, QUEUE_ORDER, QUEUES, type Queue, type Signal, SIGNALS,
   sinceOf, type Sort, SORTS, sortRows,
 } from "@/lib/queue";
-import { ApiError, listContents, listEvents, listPeople, relativeTime, STATUS_HINT, STATUS_LABEL } from "@/lib/review-client";
+import { isOffline, listContents, listEvents, listPeople, relativeTime, STATUS_HINT, STATUS_LABEL } from "@/lib/review-client";
 import type { BrandEvent, ContentRow, Person } from "@/lib/types";
 import { BackButton } from "../BackButton";
 import { ArrowRightIcon, ArrowUpIcon, CloseIcon, InboxIcon, RefreshIcon } from "../Icons";
@@ -17,6 +17,7 @@ import { ReviewView } from "./ReviewView";
 import { channelName } from "@/lib/channels";
 import { useOnRefresh } from "@/lib/refresh";
 import { SearchField } from "../SearchField";
+import { shownError } from "@/lib/errors";
 
 const STAGE_ORDER: ContentRow["status"][] = ["in_review", "changes_requested", "draft", "approved", "published", "withdrawn"];
 
@@ -95,14 +96,14 @@ export function ReviewQueue() {
       setFailed(null);
     }).catch((err) => {
       if (ticket !== seq.current) return;
-      if (err instanceof ApiError && err.status === 503) {
+      if (isOffline(err)) {
         setDemo(true);
         setRows([]);
         return;
       }
       // Keep what is on screen (and the polling it drives); say the refresh failed instead of
       // showing an empty, "clear" queue.
-      setFailed((err as Error).message);
+      setFailed(shownError(err));
       setRows((r) => r ?? []);
     });
   }, []);
@@ -238,7 +239,7 @@ export function ReviewQueue() {
 
       {failed && (
         <p role="alert" className="rounded-xl bg-[var(--vt-warning-bg)] px-4 py-2.5 text-xs text-[var(--vt-warning)]">
-          Couldn&apos;t refresh the queue ({failed}). Showing the last list; it retries while pieces are being checked.
+          Couldn&apos;t refresh the queue. {failed} Showing the last list; it retries while pieces are being checked.
         </p>
       )}
       <section id="queue-panel" role="tabpanel" aria-labelledby={`queue-tab-${queue}`} className="vt-card min-w-0 overflow-hidden">

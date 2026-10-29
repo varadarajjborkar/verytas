@@ -19,6 +19,7 @@ import {
 } from "../Icons";
 import { INKI, InkiIcon } from "../Inki";
 import { Avatar, type Listener, STATUS_DOT } from "./ConversationsView";
+import { shownError } from "@/lib/errors";
 
 const PAGE = 30;
 // Questions Inki can take from the card above the box; each is sent as an ordinary "@Inki" message.
@@ -64,7 +65,7 @@ export function Thread({ conv, me, side, subscribe, inki, initialPiece, onBack, 
 
   useEffect(() => {
     // Merged, not replaced: a live message that lands while this loads must not be dropped.
-    listMessages(conv.id).then((m) => { merge(m); setMore(m.length >= PAGE); }).catch((e: Error) => setError(e.message));
+    listMessages(conv.id).then((m) => { merge(m); setMore(m.length >= PAGE); }).catch((e: unknown) => setError(shownError(e)));
   }, [conv.id, merge]);
 
   // Everything after the last message seen, page by page, so a long gap leaves no hole in the middle.
@@ -132,7 +133,7 @@ export function Thread({ conv, me, side, subscribe, inki, initialPiece, onBack, 
     try {
       older = await listMessages(conv.id, { before: first });
     } catch (e) {
-      setError(`Earlier messages didn't load (${(e as Error).message}). Try again.`);
+      setError(`Earlier messages didn't load. ${shownError(e)}`);
       return;
     }
     setMore(older.length >= PAGE);
@@ -143,7 +144,7 @@ export function Thread({ conv, me, side, subscribe, inki, initialPiece, onBack, 
 
   const remove = async (m: ChatMessage) => {
     if (!window.confirm("Delete this message for everyone? Its files go too.")) return;
-    try { merge([await deleteMessage(conv.id, m.id)]); } catch (e) { setError((e as Error).message); }
+    try { merge([await deleteMessage(conv.id, m.id)]); } catch (e) { setError(shownError(e)); }
   };
 
   const jump = async (id: number) => {
@@ -512,7 +513,7 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
       upload(f).then((u) => setFiles((all) => all.map((p) => p.key === key ? { ...p, state: "ready", file: {
         id: u.id, kind: u.media_type.startsWith("image/") ? "image" : u.media_type.startsWith("video/") ? "video" : "document",
         name: u.name ?? f.name, media_type: u.media_type, bytes: u.bytes } } : p)))
-        .catch((e: Error) => setFiles((all) => all.map((p) => p.key === key ? { ...p, state: "failed", error: e.message } : p)));
+        .catch((e: unknown) => setFiles((all) => all.map((p) => p.key === key ? { ...p, state: "failed", error: shownError(e) } : p)));
     });
   };
 
@@ -558,7 +559,7 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
       if (!t || t === editing.text) { onCancel(); return; }
       setSending(true);
       try { onSent(await editMessage(conv.id, editing.id, t)); }
-      catch (e) { setError((e as Error).message); }
+      catch (e) { setError(shownError(e)); }
       finally { setSending(false); }
       return;
     }
@@ -664,7 +665,7 @@ function Composer({ conv, me, side, initialPiece, replyTo, editing, quiet, onCan
           {inkiOn && (
             <button type="button" className="underline-offset-2 hover:text-ink hover:underline"
               onClick={() => withdrawInki().then(() => setInkiOn(false))
-                .catch((e: Error) => setError(`${INKI} is still on: ${e.message}. Try again.`))}>
+                .catch((e: unknown) => setError(`${INKI} is still on. ${shownError(e)}`))}>
               {INKI} may read conversations you ask it into · Turn off
             </button>
           )}
@@ -700,7 +701,7 @@ function InkiConsent({ onAccept, onDecline }: { onAccept: () => Promise<void>; o
             setBusy(true);
             setFailed(null);
             try { await onAccept(); }
-            catch (e) { setFailed(`That didn't save (${(e as Error).message}). Try again.`); }
+            catch (e) { setFailed(`That didn't save. ${shownError(e)}`); }
             finally { setBusy(false); }
           }}>Allow and send</button>
         </div>

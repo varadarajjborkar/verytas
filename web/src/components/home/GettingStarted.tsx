@@ -10,6 +10,7 @@ import { ArrowRightIcon, CheckIcon, CloseIcon, InfoIcon } from "../Icons";
 import { OPEN_SETTINGS } from "../SettingsMenu";
 import { useToast } from "../Toaster";
 import { useViewer } from "../Viewer";
+import { shownError } from "@/lib/errors";
 
 // One line on what this person's side of Verytas is for, so the checklist below reads as a path, not chores.
 const INTRO: Record<string, string> = {
@@ -52,7 +53,7 @@ export function GettingStarted() {
       await load();
       router.refresh();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't load the sample kit", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't load the sample kit", detail: shownError(err) });
     } finally {
       setLoading(false);
     }

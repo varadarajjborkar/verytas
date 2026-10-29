@@ -5,6 +5,7 @@ import { api, relativeTime } from "@/lib/review-client";
 import { CloseIcon } from "./Icons";
 import { INKI, InkiIcon } from "./Inki";
 import { useToast } from "./Toaster";
+import { shownError } from "@/lib/errors";
 
 type Memory = { id: string; text: string; created_at: string | null; updated_at: string | null };
 
@@ -19,7 +20,7 @@ export function InkiMemory() {
   const [confirm, setConfirm] = useState(false);
 
   const load = useCallback(() => {
-    api<Memory[]>("me/memories").then((r) => { setRows(r); setError(null); }).catch((e: Error) => setError(e.message));
+    api<Memory[]>("me/memories").then((r) => { setRows(r); setError(null); }).catch((e: unknown) => setError(shownError(e)));
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -30,7 +31,7 @@ export function InkiMemory() {
       setConfirm(false);
       toast({ kind: "success", title: id ? "Forgotten" : `${INKI} forgot everything it kept about you` });
     } catch (e) {
-      toast({ kind: "error", title: "Couldn't forget that", detail: (e as Error).message });
+      toast({ kind: "error", title: "Couldn't forget that", detail: shownError(e) });
     }
   };
 

@@ -1,3 +1,5 @@
+import { isSafeMessage } from "./errors";
+
 /** Reads an OpenAI-style SSE stream, calling `onText` with each content delta.
  * Lines are only parsed once complete; an error payload from upstream throws. */
 export async function readStream(res: Response, onText: (t: string) => void) {
@@ -13,7 +15,10 @@ export async function readStream(res: Response, onText: (t: string) => void) {
     } catch {
       return; // not JSON (a comment or keep-alive); complete lines are never split
     }
-    if (event.error) throw new Error(typeof event.error === "string" ? event.error : event.error.message ?? "The model failed.");
+    if (event.error) {
+      const said = typeof event.error === "string" ? event.error : event.error.message;
+      throw new Error(isSafeMessage(said) ? said : "The answer stopped partway. Try asking again.");
+    }
     const delta = event.choices?.[0]?.delta?.content;
     if (typeof delta === "string") onText(delta);
   };

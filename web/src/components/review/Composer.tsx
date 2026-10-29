@@ -8,6 +8,7 @@ import { today } from "../library/parts";
 import { useToast } from "../Toaster";
 import { CHANNELS } from "@/lib/channels";
 import type { BrandEvent, Precheck, UploadedMedia } from "@/lib/types";
+import { shownError } from "@/lib/errors";
 
 
 export type Attachment = UploadedMedia & { kind: "image" | "document" | "video"; alt: string; localId: string };
@@ -123,8 +124,8 @@ export function Composer({ draft, update, onSubmit, busy, demo }: {
         update((d) => ({ ...d, attachments: [...d.attachments, { ...media, kind, alt: "", localId }] }));
         toast({ kind: "success", title: `${file.name} uploaded`, detail: `${fmtBytes(media.bytes)} · ${media.media_type}` });
       } catch (err) {
-        setUploadError((err as Error).message);
-        toast({ kind: "error", title: `Couldn't upload ${file.name}`, detail: (err as Error).message });
+        setUploadError(shownError(err));
+        toast({ kind: "error", title: `Couldn't upload ${file.name}`, detail: shownError(err) });
       } finally {
         setUploading((u) => u.filter((n) => n !== file.name));
       }

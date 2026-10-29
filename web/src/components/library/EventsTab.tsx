@@ -7,6 +7,7 @@ import type { BrandEvent, EventImpact, EventKind } from "@/lib/types";
 import { CalendarIcon, PlusIcon, RefreshIcon } from "../Icons";
 import { useToast } from "../Toaster";
 import { Badge, Empty, Field, today, toList } from "./parts";
+import { shownError } from "@/lib/errors";
 
 const KINDS: Record<EventKind, string> = {
   launch: "Launch", campaign: "Campaign", sale: "Sale", crisis: "Crisis", partnership: "Partnership", other: "Other",
@@ -114,7 +115,7 @@ function EventDetail({ event, editable, onEdit, onChanged }: { event: BrandEvent
                     toast({ kind: "success", title: "Event cancelled", detail: `${out.rechecked.length} piece${out.rechecked.length === 1 ? "" : "s"} re-checked.` });
                     onChanged();
                   } catch (err) {
-                    toast({ kind: "error", title: "Couldn't cancel it", detail: (err as Error).message });
+                    toast({ kind: "error", title: "Couldn't cancel it", detail: shownError(err) });
                   } finally {
                     setBusy(false);
                   }
@@ -168,7 +169,7 @@ function EventForm({ initial, onCancel, onDone }: { initial: Partial<BrandEvent>
         detail: out.rechecked.length ? `${out.rechecked.length} piece${out.rechecked.length === 1 ? "" : "s"} re-checked against it.` : "Its rules are live." });
       onDone();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't save the event", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't save the event", detail: shownError(err) });
     } finally {
       setBusy(false);
     }

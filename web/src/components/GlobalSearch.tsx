@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import {
   type ComponentType, type KeyboardEvent, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore,
 } from "react";
-import { ApiError, search } from "@/lib/review-client";
+import { isOffline, search } from "@/lib/review-client";
 import type { Side } from "@/lib/roles";
 import {
   type ActionId, type Entry, type IconKey, LEGACY_RECENT_KEY, matchEntries, parseRecent, recentKey, safeHref, SECTION_LABEL, SECTION_ORDER,
@@ -20,6 +20,7 @@ import { type ThemeChoice, useTheme } from "./Providers";
 import { OPEN_SETTINGS } from "./SettingsMenu";
 import { useToast } from "./Toaster";
 import { useViewer } from "./Viewer";
+import { shownError } from "@/lib/errors";
 
 const ICON: Record<IconKey, ComponentType<{ size?: number }>> = {
   page: PanelIcon, action: SparkIcon, settings: SettingsIcon, sun: SunIcon, moon: MoonIcon, monitor: MonitorIcon,
@@ -56,17 +57,13 @@ const fromHit = (h: SearchHit, k: string): Item => ({
  * without asking. That cannot change while the page is open, unlike an API that is merely down. */
 let sampleMode = false;
 
-/** The proxy's own answer when no API is configured. Any other 503 is the API failing: an error to show and
- * to retry on the next query, not a reason to invent results. */
-const isDemoRefusal = (err: unknown) => err instanceof ApiError && err.status === 503
-  && (err.detail as { demo?: unknown } | null | undefined)?.demo === true;
 
 async function fetchHits(q: string, side: Side, signal: AbortSignal): Promise<SearchHit[]> {
   if (!sampleMode) {
     try {
       return (await search(q, q ? PER_GROUP : 3, signal)).results;
     } catch (err) {
-      if (signal.aborted || !isDemoRefusal(err)) throw err;
+      if (signal.aborted || !isOffline(err)) throw err;
       sampleMode = true;
     }
   }
@@ -234,7 +231,7 @@ export function GlobalSearch() {
       router.replace("/signin");
       router.refresh();
     } else {
-      await switchTo(id.slice(7) as Side).catch((err: Error) => toast({ kind: "error", title: "Couldn't switch", detail: err.message }));
+      await switchTo(id.slice(7) as Side).catch((err: unknown) => toast({ kind: "error", title: "Couldn't switch", detail: shownError(err) }));
     }
   }
 

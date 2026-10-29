@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import difflib
 import io
+import logging
 import re
 import threading
 from collections.abc import Callable
@@ -32,6 +33,8 @@ from PIL import Image, ImageDraw
 
 from verytas.media.files import MediaError, shrink
 from verytas.media.ocr import OcrResult
+
+log = logging.getLogger("verytas.media")
 
 SAMPLE_EVERY_S = 1.0
 MAX_FRAMES = 600  # held decoded at once; longer videos are sampled more sparsely (sample_every)
@@ -66,7 +69,9 @@ def _open(raw: bytes):
     try:
         return av.open(io.BytesIO(raw))
     except (av.error.FFmpegError, ValueError) as exc:
-        raise MediaError(f"not a readable video ({exc})") from exc
+        # The decoder's own words (codec names, offsets) are for the log, not the person who sent the file.
+        log.info("video would not open: %s", exc)
+        raise MediaError("not a readable video") from exc
 
 
 def probe(raw: bytes) -> dict[str, Any]:

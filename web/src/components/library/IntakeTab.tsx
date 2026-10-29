@@ -6,6 +6,7 @@ import type { IntakeBatch, IntakeBatchDetail, IntakeDraft, IntakeItem, IntakeIte
 import { UploadIcon } from "../Icons";
 import { useToast } from "../Toaster";
 import { Badge, Empty, Field } from "./parts";
+import { isSafeMessage, shownError } from "@/lib/errors";
 
 const ACCEPT = ".pdf,.docx,.pptx,.xlsx,.csv,.tsv,.json,.txt,.md,image/*,video/*,audio/*";
 const STATUS: Record<IntakeItem["status"], { label: string; tone: "muted" | "ok" | "warning" | "blocker" | "accent" }> = {
@@ -98,7 +99,7 @@ function HandOver({ onStarted }: { onStarted: (id: number) => void }) {
       setPicks([]); setNote(""); setLink(""); setPaste("");
       onStarted(out.id);
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't start the hand-over", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't start the hand-over", detail: shownError(err) });
     }
     setBusy(false);
   }
@@ -195,7 +196,7 @@ function BatchView({ id, onAdded, onClose }: { id: number; onAdded: () => void; 
       applied.current = n;
       setBatch(b);
       setLoadError(null);
-    }).catch((err: Error) => { if (n > applied.current) setLoadError(err.message); });
+    }).catch((err: unknown) => { if (n > applied.current) setLoadError(shownError(err)); });
   }, [id]);
   useEffect(() => { void load(); }, [load]);
   // Polled while anything is still being read; quiet once every item has an answer, or the hand-over can't be loaded.
@@ -241,7 +242,7 @@ function BatchView({ id, onAdded, onClose }: { id: number; onAdded: () => void; 
         detail: skipped ? `${skipped} left for you to check one by one.` : undefined });
       setChosen(new Set());
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't approve", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't approve", detail: shownError(err) });
     }
     if (done) onAdded();
     await load();
@@ -316,7 +317,7 @@ function ItemCard({ item, onChanged }: { item: IntakeItem; onChanged: () => void
       await refreshIntake(item.id);
       onChanged();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't read the link again", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't read the link again", detail: shownError(err) });
     }
     setRereading(false);
   }
@@ -327,7 +328,7 @@ function ItemCard({ item, onChanged }: { item: IntakeItem; onChanged: () => void
       setAnswer("");
       onChanged();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't send the answer", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't send the answer", detail: shownError(err) });
     }
     setBusy(false);
   }
@@ -345,7 +346,11 @@ function ItemCard({ item, onChanged }: { item: IntakeItem; onChanged: () => void
         </p>
       )}
       {item.purpose && <p className="text-xs leading-5">{item.purpose}</p>}
-      {item.error && <p className="text-xs text-[var(--vt-blocker)]">{item.error}</p>}
+      {item.error && (
+        <p className="text-xs text-[var(--vt-blocker)]">
+          {isSafeMessage(item.error) ? item.error : "couldn't be read; try again or export it in another format"}
+        </p>
+      )}
       {(item.reading.notes?.length ?? 0) > 0 && <p className="text-[11px] text-subtle">{item.reading.notes!.join(" ")}</p>}
       {item.issues.length > 0 && (
         <details className="text-[11px] text-muted"><summary className="cursor-pointer">{item.issues.length} note{item.issues.length === 1 ? "" : "s"} from the reading</summary>
@@ -390,7 +395,7 @@ function DraftRow({ d, item, chosen, text, onText, onChoose, onDone }: {
       await decideDraft(d.id, action, action === "approve" && edited ? { [field]: text } : undefined);
       onDone();
     } catch (err) {
-      toast({ kind: "error", title: action === "approve" ? "The library didn't accept it" : "Couldn't reject", detail: (err as Error).message });
+      toast({ kind: "error", title: action === "approve" ? "The library didn't accept it" : "Couldn't reject", detail: shownError(err) });
     }
     setBusy(false);
   }

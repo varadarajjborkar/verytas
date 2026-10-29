@@ -75,6 +75,7 @@ function quotes(text: string, secret: Set<string>): boolean {
 const encoder = new TextEncoder();
 const event = (content: string) => encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
 const DONE = encoder.encode("data: [DONE]\n\n");
+const STREAM_FAILED = encoder.encode(`data: ${JSON.stringify({ error: { message: "The answer stopped partway. Try asking again." } })}\n\n`);
 
 /** A complete answer in the stream format the pages read (lib/sse.ts), for when the model is not asked. */
 export function fixedAnswer(content: string): Response {
@@ -85,8 +86,8 @@ export function fixedAnswer(content: string): Response {
 
 /**
  * The model's stream, re-sent in the same format with the last HOLD characters held back. If what has
- * arrived quotes `instructions`, nothing more of it is sent and `refusal` goes instead. Error events pass
- * straight through so the page can say what went wrong.
+ * arrived quotes `instructions`, nothing more of it is sent and `refusal` goes instead. An error event from
+ * the model service becomes a fixed one, so the page can say the answer failed without showing its words.
  */
 export function guardedStream(upstream: ReadableStream<Uint8Array>, instructions: string, refusal: string): ReadableStream<Uint8Array> {
   const secret = shingles(instructions);
@@ -102,7 +103,18 @@ export function guardedStream(upstream: ReadableStream<Uint8Array>, instructions
     // called again, and the page would wait for ever. Text being held back is not enough, so keep reading.
     async pull(c) {
       for (;;) {
-        const { value, done } = await reader.read();
+        let chunk: ReadableStreamReadResult<Uint8Array>;
+        try {
+          chunk = await reader.read();
+        } catch (err) {
+          // A dropped or timed-out model stream ends the answer with a sentence, not a broken page stream.
+          console.error("[verytas] model stream failed:", (err as Error).name);
+          c.enqueue(STREAM_FAILED);
+          c.enqueue(DONE);
+          c.close();
+          return;
+        }
+        const { value, done } = chunk;
         buffer += decoder.decode(value, { stream: !done });
         const lines = buffer.split("\n");
         buffer = done ? "" : lines.pop() ?? "";
@@ -113,7 +125,9 @@ export function guardedStream(upstream: ReadableStream<Uint8Array>, instructions
           try {
             const parsed = JSON.parse(data) as { error?: unknown; choices?: { delta?: { content?: unknown } }[] };
             if (parsed.error) {
-              c.enqueue(encoder.encode(`data: ${data}\n\n`));
+              // The model service's own words stay in the log; the page gets a sentence written for people.
+              console.error("[verytas] model stream error:", data.slice(0, 300));
+              c.enqueue(STREAM_FAILED);
               passed = true;
             }
             const delta = parsed.choices?.[0]?.delta?.content;

@@ -3,7 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useStored, writeStored } from "@/lib/stored";
-import { ApiError, listContents, submit } from "@/lib/review-client";
+import { isOffline, listContents, submit } from "@/lib/review-client";
 import type { ContentRow, Review } from "@/lib/types";
 import { BackButton } from "./BackButton";
 import { Drawer } from "./Drawer";
@@ -16,6 +16,7 @@ import { ReviewQueue } from "./review/ReviewQueue";
 import { ReviewView } from "./review/ReviewView";
 import { useToast } from "./Toaster";
 import { useViewer } from "./Viewer";
+import { shownError } from "@/lib/errors";
 
 /**
  * The review workspace: a history of every piece on the left (like a chat
@@ -66,7 +67,7 @@ function CreatorWorkspace({ initialBody }: { initialBody: string }) {
     const ticket = ++seq.current;
     return listContents(true)
       .then((r) => { if (ticket === seq.current) setRows(r); })
-      .catch((err) => { if (err instanceof ApiError && err.status === 503) setDemo(true); })
+      .catch((err) => { if (isOffline(err)) setDemo(true); })
       .finally(() => { if (ticket === seq.current) setLoading(false); });
   }, []);
 
@@ -170,7 +171,7 @@ function NewReview({ initialBody, demo, onCreated }: { initialBody: string; demo
       setDraft(emptyDraft(""));
       onCreated(out.content.id);
     } catch (err) {
-      const message = (err as Error).message;
+      const message = shownError(err);
       setError(message);
       toast({ kind: "error", title: "Couldn't start the review", detail: message });
     } finally {

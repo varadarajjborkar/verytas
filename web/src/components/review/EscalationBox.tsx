@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ApiError, relativeTime, withdrawEscalation } from "@/lib/review-client";
 import type { EscalationRequest, Finding } from "@/lib/types";
 import { REASONS } from "./DecisionControls";
+import { shownError } from "@/lib/errors";
 
 const REASON_LABEL: Record<string, string> = Object.fromEntries(REASONS.map((r) => [r.code, r.label]));
 const MIN = 10;
@@ -60,7 +61,7 @@ export function EscalationBox({ f, request, onEscalate, onChanged, side }: {
                 await withdrawEscalation(request.id);
                 onChanged();
               } catch (err) {
-                setRefusal({ message: (err as Error).message, labels: [] });
+                setRefusal({ message: shownError(err), labels: [] });
               } finally {
                 setBusy(false);
               }
@@ -98,7 +99,7 @@ export function EscalationBox({ f, request, onEscalate, onChanged, side }: {
     } catch (err) {
       const d = err instanceof ApiError ? err.detail as { message?: string; guard?: { label: string }[] } : null;
       if (d?.guard) setRefusal({ message: d.message ?? "This can't be sent.", labels: d.guard.map((g) => g.label) });
-      else setRefusal({ message: (err as Error).message, labels: [] });
+      else setRefusal({ message: shownError(err), labels: [] });
     } finally {
       setBusy(false);
     }

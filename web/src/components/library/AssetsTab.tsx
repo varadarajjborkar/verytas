@@ -6,6 +6,7 @@ import type { BrandAsset } from "@/lib/types";
 import { UploadIcon } from "../Icons";
 import { useToast } from "../Toaster";
 import { Badge, Empty, Field } from "./parts";
+import { shownError } from "@/lib/errors";
 
 const MAX_BYTES = 6 * 1024 * 1024;
 const PARTS = ["full", "face", "head", "body", "wordmark", "icon"] as const;
@@ -35,7 +36,7 @@ export function AssetsTab({ assets, editable, onChanged }: { assets: BrandAsset[
       toast({ kind: "success", title: `${a.name} retired` });
       onChanged();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't retire it", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't retire it", detail: shownError(err) });
     } finally {
       setBusy(null);
     }
@@ -96,7 +97,7 @@ function AssetUpload({ onDone }: { onDone: () => void }) {
       setMeta((m) => ({ ...m, name: "", wordmark: "" }));
       onDone();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't register it", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't register it", detail: shownError(err) });
     } finally {
       setBusy(false);
     }

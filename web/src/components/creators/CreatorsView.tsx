@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { shownError } from "@/lib/errors";
 import { useOnRefresh } from "@/lib/refresh";
-import { ApiError, creatorTrack, listCreators, relativeTime } from "@/lib/review-client";
+import { creatorTrack, isOffline, listCreators, relativeTime } from "@/lib/review-client";
 import type { CreatorRow, CreatorTrack } from "@/lib/types";
 import { BackButton } from "../BackButton";
 import { ForBrandTeam } from "../library/LibraryView";
@@ -33,9 +34,10 @@ export function CreatorsView() {
 }
 
 function Failure({ err }: { err: Error }) {
-  const offline = err instanceof ApiError && err.status === 503;
+  // Only the console's own "no API configured" answer means offline; any other 503 is a restart or a busy moment.
+  const offline = isOffline(err);
   return <p className="rounded-xl bg-sunken px-4 py-6 text-center text-sm text-muted">
-    {offline ? "This needs the Verytas API." : `Couldn't load this: ${err.message}`}
+    {offline ? "This needs the Verytas API." : `Couldn't load this. ${shownError(err)}`}
   </p>;
 }
 

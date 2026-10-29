@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toaster";
 import { importResults, performanceReport } from "@/lib/review-client";
 import type { PerformanceReport } from "@/lib/types";
+import { shownError } from "@/lib/errors";
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 const pp = (v: number) => `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)}`;
@@ -29,7 +30,7 @@ export function PostPerformance({ canImport }: { canImport: boolean }) {
   const toast = useToast();
 
   const load = useCallback(() => performanceReport().then((r) => { setReport(r); setFailed(null); })
-    .catch((e: Error) => setFailed(e.message)), []);
+    .catch((e: unknown) => setFailed(shownError(e))), []);
   useEffect(() => { void load(); }, [load]);
 
   const importSheet = async (file: File) => {
@@ -46,7 +47,7 @@ export function PostPerformance({ canImport }: { canImport: boolean }) {
       });
       void load();
     } catch (e) {
-      toast({ kind: "error", title: "The sheet wasn't imported", detail: (e as Error).message });
+      toast({ kind: "error", title: "The sheet wasn't imported", detail: shownError(e) });
     } finally {
       setBusy(false);
     }

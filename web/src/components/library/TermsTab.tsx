@@ -6,6 +6,7 @@ import type { Term } from "@/lib/types";
 import { PlusIcon } from "../Icons";
 import { useToast } from "../Toaster";
 import { Badge, Empty, Field, today } from "./parts";
+import { shownError } from "@/lib/errors";
 
 /**
  * Codenames and unreleased names. A post that mentions one is blocked, and the
@@ -29,7 +30,7 @@ export function TermsTab({ terms, onChanged }: { terms: Term[]; onChanged: () =>
       onChanged();
       return true;
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't save", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't save", detail: shownError(err) });
       return false;
     } finally {
       setBusy(false);

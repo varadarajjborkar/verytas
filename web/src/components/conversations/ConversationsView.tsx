@@ -16,6 +16,7 @@ import { ChatIcon, CloseIcon, PlusIcon, SearchIcon } from "../Icons";
 import { INKI, InkiIcon } from "../Inki";
 import { useViewer } from "../Viewer";
 import { Thread } from "./Thread";
+import { shownError } from "@/lib/errors";
 
 // Conversations between a creator and the brand team, laid out like an inbox: what is waiting on you
 // first, each row naming the piece it is about and where that piece stands. The list and the open thread
@@ -67,7 +68,7 @@ export function ConversationsView() {
       if (seq !== loads.current.seq) return;
       if (loads.current.changedAt > seq) { void again(); return; }
       setConvs(c); setError(null);
-    }).catch((e: Error) => { if (seq === loads.current.seq) setError(e.message); });
+    }).catch((e: unknown) => { if (seq === loads.current.seq) setError(shownError(e)); });
   }, []);
   const convsRef = useRef<ConversationRow[] | null>(null);
   useEffect(() => { convsRef.current = convs; }, [convs]);
@@ -85,7 +86,7 @@ export function ConversationsView() {
       openConversation(withId).then((row) => {
         router.replace(`/conversations?c=${row.id}${piece ? `&piece=${piece}` : ""}`, { scroll: false });
         load();
-      }).catch((e: Error) => setError(e.message));
+      }).catch((e: unknown) => setError(shownError(e)));
     }
     load();
     // Read once on arrival; later choices update the URL themselves.
@@ -285,7 +286,7 @@ export function ConversationsView() {
             const row = person.conversation_id ? { id: person.conversation_id } : await openConversation(person.id);
             await load();
             choose(row.id);
-          } catch (e) { setError((e as Error).message); }
+          } catch (e) { setError(shownError(e)); }
         }} />}
     </div>
   );
@@ -398,7 +399,7 @@ function PeoplePicker({ onClose, onPick }: { onClose: () => void; onPick: (p: Co
   const panel = useRef<HTMLDivElement>(null);
   // Focus stays inside while it is open and goes back where it was after; Escape closes it.
   useModalFocus(panel, onClose);
-  useEffect(() => { listContacts().then(setPeople).catch((e: Error) => setError(e.message)); }, []);
+  useEffect(() => { listContacts().then(setPeople).catch((e: unknown) => setError(shownError(e))); }, []);
   const shown = people?.filter((p) => p.name.toLowerCase().includes(q.trim().toLowerCase())) ?? [];
   return createPortal(
     <div data-vt-modal className="fixed inset-0 z-50 grid place-items-center p-4">

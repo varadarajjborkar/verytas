@@ -11,6 +11,7 @@ import { type ThemeChoice, useTheme } from "./Providers";
 import { useToast } from "./Toaster";
 import { START_TOUR } from "./Tour";
 import { useViewer } from "./Viewer";
+import { shownError } from "@/lib/errors";
 
 type Me = { id: number; email: string; name: string; role: string; clearance: string };
 const SOCIAL_KEY = "vt-social-profiles";
@@ -120,7 +121,8 @@ function SettingsDialog({ onClose, first }: { onClose: () => void; first: Tab })
       .catch(() => setSignin(false));
     fetch("/api/v/me").then(async (r) => {
       if (!r.ok) {
-        setMeError(r.status === 503 ? "Demo mode: no account is connected." : "Couldn't load the account.");
+        const demo = r.status === 503 && (await r.json().catch(() => null))?.demo === true;
+        setMeError(demo ? "Demo mode: no account is connected." : "Couldn't load the account.");
         return;
       }
       const who: Me = await r.json();
@@ -192,7 +194,7 @@ function SettingsDialog({ onClose, first }: { onClose: () => void; first: Tab })
       await viewer.switchTo(side);
     } catch (err) {
       setSwitching(false);
-      toast({ kind: "error", title: "Couldn't switch", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't switch", detail: shownError(err) });
     }
   }
 

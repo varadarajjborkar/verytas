@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, listEscalations, PRIORITY, relativeTime, resolveEscalation } from "@/lib/review-client";
+import { ApiError, isOffline, listEscalations, PRIORITY, relativeTime, resolveEscalation } from "@/lib/review-client";
 import { canDecide } from "@/lib/roles";
 import type { EscalationRequest, FactCitation, RuleCitation } from "@/lib/types";
 import { CheckIcon, ChevronIcon } from "../Icons";
@@ -16,6 +16,7 @@ import { tabKeys } from "../ui";
 import { useViewer } from "../Viewer";
 import { channelName } from "@/lib/channels";
 import { useOnRefresh } from "@/lib/refresh";
+import { shownError } from "@/lib/errors";
 
 const FLAG_TONE: Record<string, string> = {
   pressure: "bg-[var(--vt-warning-bg)] text-[var(--vt-warning)]",
@@ -53,7 +54,7 @@ export function EscalationsInbox() {
       setRows(r);
       setError(null);
     }).catch((err) => {
-      if (ticket === seq.current) setError(err instanceof ApiError && err.status === 503 ? "Escalations need the Verytas API." : (err as Error).message);
+      if (ticket === seq.current) setError(isOffline(err) ? "Escalations need the Verytas API." : shownError(err));
     });
   }, [tab]);
   useEffect(() => { load(); }, [load]);
@@ -272,7 +273,7 @@ function Decide({ r, approver, onDone }: { r: EscalationRequest; approver: boole
       onDone();
     } catch (err) {
       const d = err instanceof ApiError ? err.detail as { message?: string } : null;
-      toast({ kind: "error", title: "Couldn't record it", detail: d?.message ?? (err as Error).message });
+      toast({ kind: "error", title: "Couldn't record it", detail: d?.message ?? shownError(err) });
     } finally {
       setBusy(false);
     }

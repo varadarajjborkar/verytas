@@ -2,6 +2,8 @@
 // API (/chats, private to them), or this browser when the console runs on demo
 // data with no API behind it.
 
+import { statusMessage } from "./errors";
+
 export type StoredMessage = { role: "user" | "assistant"; content: string; images?: string[] };
 export type ThreadSummary = { id: number; title: string; updated_at: string };
 export type Thread = ThreadSummary & { messages: StoredMessage[] };
@@ -31,7 +33,12 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: init?.body ? { "Content-Type": "application/json" } : undefined,
   });
-  if (!res.ok) throw Object.assign(new Error(`chats: ${res.status}`), { status: res.status });
+  if (!res.ok) {
+    // Demo mode is the proxy saying so ({demo: true}), never just a 503: an API restarting is not a reason
+    // to move someone's chats into this browser.
+    const demo = res.status === 503 && (await res.json().catch(() => null) as { demo?: unknown } | null)?.demo === true;
+    throw Object.assign(new Error(statusMessage(res.status)), { status: res.status, demo });
+  }
   return (res.status === 204 ? null : await res.json()) as T;
 }
 
@@ -78,7 +85,7 @@ export async function openChatStore(): Promise<ChatStore> {
     await accountStore.list();
     return accountStore;
   } catch (err) {
-    return (err as { status?: number }).status === 503 ? browserStore : accountStore;
+    return (err as { demo?: boolean }).demo ? browserStore : accountStore;
   }
 }
 

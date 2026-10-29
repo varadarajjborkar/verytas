@@ -1,6 +1,7 @@
 import { backendConfigured, forward } from "@/lib/backend";
 import { sessionToken } from "@/lib/session";
 import { crossOrigin } from "@/lib/same-origin";
+import { isSafeMessage, statusMessage } from "@/lib/errors";
 
 // One server-side door to the Verytas API for the console. Calls go out as the
 // signed-in person, and only these get through; the API then checks that
@@ -172,6 +173,7 @@ async function handle(request: Request, ctx: { params: Promise<{ path: string[] 
     if (res.status === 401) {
       return Response.json({ error: "Your session has expired. Sign in again." }, { status: 401 });
     }
+    if (res.status >= 500) return await serverFailure(res, path);
     const headers: Record<string, string> = { "content-type": res.headers.get("content-type") ?? "application/json" };
     // Asset thumbnails: cacheable for this person only, and never sniffed into something else.
     const cache = res.headers.get("cache-control");
@@ -188,6 +190,24 @@ async function handle(request: Request, ctx: { params: Promise<{ path: string[] 
     console.error("[verytas] proxy failed:", (err as Error).message);
     return Response.json({ error: "The review service did not respond. Try again in a moment." }, { status: 502 });
   }
+}
+
+/** A failure on the API's side. Its own sentence passes through when it was written for people (a
+ * worker that is starting, a service that is busy); a traceback, a plain-text 500 or anything else is logged
+ * here and replaced, so no internals reach the page. */
+async function serverFailure(res: Response, path: string): Promise<Response> {
+  const text = await res.text().catch(() => "");
+  let said: unknown;
+  try {
+    const body = JSON.parse(text) as { detail?: unknown; error?: unknown };
+    said = typeof body.detail === "string" ? body.detail : (body.detail as { message?: unknown })?.message ?? body.error;
+  } catch {
+    said = undefined;
+  }
+  // Only the sentence passes; any other field the failure carried stays on this side.
+  if (isSafeMessage(said)) return Response.json({ detail: said }, { status: res.status });
+  console.error(`[verytas] API ${res.status} on /${path}:`, text.slice(0, 300));
+  return Response.json({ error: statusMessage(res.status) }, { status: res.status });
 }
 
 export const GET = handle;

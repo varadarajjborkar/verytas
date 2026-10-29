@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { isSafeMessage } from "@/lib/errors";
 
 // Small notices that slide up from the bottom of the window: uploads finished,
 // reviews done, anything that failed. One at a time: a new notice replaces the
@@ -65,7 +66,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((all) => {
       // The notice on screen gives way; it fades out under the new one.
       for (const t of all) if (!t.leaving) dismiss(t.id);
-      return [...all, { id, kind, title: input.title, detail: input.detail, duration }];
+      // A detail that isn't written for people (markup, a parser's or browser's words) is dropped: the title
+      // already says what failed, and the original belongs in the logs. Success notices carry our own words.
+      const detail = kind === "success" || isSafeMessage(input.detail) ? input.detail : undefined;
+      return [...all, { id, kind, title: input.title, detail, duration }];
     });
     return { id, duration };
   }, [dismiss]);

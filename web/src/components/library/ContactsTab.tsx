@@ -6,6 +6,7 @@ import type { PublicContact } from "@/lib/types";
 import { PlusIcon } from "../Icons";
 import { useToast } from "../Toaster";
 import { Badge, Empty, Field } from "./parts";
+import { shownError } from "@/lib/errors";
 
 const KIND: Record<PublicContact["kind"], { label: string; placeholder: string }> = {
   phone: { label: "Phone", placeholder: "+91 80 4567 8900" },
@@ -33,7 +34,7 @@ export function ContactsTab({ contacts, editable, onChanged }: { contacts: Publi
       setDraft({ ...draft, value: "", label: "", source_ref: "" });
       onChanged();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't list it", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't list it", detail: shownError(err) });
     } finally {
       setBusy(null);
     }
@@ -74,7 +75,7 @@ export function ContactsTab({ contacts, editable, onChanged }: { contacts: Publi
                       await retireContact(c.id);
                       onChanged();
                     } catch (err) {
-                      toast({ kind: "error", title: "Couldn't retire it", detail: (err as Error).message });
+                      toast({ kind: "error", title: "Couldn't retire it", detail: shownError(err) });
                     } finally {
                       setBusy(null);
                     }

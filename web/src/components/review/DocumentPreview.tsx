@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { documentPageUrl, getDocumentPreview, type DocumentPreview } from "@/lib/review-client";
 import type { Finding, Level } from "@/lib/types";
 import { HighlightedBody } from "./parts";
+import { shownError } from "@/lib/errors";
 
 const RING: Record<Level, string> = {
   blocker: "border-[var(--vt-blocker)]",
@@ -22,7 +23,7 @@ export function DocumentPreviewPane({ contentId, versionId, docId, findings, act
     let live = true;
     getDocumentPreview(contentId, versionId, docId)
       .then((data) => { if (live) setState({ data }); })
-      .catch((e: Error) => { if (live) setState({ error: e.message }); });
+      .catch((e: unknown) => { if (live) setState({ error: shownError(e) }); });
     return () => { live = false; };
   }, [contentId, versionId, docId]);
 

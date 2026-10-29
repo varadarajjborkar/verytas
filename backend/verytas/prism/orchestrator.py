@@ -212,13 +212,14 @@ class Prism:
         async with self._admission, self.sessionmaker() as session:
             try:
                 await self._review(session, review_id)
-            except Exception as exc:  # noqa: BLE001, record the failure on the review itself
+            except Exception:  # noqa: BLE001, record the failure on the review itself
                 log.exception("review %s failed", review_id)
                 await session.rollback()
                 review = await session.get(Review, review_id)
                 if review is not None:
                     review.status = ReviewStatus.failed
-                    review.error = f"{type(exc).__name__}: review crashed"
+                    # The exception is in the log above; the review carries words for the person reading it.
+                    review.error = "The review stopped on an internal error. Re-check to run it again."
                     review.finished_at = utcnow()
                     await session.commit()
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { ApiError, listContents, listCreators, listEscalations, listEvents, listPeople } from "@/lib/review-client";
+import { isOffline, listContents, listCreators, listEscalations, listEvents, listPeople } from "@/lib/review-client";
 import { useStored, writeStored } from "@/lib/stored";
 import type { BrandEvent, EscalationRequest, Overview, Person, Recurring, RuleHealth } from "@/lib/types";
 import { CloseIcon, DashboardIcon, GripIcon, PlusIcon } from "../Icons";
@@ -52,7 +52,7 @@ export function ManagerDashboard({ overview, recurring, health }: { overview: Ov
   useEffect(() => {
     let live = true;
     listContents(false).then((rows) => live && setData((d) => ({ ...d, rows }))).catch((err) => {
-      if (live) setData((d) => ({ ...d, rows: [], demo: err instanceof ApiError && err.status === 503 }));
+      if (live) setData((d) => ({ ...d, rows: [], demo: isOffline(err) }));
     });
     listPeople().then((ps) => live && setData((d) => ({ ...d, people: new Map(ps.map((p: Person) => [p.id, p])) }))).catch(() => {});
     listEscalations("open").then((e: EscalationRequest[]) => live && setData((d) => ({ ...d, escalations: e })))

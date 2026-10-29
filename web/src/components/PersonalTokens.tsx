@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, createToken, listTokens, relativeTime, revokeToken } from "@/lib/review-client";
+import { createToken, isOffline, listTokens, relativeTime, revokeToken } from "@/lib/review-client";
 import type { CreatedToken, PersonalToken } from "@/lib/types";
 import { CheckIcon } from "./Icons";
 import { useToast } from "./Toaster";
+import { shownError } from "@/lib/errors";
 
 const EXPIRY = [7, 30, 90] as const;
 
@@ -29,7 +30,7 @@ export function PersonalTokens() {
 
   const load = useCallback(() => {
     listTokens().then((t) => { setTokens(t); setError(null); })
-      .catch((e: ApiError) => setError(e.status === 503 ? "Demo mode: no account is connected." : e.message));
+      .catch((e: unknown) => setError(isOffline(e) ? "Demo mode: no account is connected." : shownError(e)));
   }, []);
 
   useEffect(() => {
@@ -43,7 +44,7 @@ export function PersonalTokens() {
       setName("");
       load();
     } catch (e) {
-      toast({ kind: "error", title: "Couldn't create the token", detail: (e as Error).message });
+      toast({ kind: "error", title: "Couldn't create the token", detail: shownError(e) });
     } finally {
       setBusy(false);
     }
@@ -57,7 +58,7 @@ export function PersonalTokens() {
       toast({ kind: "success", title: "Token revoked" });
       load();
     } catch (e) {
-      toast({ kind: "error", title: "Couldn't revoke", detail: (e as Error).message });
+      toast({ kind: "error", title: "Couldn't revoke", detail: shownError(e) });
     }
   }
 

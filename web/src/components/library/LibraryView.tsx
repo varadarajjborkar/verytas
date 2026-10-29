@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, listApproved, listAssets, listContacts, listEvents, listFacts, listRules, listTerms } from "@/lib/review-client";
+import { isOffline, listApproved, listAssets, listContacts, listEvents, listFacts, listRules, listTerms } from "@/lib/review-client";
 import { canEditLibrary } from "@/lib/roles";
 import type { ApprovedPerson, BrandAsset, BrandEvent, Fact, PublicContact, Rule, Term } from "@/lib/types";
 import { tabKeys } from "../ui";
@@ -18,6 +18,7 @@ import { ListSkeleton, ReadOnlyNote, today } from "./parts";
 import { RulesTab } from "./RulesTab";
 import { TermsTab } from "./TermsTab";
 import { useOnRefresh } from "@/lib/refresh";
+import { shownError } from "@/lib/errors";
 
 type Tab = "rules" | "facts" | "events" | "people" | "contacts" | "terms" | "assets" | "import";
 const TABS: Tab[] = ["rules", "facts", "events", "people", "contacts", "terms", "assets", "import"];
@@ -49,9 +50,9 @@ export function LibraryView() {
         setData({ rules, facts, terms, assets, events, contacts, people });
         setError(null);
       })
-      .catch((err) => setError(err instanceof ApiError && err.status === 503
+      .catch((err) => setError(isOffline(err)
         ? "The library needs the Verytas API. Connect it to manage rules, facts, terms and artwork."
-        : (err as Error).message));
+        : shownError(err)));
   }, [admin]);
   useEffect(() => { if (!viewerLoading && side === "manager") load(); }, [load, viewerLoading, side]);
   useOnRefresh(useCallback(() => { if (side === "manager") load(); }, [load, side]));

@@ -12,6 +12,7 @@ import { InkiIcon } from "./Inki";
 import { useToast } from "./Toaster";
 import { useViewer } from "./Viewer";
 import { AiInfoButton } from "./AiInfo";
+import { shownError } from "@/lib/errors";
 
 // Ask Inki, full page. The model answers in OpenUI Lang (charts, tables,
 // callouts) streamed from /api/chat and drawn by OpenUI's renderer in the app's
@@ -114,7 +115,7 @@ export function AskInki() {
         if (conversation.current === conv) setThreadId(saved.id);
         setThreads((ts) => [saved, ...ts.filter((t) => t.id !== saved.id)]);
       } catch (err) {
-        toast({ kind: "warning", title: "Couldn't save this chat", detail: (err as Error).message });
+        toast({ kind: "warning", title: "Couldn't save this chat", detail: shownError(err) });
       }
     });
   }
@@ -160,7 +161,7 @@ export function AskInki() {
         write((m) => (m.content ? m : { ...m, note: "Stopped." }));
         setStatus("Stopped");
       } else {
-        write((m) => ({ ...m, error: true, content: (err as Error).message }));
+        write((m) => ({ ...m, error: true, content: shownError(err) }));
         setStatus("The answer failed");
       }
     } finally {
@@ -210,7 +211,7 @@ export function AskInki() {
     try {
       thread = await store.get(id);
     } catch (err) {
-      if (ticket === opening.current) toast({ kind: "error", title: "Couldn't open that chat", detail: (err as Error).message });
+      if (ticket === opening.current) toast({ kind: "error", title: "Couldn't open that chat", detail: shownError(err) });
       return;
     }
     if (ticket !== opening.current) return;
@@ -246,7 +247,7 @@ export function AskInki() {
         const url = await imageToDataUrl(file);
         setImages((imgs) => (imgs.length < MAX_IMAGES ? [...imgs, url] : imgs));
       } catch (err) {
-        toast({ kind: "error", title: "Couldn't attach that image", detail: (err as Error).message });
+        toast({ kind: "error", title: "Couldn't attach that image", detail: shownError(err) });
       }
     }
   }

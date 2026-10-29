@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ApiError, getTimeline, listContents, relativeTime, STATUS_HINT, STATUS_LABEL } from "@/lib/review-client";
+import { getTimeline, isOffline, listContents, relativeTime, STATUS_HINT, STATUS_LABEL } from "@/lib/review-client";
 import type { ContentRow, Person, TimelineItem } from "@/lib/types";
 import { ArrowRightIcon, ChatIcon, PlusIcon } from "../Icons";
 import { StageDots } from "../Journey";
@@ -26,7 +26,7 @@ export function CreatorHome() {
 
   const load = useCallback(() => {
     listContents(true).then(setRows).catch((err) => {
-      if (err instanceof ApiError && err.status === 503) setDemo(true);
+      if (isOffline(err)) setDemo(true);
       setRows((had) => had ?? []);
     });
   }, []);

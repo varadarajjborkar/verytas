@@ -6,6 +6,7 @@ import type {
   IntakeBatch, IntakeBatchDetail, IntakeDraft, IntakeItem, IntakeItemIn, Onboarding, SampleKit,
   Mark, PerformanceReport, PersonalToken, CreatedToken, PinnedComment, PostMetrics, PostResult, Review, Rule, RuleClarification, RuleDraft, SearchHit, Term, Timeline, UploadedMedia,
 } from "./types";
+import { GENERIC_MESSAGE, isSafeMessage, NETWORK_MESSAGE, statusMessage } from "./errors";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public detail?: unknown) {
@@ -13,26 +14,38 @@ export class ApiError extends Error {
   }
 }
 
+/** The console's own answer when no API is configured (app/api/v, `demo: true`): the only 503 that means "run on
+ * sample data". Any other 503 is the API busy or restarting, which must never switch a screen to demo mode. */
+export const isOffline = (err: unknown): boolean => err instanceof ApiError && err.status === 503
+  && (err.detail as { demo?: unknown } | null | undefined)?.demo === true;
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`/api/v/${path}`, init);
-  const text = await res.text();
+  let res: Response;
+  try {
+    res = await fetch(`/api/v/${path}`, init);
+  } catch (err) {
+    if ((err as Error).name === "AbortError") throw err;
+    throw new ApiError(0, NETWORK_MESSAGE);
+  }
+  const text = await res.text().catch(() => "");
   let json: unknown = null;
+  let parsed = true;
   try {
     json = text ? JSON.parse(text) : null;
   } catch {
-    json = { error: text.slice(0, 200) };
+    parsed = false; // a gateway's or proxy's page, not ours: never shown, never read as data
   }
   if (!res.ok) {
-    const j = json as { error?: string; detail?: unknown };
+    const j = (parsed ? json : null) as { error?: string; detail?: unknown } | null;
     const detail = j?.detail;
     // FastAPI's validation errors are a list of { loc, msg }; a field validator's own words follow "Value error, ".
     const listed = Array.isArray(detail)
       ? detail.map((d: { msg?: string }) => d?.msg?.replace(/^Value error, /, "")).filter(Boolean).join("; ")
       : "";
-    const message = typeof detail === "string" ? detail
-      : listed || ((detail as { message?: string })?.message ?? j?.error ?? `Request failed (${res.status})`);
-    throw new ApiError(res.status, message, detail ?? json);
+    const own = typeof detail === "string" ? detail : listed || ((detail as { message?: string })?.message ?? j?.error);
+    throw new ApiError(res.status, isSafeMessage(own) ? own : statusMessage(res.status), parsed ? detail ?? json : undefined);
   }
+  if (!parsed) throw new ApiError(res.status, GENERIC_MESSAGE);
   return json as T;
 }
 

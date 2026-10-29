@@ -8,6 +8,7 @@ import { useToast } from "../Toaster";
 import { RuleCode } from "../ui";
 import { Badge, Empty, Field, fromList, toList } from "./parts";
 import { SearchField } from "../SearchField";
+import { shownError } from "@/lib/errors";
 
 export const CATEGORIES: RuleCategory[] = ["tone", "terminology", "messaging", "visual", "accessibility", "legal", "claims", "confidentiality"];
 const SEVERITY = { must: { label: "Must", tone: "blocker" }, should: { label: "Should", tone: "warning" }, may: { label: "May", tone: "muted" } } as const;
@@ -122,7 +123,7 @@ function RuleDetail({ rule, editable, onChanged }: { rule: Rule; editable: boole
       setEditing(false);
       onChanged();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't save the rule", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't save the rule", detail: shownError(err) });
     } finally {
       setBusy(false);
     }
@@ -268,7 +269,7 @@ function RuleForm({ onDone, onCancel, taken }: { onDone: () => void; onCancel: (
       toast({ kind: "success", title: "Draft rule added", detail: "Activate it to use it in reviews." });
       onDone();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't add the rule", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't add the rule", detail: shownError(err) });
     } finally {
       setBusy(false);
     }

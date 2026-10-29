@@ -19,6 +19,7 @@ cut by a budget is reported as a partial read, never passed over in silence.
 from __future__ import annotations
 
 import io
+import logging
 import re
 import threading
 import zipfile
@@ -28,6 +29,8 @@ from dataclasses import dataclass, field
 from PIL import Image, ImageDraw
 
 from verytas.media.files import MAX_HTML_BYTES, WORK_SIDE, MediaError, flatten, shrink
+
+log = logging.getLogger("verytas.media")
 
 MAX_PAGES = 40
 MAX_IMAGES_PER_PAGE = 12
@@ -141,7 +144,8 @@ def extract_pdf(raw: bytes) -> Extracted:
         try:
             pdf = pdfium.PdfDocument(raw)
         except pdfium.PdfiumError as exc:
-            raise MediaError(f"PDF could not be opened ({exc}); encrypted or damaged files need a human look") from exc
+            log.info("PDF would not open: %s", exc)
+            raise MediaError("PDF could not be opened; encrypted or damaged files need a human look") from exc
         count = len(pdf)
     try:
         return _read_pdf(pdf, pdfium, count)

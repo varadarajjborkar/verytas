@@ -6,6 +6,7 @@ import type { Fact } from "@/lib/types";
 import { PlusIcon } from "../Icons";
 import { useToast } from "../Toaster";
 import { Badge, Empty, Field, today } from "./parts";
+import { shownError } from "@/lib/errors";
 
 type Window = "current" | "scheduled" | "expired" | "withdrawn";
 
@@ -41,7 +42,7 @@ export function FactsTab({ facts, editable, onChanged }: { facts: Fact[]; editab
       toast({ kind: "success", title: "Fact retired", detail: "It no longer backs claims from today." });
       onChanged();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't retire the fact", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't retire the fact", detail: shownError(err) });
     }
   };
 
@@ -109,7 +110,7 @@ function FactForm({ initial, onCancel, onDone }: { initial: Partial<Fact>; onCan
       toast({ kind: "success", title: replacing ? "Figure updated" : "Fact added" });
       onDone();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't save the fact", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't save the fact", detail: shownError(err) });
     } finally {
       setBusy(false);
     }

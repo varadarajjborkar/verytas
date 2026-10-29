@@ -7,6 +7,7 @@ import type { ContentStatus, Timeline, TimelineItem } from "@/lib/types";
 import { ChatIcon, CheckIcon, OctagonIcon, RefreshIcon, ReviewIcon } from "../Icons";
 import { useToast } from "../Toaster";
 import { ACTION_LABEL, REASONS } from "./DecisionControls";
+import { shownError } from "@/lib/errors";
 
 type Comment = Extract<TimelineItem, { type: "comment" }>;
 
@@ -75,7 +76,7 @@ export function Activity({ timeline, contentId, versionId, onPosted }: {
       setReplyTo(null);
       onPosted();
     } catch (err) {
-      toast({ kind: "error", title: "Couldn't post the comment", detail: (err as Error).message });
+      toast({ kind: "error", title: "Couldn't post the comment", detail: shownError(err) });
     } finally {
       sending.current = false;
       setBusy(false);

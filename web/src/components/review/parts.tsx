@@ -7,6 +7,7 @@ import { aiEdit } from "@/lib/review-client";
 import type { CategoryScore, Finding, Level } from "@/lib/types";
 import { useToast } from "../Toaster";
 import { Details } from "../ui";
+import { shownError } from "@/lib/errors";
 
 export const LEVEL_ORDER: Level[] = ["blocker", "warning", "advisory"];
 // How each coverage status reads on the scorecard. Anything other than "checked" is never shown as a pass.
@@ -30,8 +31,8 @@ export function AiEditBox({ contentId, onUse }: { contentId: number; onUse: (bod
       setProposal(await aiEdit(contentId, instruction));
       toast({ kind: "success", title: "Rewrite ready" });
     } catch (err) {
-      setError((err as Error).message);
-      toast({ kind: "error", title: "Couldn't rewrite", detail: (err as Error).message });
+      setError(shownError(err));
+      toast({ kind: "error", title: "Couldn't rewrite", detail: shownError(err) });
     } finally {
       setBusy(false);
     }

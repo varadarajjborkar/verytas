@@ -6,6 +6,7 @@ import type { ApprovedPerson, BrandEvent } from "@/lib/types";
 import { CloseIcon, PlusIcon } from "../Icons";
 import { useToast } from "../Toaster";
 import { Badge, Empty, Field, toList, today } from "./parts";
+import { shownError } from "@/lib/errors";
 
 const KIND: Record<ApprovedPerson["kind"], string> = {
   celebrity: "Celebrity", ambassador: "Ambassador", creator: "Creator", staff: "Staff", other: "Other",
@@ -66,8 +67,8 @@ export function PeopleTab({ people, events, editable, onChanged }: {
     } catch (err) {
       // The person may exist even though the photo failed: say so and show them, so nobody adds them twice.
       toast(made
-        ? { kind: "warning", title: `${made.name} added, photo not saved`, detail: `${(err as Error).message}. Add it from their card.` }
-        : { kind: "error", title: "Couldn't add them", detail: (err as Error).message });
+        ? { kind: "warning", title: `${made.name} added, photo not saved`, detail: `${shownError(err)} Add it from their card.` }
+        : { kind: "error", title: "Couldn't add them", detail: shownError(err) });
     } finally {
       if (made) { setDraft(blank); setPhoto(null); onChanged(); }
       setBusy(null);
@@ -77,7 +78,7 @@ export function PeopleTab({ people, events, editable, onChanged }: {
   const act = async (key: string, work: () => Promise<unknown>, failed: string) => {
     setBusy(key);
     try { await work(); onChanged(); }
-    catch (err) { toast({ kind: "error", title: failed, detail: (err as Error).message }); }
+    catch (err) { toast({ kind: "error", title: failed, detail: shownError(err) }); }
     finally { setBusy(null); }
   };
 
