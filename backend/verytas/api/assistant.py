@@ -23,9 +23,10 @@ from sqlalchemy.orm import selectinload
 from verytas.api.accounts import SelfServeBudget
 from verytas.api.content import _aware, list_contents
 from verytas.api.deps import CurrentUser, Session
+from verytas.api.inki_tools import stable_redactor
 from verytas.api.insights import _visible_tiers, guideline_health_for, overview_for, recurring_for
 from verytas.memory.personal import DEVICE_HEADER, scope_of
-from verytas.models import ConfidentialTerm, Content, ContentVersion, Finding, Review, Role, Tier
+from verytas.models import Content, ContentVersion, Finding, Review, Role, Tier, User
 from verytas.security.redaction import Redactor
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
@@ -83,10 +84,8 @@ async def _detail(session: Session, content_id: int, redactor: Redactor) -> dict
 
 
 async def _redactor(session: Session, user: CurrentUser) -> Redactor:
-    # Every term is redacted, embargo passed or not, the same as Prism does on egress.
-    terms = (await session.scalars(select(ConfidentialTerm.term).where(
-        ConfidentialTerm.workspace_id == user.workspace_id))).all()
-    return Redactor(list(terms))
+    # Stable numbering: Inki's tool results (inki_tools.py) are redacted in separate calls and must agree.
+    return await stable_redactor(session, user)
 
 
 class Conversation(BaseModel):
@@ -121,7 +120,10 @@ async def _context(session: Session, user: CurrentUser, q: str, redactor: Redact
 
     rows = [r for r in await list_contents(session, user, state=None, mine=False, limit=200)
             if r.tier != Tier.confidential][:MAX_LISTED]
+    names = dict((await session.execute(
+        select(User.id, User.name).where(User.workspace_id == user.workspace_id))).all())
     items = [{"id": r.id, "title": r.title, "channel": r.channel, "status": r.status, "mine": r.created_by == user.id,
+              "creator": names.get(r.created_by),
               "versions": r.version_count, "updated_at": _aware(r.updated_at).isoformat() if r.updated_at else None,
               "latest_review": r.latest_review.model_dump(mode="json") if r.latest_review else None}
              for r in rows]

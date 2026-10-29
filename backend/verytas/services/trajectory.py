@@ -71,10 +71,16 @@ def _summary(issues: list[Finding], status: ContentStatus) -> str:
     return f"{', '.join(parts)}: {'; '.join(titles)}. {tail}"
 
 
-async def _points(session: AsyncSession, viewer: User, creator_ids: list[int]) -> tuple[dict[int, list[dict]], Counter]:
+def _tiers(viewer: User, tiers: list[Tier] | None) -> list[Tier]:
+    """The viewer's clearance, or a narrower set a caller asks for (Ask Inki leaves confidential out)."""
+    return [t for t in Tier if t.rank <= viewer.clearance.rank and (tiers is None or t in tiers)]
+
+
+async def _points(session: AsyncSession, viewer: User, creator_ids: list[int],
+                  tiers: list[Tier] | None = None) -> tuple[dict[int, list[dict]], Counter]:
     """Every reviewed piece of these creators as a point on their line, oldest first, plus how often each
     category came up across them. One set of queries for the whole roster, not one per person."""
-    tiers = [t for t in Tier if t.rank <= viewer.clearance.rank]
+    tiers = _tiers(viewer, tiers)
     contents = (await session.scalars(
         select(Content).where(Content.workspace_id == viewer.workspace_id, Content.created_by.in_(creator_ids),
                               Content.tier.in_(tiers)).order_by(Content.created_at, Content.id))).all()
@@ -130,8 +136,8 @@ def _average(points: list[dict]) -> float | None:
 RECENT = 10
 
 
-async def creators(session: AsyncSession, viewer: User) -> list[dict]:
-    tiers = [t for t in Tier if t.rank <= viewer.clearance.rank]
+async def creators(session: AsyncSession, viewer: User, tiers: list[Tier] | None = None) -> list[dict]:
+    tiers = _tiers(viewer, tiers)
     people = (await session.scalars(select(User).where(User.workspace_id == viewer.workspace_id,
                                                        User.role == Role.creator).order_by(User.name))).all()
     rows = (await session.execute(
@@ -146,7 +152,7 @@ async def creators(session: AsyncSession, viewer: User) -> list[dict]:
         select(Escalation.raised_by, func.count()).join(Content, Escalation.content_id == Content.id)
         .where(Escalation.workspace_id == viewer.workspace_id, Escalation.status == "open", Content.tier.in_(tiers))
         .group_by(Escalation.raised_by))).all())
-    lines, _ = await _points(session, viewer, [p.id for p in people])
+    lines, _ = await _points(session, viewer, [p.id for p in people], tiers)
     out = []
     for p in people:
         mine = [r for r in rows if r[0] == p.id]
@@ -163,8 +169,8 @@ async def creators(session: AsyncSession, viewer: User) -> list[dict]:
     return out
 
 
-async def trajectory(session: AsyncSession, viewer: User, creator: User) -> dict:
-    tiers = [t for t in Tier if t.rank <= viewer.clearance.rank]
+async def trajectory(session: AsyncSession, viewer: User, creator: User, tiers: list[Tier] | None = None) -> dict:
+    tiers = _tiers(viewer, tiers)
     contents = (await session.scalars(
         select(Content.status).where(Content.workspace_id == viewer.workspace_id, Content.created_by == creator.id,
                                      Content.tier.in_(tiers)))).all()
@@ -174,7 +180,7 @@ async def trajectory(session: AsyncSession, viewer: User, creator: User) -> dict
     open_esc = (await session.scalar(
         select(func.count()).select_from(Escalation).join(Content, Escalation.content_id == Content.id)
         .where(Escalation.raised_by == creator.id, Escalation.status == "open", Content.tier.in_(tiers)))) or 0
-    lines, categories = await _points(session, viewer, [creator.id])
+    lines, categories = await _points(session, viewer, [creator.id], tiers)
     points = lines[creator.id]
     return {
         "person": {"id": creator.id, "name": creator.name, "role": creator.role.value},

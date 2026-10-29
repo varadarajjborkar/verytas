@@ -9,6 +9,7 @@ having to know about it.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any
 
@@ -33,33 +34,44 @@ def _is_pii(kind: str, match: str) -> bool:
 
 
 class Redactor:
-    def __init__(self, confidential_terms: list[str]) -> None:
+    def __init__(self, confidential_terms: list[str], stable: bool = False) -> None:
         # Longest first so "Project Lumen Pro" is replaced before "Project Lumen".
         terms = sorted({t for t in confidential_terms if t.strip()}, key=len, reverse=True)
+        # Stable: a term's placeholder is its place in the workspace's sorted list, not its order of
+        # appearance, so redactors built for separate calls (Ask Inki's tools) agree on what [[TERM_2]] is.
+        self._rank = {t: i + 1 for i, t in enumerate(sorted(terms, key=str.lower))} if stable else None
         # Loose matching: hyphenated, glued, re-spaced and plural variants are
         # redacted too. Over-redaction is cheap; a leaked codename is not.
         self._terms = [term_pattern(t, loose=True) for t in terms]
         # The words themselves, for callers that must refuse to search inside one (mcpserver/tools.py).
         self.terms: tuple[str, ...] = tuple(terms)
         self._forward: dict[str, str] = {}
-        self._reverse: dict[str, str] = {}
+        # Stable placeholders are known before any text is seen, so one from another call can be restored.
+        self._reverse: dict[str, str] = {f"[[TERM_{n}]]": t for t, n in self._rank.items()} if self._rank else {}
         self.count = 0
 
-    def _placeholder(self, kind: str, original: str) -> str:
+    def _placeholder(self, kind: str, original: str, n: int | None = None) -> str:
         key = original.lower() if kind == "TERM" else original
         if key not in self._forward:
-            n = sum(1 for p in self._reverse if p.startswith(f"[[{kind}_")) + 1
+            if n is None and self._rank is not None:
+                # Stable PII has no list to rank in, so its number comes from the value itself: the same email
+                # reads the same in every lookup, and two emails don't share one placeholder across calls.
+                n = int(hashlib.sha256(key.encode()).hexdigest()[:8], 16) % 1_000_000
+            n = n or sum(1 for p in self._reverse if p.startswith(f"[[{kind}_")) + 1
             ph = f"[[{kind}_{n}]]"
             self._forward[key] = ph
-            self._reverse[ph] = original
+            # The first spelling wins: in stable mode the canonical term is already here, and a variant
+            # ("lumen", "Lumen-") must not replace it.
+            self._reverse.setdefault(ph, original)
         self.count += 1
         return self._forward[key]
 
     def redact(self, text: str) -> str:
-        for pattern in self._terms:
+        for term, pattern in zip(self.terms, self._terms, strict=True):
+            n = self._rank[term] if self._rank else None
             # Folded matching: a codename hidden with a zero-width space or a
             # look-alike letter would otherwise reach the model unredacted.
-            text = sub_folded(pattern, text, lambda original: self._placeholder("TERM", original))
+            text = sub_folded(pattern, text, lambda original, n=n: self._placeholder("TERM", original, n))
         for kind, pattern in _PII:
             text = pattern.sub(lambda m, k=kind: self._pii(k, m.group(0)), text)
         return text

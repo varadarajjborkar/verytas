@@ -93,6 +93,43 @@ export async function getAssistantContext(messages: string[]): Promise<{ context
   }
 }
 
+/** The lookups Ask Inki may make for this person (backend api/inki_tools.py), in the model's tool format.
+ * None when there is no API or it can't say: Inki then answers from the context alone, as before. */
+export async function getAssistantTools(): Promise<unknown[]> {
+  if (!backendConfigured) return [];
+  try {
+    const tools = await call<unknown[]>("/assistant/tools");
+    return Array.isArray(tools) ? tools : [];
+  } catch (err) {
+    console.error("[verytas] assistant tools unavailable:", (err as Error).message);
+    return [];
+  }
+}
+
+const TOOL_NAME = /^[a-z_]{1,30}$/;
+
+/** Run one lookup as the signed-in person. Whatever goes wrong, the model gets a short reason it can pass on,
+ * never the API's own error text. `args` is the model's JSON, checked here rather than trusted. */
+export async function runAssistantTool(name: string, args: string): Promise<Record<string, unknown>> {
+  if (!TOOL_NAME.test(name)) return { error: "no such lookup" };
+  let parsed: unknown;
+  try {
+    parsed = args.trim() ? JSON.parse(args) : {};
+  } catch {
+    return { error: "the lookup's arguments were not valid JSON" };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { error: "the lookup's arguments must be an object" };
+  try {
+    return await call<Record<string, unknown>>(`/assistant/tools/${name}`, {
+      method: "POST", body: JSON.stringify({ arguments: parsed }), signal: AbortSignal.timeout(30_000),
+    });
+  } catch (err) {
+    console.error(`[verytas] assistant tool ${name} failed:`, (err as Error).message);
+    const status = err instanceof BackendError ? err.status : 0;
+    return { error: status === 429 ? "too many lookups just now" : status === 404 ? "no such lookup" : "that lookup failed" };
+  }
+}
+
 export type ItemContextResult =
   | { ok: true; context: Record<string, unknown>; messages: string[] }
   | { ok: false; status: number };
