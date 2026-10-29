@@ -45,6 +45,10 @@ and one of them changed halfway. Five questions to Inki, all answered correctly:
 budget (15k, not the original 20k), the Hinglish deadline question, the Hinglish logo question, and a question
 about something never agreed (Inki said it didn't know rather than inventing). 3 to 5 seconds per answer.
 
+The same script against the public demo on 29 Oct, after the release: 5 of 5 again, 3.5 to 4.1 seconds per
+answer. The two facts told to Ask Inki were kept, the other person saw none of them, Settings listed them, and the
+script deleted everything it made before the demo was reset.
+
 ## Still missing
 
 - A changed decision reaches Inki in about half to two thirds of cases where the change is worded unlike the

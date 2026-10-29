@@ -20,7 +20,7 @@ Verytas checks every post, caption, image, document and video against a brand's 
 
 </div>
 
-<p align="center"><img src="docs/assets/review.png" alt="A piece open on the review screen: the caption with each issue marked in place, the issues beside it with the rule and the approved fact behind them and who decided each, the steps from written to published, and a bar at the bottom that sends the piece back with its changes" width="900"></p>
+<p align="center"><img src="docs/assets/review.png" alt="A piece open on the review screen: the caption with a misspelt product name marked in place, the issues beside it ranked must fix to consider, the first open with the rule behind it and the suggested fix, the steps from written to published, and a bar at the bottom that walks the reviewer through what is left" width="900"></p>
 
 ## The problem
 
@@ -39,9 +39,10 @@ A brand works with dozens of creators and agencies who post every day, in many l
 | **Fixes, not just flags** | It swaps a phrase, rewrites a sentence or removes a dig, whichever the rule needs, and a judge that knows the rule checks the offer and call to action survive. One click applies it. |
 | **Keeps people in charge** | Creators can dispute a reading; the brand team walks through the issues one by one (asking for a fix, keeping it as is with a reason, or escalating), then approves or sends the piece back with the fixes it asked for, and every override needs a written reason. |
 | **Easy to pick up** | A guided tour on the first visit to each side, plain-word summaries of any piece, and every status, score and empty page explained where it appears. Shaped by [user testing](docs/research/user-testing.md) with three first-time users. |
-| **Talks it through** | *Conversations* between a creator and the brand team, next to the piece in question: replies, edits, deletes, files with previews, and meeting links that become a Join card. Encrypted at rest, live over Redis (it falls back to one process without it). Mention **@Inki** and the assistant answers from the record, only after the person asking has agreed that it may read the conversation. |
+| **Talks it through** | *Conversations* between a creator and the brand team, next to the piece in question: replies, edits, deletes, files with previews, and meeting links that become a Join card. Encrypted at rest, live over Redis (it falls back to one process without it). Mention **@Inki** and the assistant answers from the record, only after the person asking has agreed that it may read the conversation. In a long thread it finds the earlier turns the question depends on, so a budget agreed 40 messages ago still reaches it. |
 | **Marks the exact spot** | Videos play in the review with each issue on the timeline; drag along it to comment on a stretch, at 0.5x to 2x, with no download. Images take a marker, an eraser and text, saved with the comment, so the creator sees what to change in place. |
 | **Learns how posts did** | Once a piece is live, its link and the platform's numbers go on the piece (typed, or a sheet for the brand team). Guideline health then shows, per rule, how posts that ran into it did against those that didn't, as a range, and only once there are enough posts. Nothing is read from the platforms. |
+| **Remembers how you work** | Tell *Ask Inki* "I run the Instagram channel, keep answers short" once, and it keeps that for you alone. Settings lists everything it kept, and each item or all of it can be forgotten. Nothing is kept from shared conversations. |
 | **Works from your AI client** | A personal token lets Claude Desktop, Claude Code or any MCP client read your reviews, search and submit text as you, never more: no approving, no confidential terms ([how](docs/mcp.md)). |
 | **Learns from decisions** | Rules that reviewers keep overriding are surfaced as unclear, and model-judged rules tune how confident they must be before flagging. |
 
@@ -114,6 +115,8 @@ flowchart LR
         MCP["MCP endpoint<br/>personal tokens,<br/>read and submit only"]:::api
     end
 
+    MEM["Inki's memory<br/>local embeddings: earlier turns,<br/>what each person told Ask Inki"]:::local
+
     LOCAL["Local media tools<br/>OCR, speech to text,<br/>image matching, faces, PDF"]:::local
     VISION["Vision worker<br/>finds and compares mascots<br/>(wakes on demand)"]:::local
     MODELS["Ollama Cloud<br/>gpt-oss, gemma4 vision"]:::ext
@@ -124,6 +127,7 @@ flowchart LR
     AI --> MCP --> API
     API --> CONV --> REDIS
     CONV --> GUARD
+    API & CONV --> MEM
     PRISM --> CHECKS
     PRISM --> LOCAL
     PRISM --> VISION
@@ -161,7 +165,7 @@ flowchart LR
         CAD["Caddy<br/>HTTPS, security headers,<br/>/mcp straight to the API"]:::web
         NX["Next.js<br/>:3000"]:::web
         FA["FastAPI + Prism<br/>:8000"]:::api
-        SQ[("SQLite<br/>+ media blobs")]:::data
+        SQ[("SQLite, media blobs,<br/>Inki's memory on disk")]:::data
         TM["Deploy timer<br/>every 3 min"]:::ops
         RD[("Redis<br/>loopback only")]:::data
         KW["Keep-warm timer<br/>judging hours, 10 USD cap"]:::ops
@@ -221,6 +225,7 @@ flowchart LR
 | **Backend** | Python 3.12, FastAPI, SQLAlchemy 2 (async), SQLite (Postgres-ready), Pydantic |
 | **AI models** | Ollama Cloud: `gpt-oss:120b` and `gpt-oss:20b` for language, `gemma4:31b` for vision. Swappable for TypeSafe Jev or Anthropic Claude |
 | **Media, all local** | RapidOCR (ONNX Runtime), faster-whisper, OpenCV (with YuNet and SFace for faces), pdfium, PyAV, LibreOffice (sandboxed, for Word and PowerPoint previews) |
+| **Inki's memory** | fastembed with `bge-small-en-v1.5` on ONNX Runtime (CPU, 65 MB), mem0 over an on-disk Qdrant store; no service and no telemetry |
 | **Vision worker** | Grounding DINO (tiny), SAM 2.1 (tiny), DINOv2 (small) on PyTorch CPU, on an EC2 Graviton instance that wakes on demand |
 | **Security** | Ed25519-signed findings, SHA-256 hash-chained audit log, text and pixel redaction, input guardrails, CSP |
 | **Infra and delivery** | AWS EC2, Caddy, systemd, Cloudflare Pages, GitHub Actions (pinned to commit SHAs), gitleaks, pip-audit, pnpm audit |
@@ -248,6 +253,7 @@ page language is declared. It has not been audited against WCAG by an outside te
 - **People's faces follow the brand's records.** A face is identified against the approved-people library; public portraits are looked up only when the brief names someone and the content isn't confidential.
 - **Uploaded files are handled as hostile.** Types are read from the bytes; zips, XML and pictures are read within size and pixel budgets; a web page is shown only in a frame with no scripts and a policy that loads nothing from outside, after every outside address is cut from it; Word and PowerPoint are converted in a sealed service (above).
 - **Checked before going public.** The whole git history was scanned for secrets with gitleaks: none.
+- **What Inki keeps about you is yours.** It is drawn only from your own Ask Inki chats, never from a shared conversation, with confidential terms dropped. Only you can see it, in Settings, and forgetting it removes it from disk, not just from the list.
 - **Signing out ends the session at the server.** A password account's token is revoked on sign-out and lapses after 7 days.
 - **What people type is screened too.** Bribes and instructions aimed at the AI are refused before they are stored. Contact details are flagged for the brand team, never refused: a long number is as often an order code.
 - **Access follows role and clearance**, checked on the server on every request, including in the audit log.
@@ -269,7 +275,9 @@ The three improvements committed to after Round 2, and where each stands.
 <p align="center"><img src="docs/assets/conversations.png" alt="Conversations: the brand team's inbox on the left, and a thread with a creator about a piece, with a Google Meet link shown as a Join card and Ask Inki shortcuts above the message box" width="900"></p>
 
 Also added in Round 3: performance feedback (a live post's link and numbers on the piece, compared per rule in
-Guideline health), a personal-token MCP endpoint, a landing page, and Redis behind conversations.
+Guideline health), a personal-token MCP endpoint, a landing page, Redis behind conversations, and memory for
+Inki: the earlier turns of a long conversation, and what a person tells Ask Inki about how they work
+([how it was measured](backend/evals/results/memory.md)).
 
 **Reliability.** A test sends every API route the inputs nobody should send (ids that overflow, wrong types,
 empty and oversized bodies) as each role, and fails on any server error; it found and fixed a class of 500s.
@@ -293,6 +301,7 @@ method and the full results.
 | [Parts that disagree](backend/evals/results/crossmodal.md) | 28 posts | **14/14** caught, **0** false alarms |
 | [Judgement rules](backend/evals/results/second_look.md) | 32 sentences | **30/32** right |
 | [Suggested fixes](backend/evals/results/summary.md) | 73 findings | **82%** useful (45% before), **0** invented numbers |
+| [Inki's memory](backend/evals/results/memory.md) | 28 long conversations, 5 seeds each | an early decision reaches Inki in about **3 in 4** conversations it was never tuned on (**0%** before, with only the last 12 turns); **5/5** answered right on the live demo |
 | [Black-box simulator](blackbox/README.md) | 216 cases | **96%** recall, **0%** false alarms on clean posts |
 
 - **Over 700 backend tests** run offline on every push, including a sweep that sends every API route input nobody should send and fails on any server error, with type checks, lint and a production build for the web apps.
@@ -307,6 +316,8 @@ method and the full results.
   cut-out, not the comparison.
 - **Hindi speech** is transcribed with much error on CPU; codenames are caught by sound, other Hindi claims
   less reliably.
+- **A decision changed later in a long thread** reaches Inki in about half to two thirds of cases where the
+  change is worded unlike the question; Inki is told the later turn stands, but it has to see both.
 - **Post numbers are typed or imported**, not read from the platforms.
 - **No voice calls inside Verytas**; meetings run on the apps people already use.
 - **Open security items** (a script nonce, token rotation, per-user limits on Ask Inki) are listed in the
@@ -336,7 +347,7 @@ pnpm dev:manager                     # Brand Console on :3000
 pnpm dev:creator                     # Studio on :3001
 ```
 
-The seed creates the *Kitepath* brand with seven creators and eight weeks of history, and writes their tokens into `web/.env.local`. Without any API keys, model-judged checks fall back to an offline heuristic and every review says so. Without a backend, the web app shows clearly labelled sample data.
+The seed creates the *Kitepath* brand with seven creators and eight weeks of history, and writes their tokens into `web/.env.local`. Without any API keys, model-judged checks fall back to an offline heuristic and every review says so. Without a backend, the web app shows clearly labelled sample data. On first start the API fetches the 65 MB embedding model for Inki's memory into `backend/.memory/`; without a network Inki reads only the recent turns, and `VERYTAS_MEMORY_ENABLED=false` turns memory off.
 
 ## Repository layout
 

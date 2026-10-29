@@ -15,14 +15,14 @@ see; the apps only lay it out.
 | `/conversations` | Conversations between a creator and the brand team beside the piece in question: replies, edits, files, meeting links as Join cards, and @Inki on request |
 | `/creators` | Each creator's record (brand team) |
 | `/library` | Rules, facts, confidential terms, artwork and Intake, where brand material is handed over and drafted into the library |
-| `/guidelines` | Guideline health: which rules reviewers override or disagree about, with a clearer wording drafted on request |
+| `/guidelines` | Guideline health: a ring of how clear the rules are (Confusing, A bit unclear, Clear) beside each level's rules with the numbers behind them, a clearer wording drafted on request, and Open landing on the rule in the library |
 | `/ask` | Ask Inki: questions answered as live charts and tables from the brand's own data |
 | `/ai` | How AI is used in Verytas, in plain words |
 | `/signin` | The demo's person picker, and `/signin/account` for own accounts |
 | `/privacy`, `/terms` | Static pages, served to anyone |
 
 Every browser call goes through `/api/v/...`, a server-side proxy that holds the session token and
-forwards only an allowlist of API routes. The two chats, Ask Inki (`api/chat`) and Summarize
+forwards only an allowlist of API routes. The two chats, Ask Inki (`api/chat`) and Inki's summary panel
 (`api/assist`), stream through `src/lib/guard.ts`, which answers requests for their instructions itself and
 cuts off a reply that starts reciting them.
 
