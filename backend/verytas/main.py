@@ -39,6 +39,7 @@ from verytas.media import storage
 from verytas.memory.embed import embedder_for
 from verytas.memory.personal import PersonalMemory
 from verytas.prism.orchestrator import Prism
+from verytas.services import notify
 from verytas.services.messages import MessageHub, MessageSeal
 from verytas.services.workspace import backfill_system_rule_tiers, backfill_system_rules
 
@@ -102,6 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         sweep = asyncio.create_task(storage.sweep_forever(db.sessionmaker, settings.orphan_upload_ttl_h))
         seal.ensure_key()
         hub.scope_pages(seal.fingerprint())
+        notify.use(hub)
         await hub.start()
         if settings.memory_enabled:
             # The embedding model loads now, off the event loop, rather than inside the first question asked.

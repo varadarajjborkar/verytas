@@ -3,7 +3,8 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useStored, writeStored } from "@/lib/stored";
-import { isOffline, listContents, submit } from "@/lib/review-client";
+import { isOffline, listContents, reviewUpdates, submit } from "@/lib/review-client";
+import { onLive, REVIEWS_SEEN_EVENT } from "@/lib/live";
 import type { ContentRow, Review } from "@/lib/types";
 import { BackButton } from "./BackButton";
 import { Drawer } from "./Drawer";
@@ -72,6 +73,21 @@ function CreatorWorkspace({ initialBody }: { initialBody: string }) {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // Which pieces have news from the brand team: marked in the list, and the list's statuses read again the
+  // moment there is news, so an approval shows here without a refresh.
+  const [fresh, setFresh] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    let live = true;
+    const check = () => reviewUpdates()
+      .then((r) => { if (live) setFresh(new Set(r.pieces.map((p) => p.content_id))); }).catch(() => {});
+    check();
+    window.addEventListener(REVIEWS_SEEN_EVENT, check);
+    const off = onLive((e) => {
+      if (e.type === "review" || e.type === "escalations") { check(); void refresh(); }
+    });
+    return () => { live = false; window.removeEventListener(REVIEWS_SEEN_EVENT, check); off(); };
+  }, [refresh]);
   // Keep the list fresh while anything in it is still being checked: one request
   // at a time, and none while the tab is in the background.
   const pending = rows.some((r) => r.latest_review && (r.latest_review.status === "queued" || r.latest_review.status === "running"));
@@ -95,7 +111,7 @@ function CreatorWorkspace({ initialBody }: { initialBody: string }) {
   const rail = (collapsible: boolean) => (
     <ReviewHistory rows={rows} loading={loading} selected={selected} scopes={[]} scope="mine" demo={demo}
       onScope={() => {}} onSelect={(id) => go(id)} onNew={() => go(null)} homeLabel={{ text: "New review", icon: "plus" }}
-      onCollapse={collapsible ? () => setCollapsed(true) : undefined} />
+      onCollapse={collapsible ? () => setCollapsed(true) : undefined} fresh={fresh} />
   );
   const showing = selected != null && !demo;
 

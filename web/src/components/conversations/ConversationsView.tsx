@@ -17,6 +17,7 @@ import { INKI, InkiIcon } from "../Inki";
 import { useViewer } from "../Viewer";
 import { Thread } from "./Thread";
 import { shownError } from "@/lib/errors";
+import { onLive } from "@/lib/live";
 
 // Conversations between a creator and the brand team, laid out like an inbox: what is waiting on you
 // first, each row naming the piece it is about and where that piece stands. The list and the open thread
@@ -105,9 +106,6 @@ export function ConversationsView() {
   }, []);
 
   useEffect(() => {
-    let source: EventSource | null = null;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    let closed = false;
     const emit: Listener = (e) => listeners.current.forEach((l) => l(e));
     const later = (id: number, ms: number) => {
       clearTimeout(timers.current.get(id));
@@ -117,43 +115,38 @@ export function ConversationsView() {
       }, ms));
     };
     const settle = (id: number) => later(id, 0);
-    const connect = () => {
-      source = new EventSource("/api/v/conversations/stream");
-      // After a gap, anything Inki said meanwhile arrives with the reload, so no stale "reading" stays up.
-      source.addEventListener("ready", () => { setLive("live"); setThinking({}); load(); emit({ type: "resync" }); });
-      source.onmessage = (ev) => {
-        let e: LiveEvent;
-        try { e = JSON.parse(ev.data); } catch { return; }
-        if (e.type === "inki") {
-          const id = e.conversation_id;
-          setThinking((t) => ({ ...t, [id]: e.state }));
-          later(id, e.state === "failed" ? FAILED_MS : THINKING_MS);
+    // The tab's one live stream (lib/live.ts), shared with the nav badges and the review screens.
+    const off = onLive((raw) => {
+      if (raw.type === "ready") {
+        // After a gap, anything Inki said meanwhile arrives with the reload, so no stale "reading" stays up.
+        setLive("live"); setThinking({}); load(); emit({ type: "resync" });
+        return;
+      }
+      if (raw.type === "down") { setLive("retrying"); return; }
+      const e = raw as unknown as LiveEvent;
+      if (e.type === "inki") {
+        const id = e.conversation_id;
+        setThinking((t) => ({ ...t, [id]: e.state }));
+        later(id, e.state === "failed" ? FAILED_MS : THINKING_MS);
+      }
+      if (e.type === "message") {
+        const m = e.message;
+        if (m.kind === "inki") settle(m.conversation_id);
+        const row = convsRef.current?.find((c) => c.id === m.conversation_id);
+        // A conversation new to this screen, or a piece whose status isn't known here: ask the server.
+        if (!row || (m.piece && row.topic?.id !== m.piece.id)) void load();
+        else {
+          loads.current.changedAt = loads.current.seq + 1;
+          setConvs((list) => list?.map((c) => c.id === m.conversation_id ? applyToRow(c, m, me?.id ?? null, activeRef.current) : c)
+            .sort((a, b) => b.last_message_at.localeCompare(a.last_message_at)) ?? list);
         }
-        if (e.type === "message") {
-          const m = e.message;
-          if (m.kind === "inki") settle(m.conversation_id);
-          const row = convsRef.current?.find((c) => c.id === m.conversation_id);
-          // A conversation new to this screen, or a piece whose status isn't known here: ask the server.
-          if (!row || (m.piece && row.topic?.id !== m.piece.id)) void load();
-          else {
-            loads.current.changedAt = loads.current.seq + 1;
-            setConvs((list) => list?.map((c) => c.id === m.conversation_id ? applyToRow(c, m, me?.id ?? null, activeRef.current) : c)
-              .sort((a, b) => b.last_message_at.localeCompare(a.last_message_at)) ?? list);
-          }
-          window.dispatchEvent(new Event(CONVERSATIONS_SEEN_EVENT));
-        }
-        if (e.type === "read") setConvs((list) => list?.map((c) => c.id === e.conversation_id ? { ...c, unread: 0 } : c) ?? list);
-        emit(e);
-      };
-      source.onerror = () => {
-        setLive("retrying");
-        // The browser retries a dropped stream by itself; a refused one (signed out, API down) it gives up on.
-        if (source?.readyState === EventSource.CLOSED && !closed) retry = setTimeout(connect, 5_000);
-      };
-    };
-    connect();
+        window.dispatchEvent(new Event(CONVERSATIONS_SEEN_EVENT));
+      }
+      if (e.type === "read") setConvs((list) => list?.map((c) => c.id === e.conversation_id ? { ...c, unread: 0 } : c) ?? list);
+      if (e.type === "message" || e.type === "read" || e.type === "inki") emit(e);
+    });
     const pending = timers.current;
-    return () => { closed = true; clearTimeout(retry); source?.close(); pending.forEach(clearTimeout); pending.clear(); };
+    return () => { off(); pending.forEach(clearTimeout); pending.clear(); };
   }, [load, me?.id]);
 
   const subscribe = useCallback((l: Listener) => {

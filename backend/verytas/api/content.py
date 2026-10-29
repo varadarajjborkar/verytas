@@ -68,6 +68,8 @@ from verytas.schemas import (
 )
 from verytas.security.audit import append
 from verytas.services.contacts import screened
+from verytas.services.notify import review_changed
+from verytas.services.review_news import mark_seen, news_for
 
 log = logging.getLogger("verytas.api.content")
 router = APIRouter(tags=["content"])
@@ -591,6 +593,7 @@ async def decide(finding_id: int, body: DecisionIn, session: Session, user: Revi
                  detail={"content_id": content.id, "action": body.action, "reason_code": body.reason_code,
                          "rule_id": finding.rule_id, "level": finding.level})
     await session.commit()
+    await review_changed(content.created_by, user.id, content.id)
     return decision
 
 
@@ -663,6 +666,7 @@ async def transition(content_id: int, body: TransitionIn, session: Session, user
                  detail={"from": current, "to": target, "blockers_overridden": overridden,
                          "unchecked_overridden": unchecked, "note": body.note})
     await session.commit()
+    await review_changed(content.created_by, user.id, content.id)
     return content
 
 
@@ -675,7 +679,7 @@ async def list_comments(content_id: int, session: Session, user: CurrentUser) ->
 
 @router.post("/contents/{content_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
 async def add_comment(content_id: int, body: CommentIn, session: Session, user: Writer) -> Comment:
-    await _content(session, user, content_id)
+    content = await _content(session, user, content_id)
     # Comments reach Inki's context, so a bribe or an instruction aimed at the model is still refused. Contact
     # details only flag: "the 9876543210 order code is wrong" is feedback, not an attempt to go off the record.
     await screened(session, workspace_id=user.workspace_id, actor_id=user.id, text=body.body, where="comment")
@@ -697,7 +701,26 @@ async def add_comment(content_id: int, body: CommentIn, session: Session, user: 
     comment = Comment(content_id=content_id, actor_id=user.id, **body.model_dump())
     session.add(comment)
     await session.commit()
+    await review_changed(content.created_by, user.id, content_id)
     return comment
+
+
+@router.get("/me/review-updates")
+async def review_updates(session: Session, user: CurrentUser) -> dict[str, Any]:
+    """The badge on a creator's "My reviews": their pieces with news since they last opened them."""
+    if user.role is not Role.creator:
+        return {"unread": 0, "pieces": []}
+    news = await news_for(session, user)
+    return {"unread": len(news), "pieces": news}
+
+
+@router.post("/contents/{content_id}/seen", status_code=status.HTTP_204_NO_CONTENT)
+async def seen(content_id: int, session: Session, user: CurrentUser) -> Response:
+    """The creator opened their piece: what was new on it is read."""
+    content = await _content(session, user, content_id)
+    if content.created_by == user.id:
+        await mark_seen(session, user, content_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/contents/{content_id}/changes")

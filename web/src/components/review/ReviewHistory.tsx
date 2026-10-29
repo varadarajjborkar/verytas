@@ -18,7 +18,7 @@ export type Scope = { key: string; label: string; count?: number };
  * and a queue overview in place of the new-review button.
  */
 export function ReviewHistory({ rows, loading, selected, scopes, scope, demo, onScope, onSelect, onNew, onCollapse,
-  homeLabel }: {
+  homeLabel, fresh }: {
   rows: ContentRow[];
   loading: boolean;
   selected: number | null;
@@ -31,6 +31,8 @@ export function ReviewHistory({ rows, loading, selected, scopes, scope, demo, on
   onCollapse?: () => void;
   /** The button that leaves an open review: "New review" for creators, "Queue overview" for the brand team. */
   homeLabel: { text: string; icon: "plus" | "queue" };
+  /** Pieces with news from the brand team the creator hasn't opened yet. */
+  fresh?: Set<number>;
 }) {
   const [query, setQuery] = useState("");
   const shown = useMemo(() => {
@@ -99,6 +101,10 @@ export function ReviewHistory({ rows, loading, selected, scopes, scope, demo, on
                 className={`group flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left transition ${
                   r.id === selected ? "bg-accent/12" : "hover:bg-sunken"}`}>
                 <span className="flex items-center gap-2">
+                  {fresh?.has(r.id) && r.id !== selected && (
+                    <span role="img" aria-label="New from the brand team" title="New from the brand team"
+                      className="h-2 w-2 shrink-0 rounded-full bg-accent" />
+                  )}
                   <span className={`min-w-0 flex-1 truncate text-sm ${finished ? "text-subtle line-through decoration-1" : "font-medium"}`}>
                     {r.title}
                   </span>

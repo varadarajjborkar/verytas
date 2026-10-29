@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PRIORITY, whereLabel } from "@/lib/review-client";
 import type { Dispute, EscalationRequest, Finding, Level, Person } from "@/lib/types";
 import { CALL_LABEL, callOf, type CallState, type DecideFn, DecisionControls } from "./DecisionControls";
 import { type EscalateFn, EscalationBox } from "./EscalationBox";
 import { CheckIcon, ChevronIcon } from "../Icons";
 import { reveal } from "@/lib/reveal";
+import { shownError } from "@/lib/errors";
 
 export type RowState = { done: boolean; apply: boolean; dispute: string; language: string; disputing: boolean };
 export const emptyRow = (): RowState => ({ done: false, apply: false, dispute: "", language: "", disputing: false });
@@ -59,7 +60,7 @@ export function rowCall(f: Finding, row: RowState | undefined, creator: boolean)
 }
 
 export function Checklist({ findings, rows, onRow, disputes, active, onSelect, decide, canDismissBlockers = false,
-  people = new Map(), creator = true, escalations = {}, onEscalate, onEscalationChanged = () => {}, show = "all",
+  people = new Map(), creator = true, escalations = {}, onEscalate, onDispute, onEscalationChanged = () => {}, show = "all",
   onBusy, onDecided, creatorCalls = creator }: {
   findings: Finding[];
   rows: Record<number, RowState>;
@@ -77,6 +78,8 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
   /** Requests for a person to review a finding, by finding id. */
   escalations?: Record<number, EscalationRequest>;
   onEscalate?: EscalateFn;
+  /** Sends a dispute now, for Verytas to read again; without it a dispute goes out with the next re-check. */
+  onDispute?: (f: Finding, claim: string, language: string | null) => Promise<void>;
   onEscalationChanged?: () => void;
   /** "open" hides rows already decided, except the one being looked at. */
   show?: "all" | "open";
@@ -231,6 +234,14 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                       {" "}· {f.model ? f.model : "rule-based"}
                       {f.signature_valid && " · signed"}
                     </p>
+                    {d && !d.verdict?.reason && (
+                      <p role="status" className="rounded-lg border border-accent/30 bg-accent/5 p-2.5 text-xs">
+                        <span className="font-semibold">Dispute sent. {DISPUTE_TEXT[d.status]}.</span>{" "}
+                        {d.status === "queued" || d.status === "running"
+                          ? "Verytas is reading the issue again with your explanation; the result shows here in a moment."
+                          : "The brand team has it."}
+                      </p>
+                    )}
                     {d?.verdict?.reason && (
                       <p className="rounded-lg border border-accent/30 bg-accent/5 p-2.5 text-xs">
                         <span className="font-semibold">{DISPUTE_TEXT[d.status]}.</span> {d.verdict.reason}
@@ -265,24 +276,7 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
                       </div>
                     )}
                     {creator && !d && row.disputing && (
-                      <div className="vt-pop flex flex-col gap-2">
-                        <label className="text-xs font-medium" htmlFor={`dispute-${f.id}`}>What does it actually mean, and why is this reading wrong?</label>
-                        <textarea id={`dispute-${f.id}`} value={row.dispute} maxLength={2000}
-                          onChange={(e) => onRow(f.id, { dispute: e.target.value })}
-                          className="vt-input min-h-16"
-                          placeholder="e.g. In Marathi, 'भारी' (bhaari) means excellent, not heavy" />
-                        <div className="flex flex-wrap items-center gap-2">
-                          <input value={row.language} maxLength={60} onChange={(e) => onRow(f.id, { language: e.target.value })}
-                            placeholder="Language (optional)" className="vt-input w-44 py-1.5 text-xs" />
-                          {/* A minimum, not a limit (up to 2,000), and where the words go: there is no separate send. */}
-                          <span className="text-[11px] text-muted">
-                            {row.dispute.trim().length < 10
-                              ? `At least 10 characters (${10 - row.dispute.trim().length} to go)`
-                              : "Saved. Verytas reads it on the next re-check, from the bar below."}
-                          </span>
-                          <button type="button" onClick={() => onRow(f.id, { disputing: false, dispute: "" })} className="vt-btn vt-btn-xs ml-auto">Cancel</button>
-                        </div>
-                      </div>
+                      <DisputeForm f={f} row={row} onRow={onRow} onDispute={onDispute} />
                     )}
                     <DecisionControls f={f} decide={decide} canDismissBlockers={canDismissBlockers} people={people}
                       onBusy={onBusy} onDecided={onDecided} />
@@ -298,6 +292,69 @@ export function Checklist({ findings, rows, onRow, disputes, active, onSelect, d
             );
           })}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * "That is not what it means": the creator explains, Verytas reads the issue again with that explanation, and
+ * if it still can't tell, a person on the brand team decides. Sent on its own here; the explanation is also
+ * kept on the row, so it goes out with the next re-check if it was never sent.
+ */
+function DisputeForm({ f, row, onRow, onDispute }: {
+  f: Finding; row: RowState; onRow: (id: number, patch: Partial<RowState>) => void;
+  onDispute?: (f: Finding, claim: string, language: string | null) => Promise<void>;
+}) {
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const left = 10 - row.dispute.trim().length;
+  async function send() {
+    if (!onDispute || left > 0) return;
+    setSending(true);
+    setFailed(null);
+    const claim = row.dispute.trim();
+    const language = row.language.trim();
+    // Taken off the row while it is sent, so a re-check started meanwhile doesn't file it a second time.
+    onRow(f.id, { dispute: "" });
+    try {
+      await onDispute(f, claim, language || null);
+      onRow(f.id, { disputing: false, dispute: "", language: "" });
+    } catch (err) {
+      onRow(f.id, { dispute: claim });
+      setFailed(shownError(err, "The dispute wasn't sent. Try again."));
+    } finally {
+      setSending(false);
+    }
+  }
+  return (
+    <div className="vt-pop flex flex-col gap-2">
+      <label className="text-xs font-medium" htmlFor={`dispute-${f.id}`}>Why is this reading wrong?</label>
+      <p id={`dispute-help-${f.id}`} className="text-[11px] text-muted">
+        Say what the words actually mean here, or why the rule doesn&apos;t apply. Verytas reads the issue again
+        with your explanation; if it still can&apos;t tell, the brand team decides.
+      </p>
+      <textarea id={`dispute-${f.id}`} value={row.dispute} maxLength={2000} aria-describedby={`dispute-help-${f.id}`}
+        onChange={(e) => onRow(f.id, { dispute: e.target.value })}
+        className="vt-input min-h-16"
+        placeholder="e.g. In Marathi, 'भारी' (bhaari) means excellent, not heavy" />
+      <div className="flex flex-wrap items-center gap-2">
+        <input value={row.language} maxLength={60} onChange={(e) => onRow(f.id, { language: e.target.value })}
+          aria-label="Language the words are in (optional)"
+          placeholder="Language, if not English" className="vt-input w-44 py-1.5 text-xs" />
+        <span className="text-[11px] text-muted" aria-live="polite">
+          {left > 0 ? `At least 10 characters (${left} to go)` : onDispute ? "Ready to send." : "Sent with the next re-check, from the bar below."}
+        </span>
+        <span className="ml-auto flex gap-1.5">
+          <button type="button" onClick={() => onRow(f.id, { disputing: false, dispute: "", language: "" })}
+            className="vt-btn vt-btn-xs">Cancel</button>
+          {onDispute && (
+            <button type="button" onClick={send} disabled={sending || left > 0} className="vt-btn vt-btn-xs vt-btn-primary">
+              {sending ? "Sending..." : "Send dispute"}
+            </button>
+          )}
+        </span>
+      </div>
+      {failed && <p role="alert" className="text-xs text-[var(--vt-blocker)]">{failed}</p>}
     </div>
   );
 }

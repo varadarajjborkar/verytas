@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { usePersistedFlag } from "@/lib/persisted-flag";
 import { ROLE_LABEL } from "@/lib/roles";
 import { useEffect, useState } from "react";
-import { countEscalations } from "@/lib/review-client";
+import { countEscalations, reviewUpdates } from "@/lib/review-client";
+import { onLive, REVIEWS_SEEN_EVENT } from "@/lib/live";
 import { CONVERSATIONS_SEEN_EVENT, unreadMessages } from "@/lib/conversations-client";
 import { BookIcon, ChatIcon, DashboardIcon, GaugeIcon, HomeIcon, InboxIcon, InkiLineIcon, PanelIcon, ReviewIcon, UsersIcon } from "./Icons";
 import { Logo } from "./Logo";
@@ -43,6 +44,7 @@ export function SideNav() {
   const links = LINKS[loading && !app ? "loading" : side];
   const waiting = useOpenEscalations(Boolean(me) && side === "manager" && !(loading && !app));
   const unread = useUnreadMessages(Boolean(me) && me?.role !== "auditor");
+  const news = useReviewNews(Boolean(me) && side === "creator");
   // Desktop only: on phones the nav is already a single row of tabs.
   const [collapsed, setCollapsed] = usePersistedFlag("vt-nav-collapsed", false);
   const demo = useDemoSignin();
@@ -100,6 +102,10 @@ export function SideNav() {
                     <span aria-label={`${unread} unread`} className={`ml-auto rounded-full bg-accent px-1.5 text-[11px] font-semibold tabular-nums text-accent-ink ${
                       collapsed ? "md:absolute md:right-1.5 md:top-1 md:ml-0 md:px-1 md:text-[10px]" : ""}`}>{unread}</span>
                   )}
+                  {href === "/review" && news > 0 && (
+                    <span aria-label={`${news} with news`} className={`ml-auto rounded-full bg-accent px-1.5 text-[11px] font-semibold tabular-nums text-accent-ink ${
+                      collapsed ? "md:absolute md:right-1.5 md:top-1 md:ml-0 md:px-1 md:text-[10px]" : ""}`}>{news}</span>
+                  )}
                   {href === "/escalations" && waiting > 0 && (
                     <span aria-label={`${waiting} waiting`} className={`ml-auto rounded-full bg-accent px-1.5 text-[11px] font-semibold tabular-nums text-accent-ink ${
                       collapsed ? "md:absolute md:right-1.5 md:top-1 md:ml-0 md:px-1 md:text-[10px]" : ""}`}>{waiting}</span>
@@ -149,7 +155,8 @@ export async function switchAccount() {
   window.location.assign("/signin");
 }
 
-/** Open escalations for the nav badge: checked on load, when the tab regains focus, and each minute. */
+/** Open escalations for the nav badge: on load, the moment one is raised, answered or withdrawn (live), on
+ * focus, and each minute in case the live stream is down. */
 function useOpenEscalations(enabled: boolean): number {
   const [count, setCount] = useState(0);
   useEffect(() => {
@@ -162,12 +169,41 @@ function useOpenEscalations(enabled: boolean): number {
     check();
     const t = setInterval(check, 60_000);
     window.addEventListener("focus", check);
-    return () => { live = false; clearInterval(t); window.removeEventListener("focus", check); };
+    const off = onLive((e) => { if (e.type === "escalations" || e.type === "ready") check(); });
+    return () => { live = false; clearInterval(t); window.removeEventListener("focus", check); off(); };
   }, [enabled]);
   return enabled ? count : 0;
 }
 
-/** Unread conversation messages for the nav badge: on load, on focus, every half minute, and when a thread is read. */
+/** A creator's pieces with news from the brand team since they last opened them ("My reviews"): on load,
+ * the moment there is news (live), when they open a piece, on focus, and every half minute as a fallback. */
+function useReviewNews(enabled: boolean): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    const check = () => {
+      if (document.hidden) return;
+      reviewUpdates().then((r) => { if (live) setCount(r.unread); }).catch(() => {});
+    };
+    check();
+    const t = setInterval(check, 30_000);
+    window.addEventListener("focus", check);
+    window.addEventListener(REVIEWS_SEEN_EVENT, check);
+    const off = onLive((e) => { if (e.type === "review" || e.type === "escalations" || e.type === "ready") check(); });
+    return () => {
+      live = false;
+      clearInterval(t);
+      window.removeEventListener("focus", check);
+      window.removeEventListener(REVIEWS_SEEN_EVENT, check);
+      off();
+    };
+  }, [enabled]);
+  return enabled ? count : 0;
+}
+
+/** Unread conversation messages for the nav badge: on load, when a message arrives (live), on focus, every half
+ * minute, and when a thread is read. */
 function useUnreadMessages(enabled: boolean): number {
   const [count, setCount] = useState(0);
   useEffect(() => {
@@ -181,11 +217,13 @@ function useUnreadMessages(enabled: boolean): number {
     const t = setInterval(check, 30_000);
     window.addEventListener("focus", check);
     window.addEventListener(CONVERSATIONS_SEEN_EVENT, check);
+    const off = onLive((e) => { if (e.type === "message" || e.type === "read") check(); });
     return () => {
       live = false;
       clearInterval(t);
       window.removeEventListener("focus", check);
       window.removeEventListener(CONVERSATIONS_SEEN_EVENT, check);
+      off();
     };
   }, [enabled]);
   return enabled ? count : 0;

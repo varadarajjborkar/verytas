@@ -203,6 +203,75 @@ def test_a_cleared_name_in_a_rewritten_sentence_is_asked_about_again(client, wor
     assert fresh["quote"] == old["quote"] and not fresh["decisions"]
 
 
+def test_my_reviews_counts_brand_team_news_until_the_creator_opens_the_piece(client, world, monkeypatch):
+    creator, approver = world["creator"], world["approver"]
+    sent: list[tuple[list[int], dict]] = []
+
+    async def record(user_ids, event):
+        sent.append((user_ids, event))
+
+    monkeypatch.setattr(client.app.state.messages, "publish", record)
+    made = _post(client, creator, LEAK)
+    content_id = made["content"]["id"]
+    news = lambda: client.get("/me/review-updates", headers=_auth(creator)).json()  # noqa: E731
+    assert news()["unread"] == 0, "the creator's own work is not news"
+
+    f = _blocker(client, creator, made)
+    raised = client.post(f"/findings/{f['id']}/escalations", headers=_auth(creator),
+                         json={"message": "The launch is public now; marketing announced it on stage."})
+    assert raised.status_code == 201
+    # The brand team's screens hear about a new request at once.
+    assert any(e["type"] == "escalations" for _, e in sent)
+    sent.clear()
+    assert client.post(f"/escalations/{raised.json()['id']}/resolve", headers=_auth(approver),
+                       json={"outcome": "cleared", "reason_code": "not_applicable"}).status_code == 200
+    me = client.get("/me", headers=_auth(creator)).json()["id"]
+    told = [(e["type"], ids) for ids, e in sent]
+    assert [t for t, _ in told] == ["escalations", "review"]
+    assert me in told[0][1] and told[1][1] == [me]
+
+    assert news()["unread"] == 1 and news()["pieces"][0]["content_id"] == content_id
+    assert client.post(f"/contents/{content_id}/seen", headers=_auth(creator)).status_code == 204
+    assert client.post(f"/contents/{content_id}/seen", headers=_auth(creator)).status_code == 204  # again: fine
+    assert news()["unread"] == 0
+    # Someone else opening it does not mark it read for the creator.
+    client.post(f"/contents/{content_id}/comments", headers=_auth(approver), json={"body": "Looks good to go."})
+    client.post(f"/contents/{content_id}/seen", headers=_auth(approver))
+    assert news()["unread"] == 1
+    assert client.get("/me/review-updates", headers=_auth(approver)).json() == {"unread": 0, "pieces": []}
+
+
+def test_news_goes_only_to_people_who_may_read_the_piece(client, world, monkeypatch):
+    import asyncio
+
+    from verytas.services import notify
+
+    admin = world["admin"]
+    other = client.post("/users", headers=_auth(admin),
+                        json={"email": "c2@acme.io", "name": "Second Creator", "role": "creator"}).json()["token"]
+    made = _post(client, world["creator"], LEAK)
+    # Another creator can neither mark someone else's piece read nor see it in their news.
+    assert client.post(f"/contents/{made['content']['id']}/seen", headers=_auth(other)).status_code == 404
+    assert client.get("/me/review-updates", headers=_auth(other)).json()["unread"] == 0
+
+    secret = _post(client, admin, "Board plan, embargoed.", title="Board", tier="confidential")["content"]["id"]
+    ids = {who: client.get("/me", headers=_auth(world[who])).json()["id"] for who in ("admin", "reviewer", "approver")}
+    sent = []
+
+    async def record(user_ids, event):
+        sent.append(user_ids)
+
+    monkeypatch.setattr(notify, "_hub", type("Hub", (), {"publish": staticmethod(record)})())
+
+    async def run():
+        async with client.app.state.db.sessionmaker() as session:
+            await notify.escalations_changed(session, secret, ids["admin"])
+
+    asyncio.run(run())
+    # Reviewers and approvers cleared to "internal" don't hear about a confidential piece, not even its id.
+    assert ids["admin"] in sent[0] and ids["reviewer"] not in sent[0] and ids["approver"] not in sent[0]
+
+
 def test_a_request_waits_for_a_re_check_still_running_before_it_is_answered(client, world, monkeypatch):
     # Answered mid-check, the decision would sit on the old finding and the new check's copy of it would come
     # back undecided. The brand team is asked to wait for the check instead.

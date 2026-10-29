@@ -52,6 +52,7 @@ from verytas.security.audit import append
 from verytas.security.guard import normalize_contact
 from verytas.services import events as chain
 from verytas.services.contacts import screened
+from verytas.services.notify import escalations_changed, review_changed
 
 router = APIRouter(tags=["governance"])
 Admin = Annotated[User, Depends(require(Role.brand_admin))]
@@ -86,6 +87,7 @@ async def raise_escalation(finding_id: int, body: EscalationIn, session: Session
                  detail={"finding_id": finding.id, "content_id": content.id, "level": finding.level,
                          "flags": [f["code"] for f in guard.as_dict()["flagged"]]})
     await session.commit()
+    await escalations_changed(session, content.id, esc.raised_by)
     return await _view(session, user, esc)
 
 
@@ -163,6 +165,10 @@ async def resolve_escalation(esc_id: int, body: EscalationResolveIn, session: Se
                  detail={"outcome": body.outcome, "reason_code": body.reason_code, "finding_id": finding.id,
                          "rule_id": finding.rule_id, "level": finding.level})
     await session.commit()
+    await escalations_changed(session, esc.content_id, esc.raised_by)
+    content = await session.get(Content, esc.content_id)
+    if content is not None:
+        await review_changed(content.created_by, user.id, esc.content_id)
     return await _view(session, user, esc)
 
 
@@ -177,6 +183,7 @@ async def withdraw_escalation(esc_id: int, session: Session, user: CurrentUser) 
     await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="escalation.withdrawn",
                  object_type="escalation", object_id=esc.id, detail={})
     await session.commit()
+    await escalations_changed(session, esc.content_id, esc.raised_by)
     return await _view(session, user, esc)
 
 

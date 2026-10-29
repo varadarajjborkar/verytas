@@ -16,6 +16,7 @@ import { tabKeys } from "../ui";
 import { useViewer } from "../Viewer";
 import { channelName } from "@/lib/channels";
 import { useOnRefresh } from "@/lib/refresh";
+import { onLive } from "@/lib/live";
 import { shownError } from "@/lib/errors";
 
 const FLAG_TONE: Record<string, string> = {
@@ -59,6 +60,8 @@ export function EscalationsInbox() {
   }, [tab]);
   useEffect(() => { load(); }, [load]);
   useOnRefresh(load);
+  // Raised, answered or withdrawn by anyone: the list follows at once rather than on the next visit.
+  useEffect(() => onLive((e) => { if (e.type === "escalations") load(); }), [load]);
   useEffect(() => {
     if (!focus || !rows) return;
     document.getElementById(`esc-${focus}`)?.scrollIntoView({ block: "center", behavior: "smooth" });

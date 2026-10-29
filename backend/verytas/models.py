@@ -725,6 +725,19 @@ class Escalation(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ContentSeen(Base):
+    """When a creator last opened one of their pieces: brand-team news on it after this is unread on "My
+    reviews" (services/review_news.py)."""
+
+    __tablename__ = "content_seen"
+    __table_args__ = (UniqueConstraint("user_id", "content_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    content_id: Mapped[int] = mapped_column(ForeignKey("contents.id"), index=True)
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class IntakeBatch(Base):
     """One drop of company material into Prism Intake (prism/intake): files, links and the admin's note on them.
 

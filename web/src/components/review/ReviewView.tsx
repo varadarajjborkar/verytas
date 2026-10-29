@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { journey } from "@/lib/journey";
 import {
-  ApiError, decide as decideFinding, escalate, FINISHED, getContent, getReview, getTimeline, listComments, listDisputes,
-  listEscalations, listPeople, nextSteps,
+  ApiError, decide as decideFinding, escalate, fileDispute, FINISHED, getContent, getReview, getTimeline, listComments, listDisputes,
+  listEscalations, listPeople, markSeen, nextSteps,
   relativeTime, resubmit, STATUS_HINT, STATUS_LABEL, transition, waitForReview, whereLabel,
 } from "@/lib/review-client";
 import { canDecide, sideOf } from "@/lib/roles";
@@ -29,6 +29,7 @@ import { channelName } from "@/lib/channels";
 import { reveal } from "@/lib/reveal";
 import { AiInfoButton } from "../AiInfo";
 import { isSafeMessage, shownError } from "@/lib/errors";
+import { onLive, REVIEWS_SEEN_EVENT } from "@/lib/live";
 
 type Phase = "loading" | "checking" | "ready" | "failed" | "missing";
 
@@ -114,6 +115,20 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
     loadTimeline();
     listPeople().then((ps) => setPeople(new Map(ps.map((p) => [p.id, p])))).catch(() => {});
   }, [loadTimeline]);
+
+  // News on this piece from someone else (a status change, a decision, an escalation answered, a comment)
+  // shows while it is open: the status, the brand team's calls and the history are read again in place,
+  // keeping what the creator has ticked. A check still running is left to its own poll.
+  const reviewId = review?.id;
+  const reviewDone = review?.status === "done";
+  useEffect(() => onLive((e) => {
+    if ((e.type !== "review" && e.type !== "escalations") || e.content_id !== contentId) return;
+    loadTimeline();
+    getContent(contentId).then((c) => { if (live.current === contentId) setContent(c); }).catch(() => {});
+    if (reviewId && reviewDone) {
+      getReview(reviewId).then((r) => { if (live.current === contentId && r.id === reviewId) setReview(r); }).catch(() => {});
+    }
+  }), [contentId, loadTimeline, reviewId, reviewDone]);
 
   // Starts with a request, not a state change: on mount the initial state is already "loading",
   // and a re-check resets it itself before calling this.
@@ -208,6 +223,14 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
 
   const manager = sideOf(role) === "manager";
   const author = userId != null && content?.created_by === userId;
+  // The author has it open: what was new on it is read, and the "My reviews" badge counts again. Again when
+  // news arrives while it is open (the status or the brand team's calls changed), since they are looking at it.
+  const contentStatus = content?.status;
+  const seenFor = timeline?.items.length;
+  useEffect(() => {
+    if (!author) return;
+    markSeen(contentId).then(() => window.dispatchEvent(new Event(REVIEWS_SEEN_EVENT))).catch(() => {});
+  }, [author, contentId, contentStatus, seenFor]);
   // The creator's tools (edit, apply fixes, dispute, re-check) belong to the author.
   const creatorTools = !manager || author;
   const deciding = manager && canDecide(role) && !readOnly;
@@ -278,6 +301,36 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   });
+
+  // A dispute sent on its own is decided in the background: follow it until it has a verdict, so the result
+  // lands on the issue without a refresh. One follower per piece; a dispute sent while it runs is picked up
+  // by the same loop, which only stops once nothing for this piece is still being decided.
+  const followingDisputes = useRef<number | null>(null);
+  async function followDisputes() {
+    const id = contentId;
+    if (followingDisputes.current === id) return;
+    followingDisputes.current = id;
+    try {
+      for (let i = 0; i < 60 && live.current === id; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const found = await listDisputes(id).catch(() => null);
+        if (!found || live.current !== id) continue;
+        setDisputes(found);
+        const fresh = found.filter((d) => d.status !== "queued" && d.status !== "running" && !decidedSeen.current.has(d.id));
+        fresh.forEach((d) => decidedSeen.current.add(d.id));
+        for (const d of fresh) {
+          toast({ kind: d.status === "overturned" ? "success" : "info",
+            title: d.status === "overturned" ? "Dispute accepted: the issue is cleared" : d.status === "upheld" ? "Dispute read: the issue stands" : "Dispute sent to the brand team",
+            detail: d.verdict?.reason });
+        }
+        // The verdict is news on this piece, and the creator is looking at it.
+        if (fresh.length) markSeen(id).then(() => window.dispatchEvent(new Event(REVIEWS_SEEN_EVENT))).catch(() => {});
+        if (!found.some((d) => d.status === "queued" || d.status === "running")) break;
+      }
+    } finally {
+      if (followingDisputes.current === id) followingDisputes.current = null;
+    }
+  }
 
   async function recheck(newBody?: string) {
     if (!review && newBody == null) return;
@@ -578,6 +631,13 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
                 toast({ kind: "success", title: "Sent to the brand team", detail: "A person will review it by hand." });
                 loadTimeline();
                 onChanged();
+              } : undefined}
+              onDispute={creatorTools && !readOnly ? async (f, claim, language) => {
+                const filed = await fileDispute(f.id, claim, language);
+                setDisputes((all) => [...all.filter((x) => x.id !== filed.id), filed]);
+                toast({ kind: "success", title: "Dispute sent", detail: "Verytas is reading the issue again; the result shows on it." });
+                followDisputes();
+                loadTimeline();
               } : undefined}
               decide={deciding ? decide : undefined} onBusy={setLeaving} onDecided={decided} creatorCalls={creatorCalls}
               canDismissBlockers={role === "approver" || role === "brand_admin"} />
