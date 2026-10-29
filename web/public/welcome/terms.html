@@ -86,4 +86,35 @@
 <p>The live demo is shared. Please do not put real confidential material in it.</p>
 <p class="text-sm">This page is a placeholder for the prototype and will be replaced by the full terms.</p></div>
 </main>
+<section id="cookie-notice" hidden role="region" aria-label="Cookies" class="fixed inset-x-0 bottom-0 z-50 border-t border-neutral-200 bg-raised/95 shadow-[0_-8px_24px_rgba(0,0,0,0.08)] backdrop-blur dark:border-ink-3 dark:bg-ink-1/95">
+  <div class="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:gap-6 md:px-8">
+    <p class="min-w-0 flex-1 text-sm leading-6 text-neutral-600 dark:text-neutral-400"><b class="font-semibold text-neutral-900 dark:text-neutral-100">Cookies.</b> We keep what the site needs: your sign-in, a random id for this browser so what you tell Ask Inki stays yours on a shared demo account, and this choice. <b class="font-medium text-neutral-900 dark:text-neutral-100">Accept all</b> also remembers your theme, layout and recent searches. Nothing tracks you. <a href="/privacy#cookies" class="text-accent underline-offset-2 hover:underline dark:text-accent-dark">Privacy</a></p>
+    <div class="flex shrink-0 justify-end gap-2">
+      <button type="button" data-consent="necessary" class="rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium transition hover:bg-surface dark:border-ink-4 dark:hover:bg-ink-2">Necessary only</button>
+      <button type="button" data-consent="all" class="rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-[#1752b8] dark:bg-accent-dark dark:text-[#06101e] dark:hover:bg-[#6aacff]">Accept all</button>
+    </div>
+  </div>
+</section>
+<script>
+  // The cookie question, as in the app (components/CookieNotice.tsx) and under the same key, so it is asked once.
+  // No "reject all": what the site needs is kept either way; the answer decides whether preferences are.
+  (function () {
+    var box = document.getElementById("cookie-notice"), KEY = "vt-consent";
+    var needed = function (k) { return k === KEY || k.indexOf("vt-tour:") === 0 || k === "vt-chats"; };
+    document.querySelectorAll("[data-ask-cookies]").forEach(function (b) { b.addEventListener("click", function () { box.hidden = false; }); });
+    try { if (!localStorage.getItem(KEY)) box.hidden = false; } catch (e) { box.hidden = false; }
+    box.querySelectorAll("[data-consent]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var v = b.getAttribute("data-consent");
+        try {
+          if (v === "necessary") Object.keys(localStorage).forEach(function (k) {
+            if (k.indexOf("vt-") === 0 && !needed(k)) localStorage.removeItem(k);
+          });
+          localStorage.setItem(KEY, v);
+        } catch (e) {}
+        box.hidden = true;
+      });
+    });
+  })();
+</script>
 </body></html>

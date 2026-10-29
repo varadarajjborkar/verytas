@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { writeStored, useStored } from "@/lib/stored";
+import { CONSENT_KEY, writeStored, useStored } from "@/lib/stored";
 import { useModalFocus } from "./Drawer";
 import { useToast } from "./Toaster";
 import { useViewer } from "./Viewer";
@@ -82,15 +82,17 @@ export function Tour() {
   // so it outlives the tab and goes when the site's data is cleared.
   const key = `vt-tour:${side}`;
   const seen = useStored(key);
+  // The cookie question comes first: the tour is a modal and would leave it unanswerable behind it.
+  const answered = useStored(CONSENT_KEY);
   const [step, setStep] = useState<number | null>(null);
   const steps = side === "creator" ? CREATOR : MANAGER;
 
   // The first time this browser lands on this side of the console, not on the sign-in page.
   useEffect(() => {
-    if (!me || loading || seen || step !== null || autoStarted.has(key) || pathname.startsWith("/signin")) return;
+    if (!me || loading || seen || !answered || step !== null || autoStarted.has(key) || pathname.startsWith("/signin")) return;
     const t = setTimeout(() => { autoStarted.add(key); setStep(0); }, 600); // let the page settle first
     return () => clearTimeout(t);
-  }, [me, loading, seen, step, key, pathname]);
+  }, [me, loading, seen, answered, step, key, pathname]);
 
   useEffect(() => {
     const start = () => setStep(0);

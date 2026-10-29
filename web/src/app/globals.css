@@ -329,6 +329,10 @@ body:has(.vt-splitter[data-dragging]) { user-select: none; cursor: col-resize; }
 @media (max-width: 40rem) { .vt-dock { gap: 0.5rem; padding-left: 0.875rem; font-size: 12px; } }
 /* Notices rise above the review's bar instead of landing on it. */
 body:has(.vt-dock) .vt-toasts { padding-bottom: 5.25rem; }
+/* The cookie bar, while unanswered (components/CookieNotice.tsx): what sits at the foot moves above it. */
+.vt-dock { translate: 0 calc(-1 * var(--vt-cookie-h, 0px)); }
+.vt-toasts { bottom: var(--vt-cookie-h, 0px); }
+body { padding-bottom: var(--vt-cookie-h, 0px); }
 .vt-pip { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--vt-line-strong); transition: all 300ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .vt-pip[data-level="blocker"] { border-color: var(--vt-blocker); }
 .vt-pip[data-level="warning"] { border-color: var(--vt-warning); }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
 import "@openuidev/react-ui/styles/index.css";
 import "./globals.css";
+import { CookieNotice } from "@/components/CookieNotice";
 import { Providers } from "@/components/Providers";
 import { SideNav } from "@/components/SideNav";
 import { TopBar } from "@/components/TopBar";
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </div>
           </div>
           <Tour />
+          <CookieNotice />
         </Providers>
       </body>
     </html>

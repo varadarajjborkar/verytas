@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useStored, writeStored } from "@/lib/stored";
+import { CONSENT_KEY, useStored, writeStored } from "@/lib/stored";
 import { CloseIcon, SettingsIcon } from "./Icons";
 import { InkiMemory } from "./InkiMemory";
 import { PersonalTokens } from "./PersonalTokens";
@@ -106,6 +106,7 @@ function SettingsDialog({ onClose, first }: { onClose: () => void; first: Tab })
   const [edits, setEdits] = useState<Record<string, string>>({});
   const socials = { ...savedSocials, ...edits };
   const { choice, setChoice } = useTheme();
+  const consent = useStored(CONSENT_KEY);
   const viewer = useViewer();
   const [switching, setSwitching] = useState(false);
   const toast = useToast();
@@ -291,6 +292,17 @@ function SettingsDialog({ onClose, first }: { onClose: () => void; first: Tab })
                   Show the tour again
                 </button>
               </div>}
+              <div className="rounded-xl border border-line p-3">
+                <p className="text-sm font-medium">Cookies</p>
+                <p className="mt-0.5 text-xs text-muted">
+                  {consent === "necessary" ? "Necessary only: your theme and layout last for this visit."
+                    : consent === "all" ? "All: your theme, layout and recent searches are remembered in this browser."
+                    : "Not chosen yet."}
+                </p>
+                <button type="button" className="vt-btn vt-btn-quiet mt-3" onClick={() => writeStored(CONSENT_KEY, null)}>
+                  Choose again
+                </button>
+              </div>
               {me && signin && (
                 <button type="button" onClick={signOut} className="vt-btn vt-btn-quiet self-start">{demo ? "Switch account" : "Sign out"}</button>
               )}
