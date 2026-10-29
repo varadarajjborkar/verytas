@@ -148,6 +148,7 @@ def test_full_review_cycle(client, world):
     health = client.get("/insights/guideline-health", headers=approver).json()
     voice_health = next(h for h in health if h["code"] == "VOICE-01")
     assert voice_health["rejected"] == 1 and voice_health["unclear_share"] == 1.0
+    assert voice_health["event_id"] is None  # a library rule, so Open goes to the rules list
 
     audit = client.get("/audit/verify", headers=_auth(world["admin"])).json()
     assert audit["ok"] and audit["entries"] > 10

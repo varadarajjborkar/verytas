@@ -40,6 +40,7 @@ export type RuleHealth = {
   title: string;
   severity: "must" | "should" | "may";
   kind?: "semantic" | "deterministic";
+  event_id?: number | null; // set for a brand event's rules, which the library keeps under Events
   findings: number;
   decisions: number;
   accepted: number;

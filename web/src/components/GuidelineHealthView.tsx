@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useId, useState, type CSSProperties } from "react";
 import type { RuleHealth } from "@/lib/types";
+import { ClarifyRule } from "./ClarifyRule";
 import { UNCLEAR } from "./dashboard/widgets";
 import { AlertIcon, CheckIcon, OctagonIcon } from "./Icons";
 import { InfoPopover } from "./InfoPopover";
@@ -25,6 +26,7 @@ const LEVEL: Record<Level, { word: string; Icon: typeof OctagonIcon; pill: strin
 };
 const levelOf = (ambiguity: number): Level => (ambiguity >= UNCLEAR ? "bad" : ambiguity >= SOMEWHAT ? "mid" : "good");
 const rules = (n: number) => `${n} rule${n === 1 ? "" : "s"}`;
+const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 function LevelTag({ level }: { level: Level }) {
   const { word, Icon, pill } = LEVEL[level];
@@ -37,9 +39,10 @@ function LevelTag({ level }: { level: Level }) {
 
 /**
  * How clear the brand's rules are, as a tilted ring of three levels. A slice or a row picks a level and
- * narrows the list beside it to that level's rules; each rule opens in the Brand library.
+ * narrows the list beside it to that level's rules; each rule opens in the Brand library. Under each rule
+ * are the numbers behind its level and the advice, and an admin can have a clearer wording drafted there.
  */
-export function GuidelineHealthView({ health }: { health: RuleHealth[] }) {
+export function GuidelineHealthView({ health, canEdit = false }: { health: RuleHealth[]; canEdit?: boolean }) {
   const scored = health.filter((h) => h.enough_data && h.ambiguity != null)
     .sort((a, b) => (b.ambiguity ?? 0) - (a.ambiguity ?? 0));
   const pending = health.filter((h) => !h.enough_data);
@@ -48,7 +51,9 @@ export function GuidelineHealthView({ health }: { health: RuleHealth[] }) {
   const total = scored.length;
   const share = (k: Level) => Math.round((groups[k].length / Math.max(total, 1)) * 100);
 
-  const [picked, setPicked] = useState<Level | null>(null);
+  const [chosen, setPicked] = useState<Level | null>(null);
+  // A refresh can empty the chosen level; the view then shows every level again rather than nothing.
+  const picked = chosen && groups[chosen].length > 0 ? chosen : null;
   // A row under the pointer lifts its slice too, so the list and the ring read as one.
   const [hot, setHot] = useState<Level | null>(null);
   const [said, setSaid] = useState<Level | null>(null);
@@ -76,7 +81,8 @@ export function GuidelineHealthView({ health }: { health: RuleHealth[] }) {
       </dl>
       <p className="mt-4 text-xs text-subtle">
         Together they make a rule&apos;s ambiguity. {Math.round(UNCLEAR * 100)}% or more is Confusing, {Math.round(SOMEWHAT * 100)}% or
-        more is A bit unclear, anything lower is Clear. Nothing changes automatically.
+        more is A bit unclear, anything lower is Clear. Nothing changes automatically: an admin reads the advice,
+        can have a clearer wording drafted from the rule&apos;s own cases, and decides whether to apply it.
       </p>
     </InfoPopover>}>
       {total === 0 ? (
@@ -108,18 +114,37 @@ export function GuidelineHealthView({ health }: { health: RuleHealth[] }) {
           </div>
 
           <div className="flex min-w-0 flex-col gap-2.5">
-            {LEVELS.filter((k) => groups[k].length > 0 && (!picked || picked === k)).map((k) => (
-              <section key={k} aria-label={`${LEVEL[k].word} rules`} className="rounded-xl border border-line bg-raised px-3 py-2.5">
+            {/* Levels not picked are hidden, not unmounted, so a clearer wording being drafted under one survives a look at another. */}
+            {LEVELS.filter((k) => groups[k].length > 0).map((k) => (
+              <section key={k} aria-label={`${LEVEL[k].word} rules`} hidden={picked != null && picked !== k}
+                className="rounded-xl border border-line bg-raised px-3 py-2.5">
                 <h3 className="mb-1 flex items-center gap-2 text-[13px] font-medium text-subtle"><LevelTag level={k} />{rules(groups[k].length)}</h3>
                 <ul>
                   {groups[k].map((h) => (
-                    <li key={h.rule_id}>
-                      <Link href={`/library?q=${encodeURIComponent(h.code)}`} aria-label={`Open rule: ${h.title}`}
+                    <li key={h.rule_id} className="border-b border-line/60 pb-1 last:border-0 last:pb-0">
+                      {/* An event's rules are kept with the event, not in the rules list. */}
+                      <Link href={h.event_id != null ? "/library?tab=events" : `/library?q=${encodeURIComponent(h.code)}`} aria-label={`Open rule: ${h.title}`}
                         className="flex items-center gap-2.5 rounded-md p-1.5 text-[13px] transition-colors hover:bg-sunken">
                         <span className="min-w-0 flex-1 truncate" title={h.title}>{h.title}</span>
                         <RuleCode code={h.code} className="hidden max-w-[11rem] sm:block" />
                         <span className="shrink-0 text-xs font-medium text-accent">Open</span>
                       </Link>
+                      {/* The why behind the level, outside the link: the draft below is a control of its own. */}
+                      <div className="px-1.5 pb-1.5">
+                        <p className="text-xs tabular-nums text-subtle">
+                          Overridden {pct(h.override_rate)} · Unclear {pct(h.unclear_share)} · Agreement {pct(h.agreement_posterior.mean)}
+                        </p>
+                        {h.advice[0] && (
+                          <p className="mt-1.5 border-l-2 border-accent/50 pl-3 text-xs leading-5 text-muted">
+                            {h.advice[0][0].toUpperCase() + h.advice[0].slice(1)}
+                          </p>
+                        )}
+                        {/* Only where a draft can work: a model-judged rule (word lists are edited directly) with cases. */}
+                        {canEdit && h.kind === "semantic" && h.decisions >= 2
+                          && h.advice.some((a) => a.startsWith("clarify") || a.startsWith("add a good")) && (
+                          <ClarifyRule ruleId={h.rule_id} code={h.code} />
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -214,31 +239,42 @@ function Ring({ groups, total, picked, hot, onPick, onSay }: {
         const lx = CX + ((R + HOLE) / 2) * Math.cos(s.mid), ly = CY + ((R + HOLE) / 2) * TILT * Math.sin(s.mid) + 6;
         const lift = { "--dx": `${(Math.cos(s.mid) * POP).toFixed(1)}px`, "--dy": `${(Math.sin(s.mid) * POP * TILT - RISE).toFixed(1)}px` } as CSSProperties;
         const press = () => onPick(s.k);
+        // A level holding every rule is a whole ring: two ellipses, no cut ends and no radial seam at START.
+        const full = s.span > 2 * Math.PI - 1e-6;
+        const top = full
+          ? `M ${at(R, 0)} A ${R} ${R * TILT} 0 1 1 ${at(R, Math.PI)} A ${R} ${R * TILT} 0 1 1 ${at(R, 0)} Z
+             M ${at(HOLE, 0)} A ${HOLE} ${HOLE * TILT} 0 1 1 ${at(HOLE, Math.PI)} A ${HOLE} ${HOLE * TILT} 0 1 1 ${at(HOLE, 0)} Z`
+          : `M ${at(R, s.a0)} A ${R} ${R * TILT} 0 0 1 ${at(R, s.mid)} A ${R} ${R * TILT} 0 0 1 ${at(R, s.a1)} L ${at(HOLE, s.a1)}
+             A ${HOLE} ${HOLE * TILT} 0 0 0 ${at(HOLE, s.mid)} A ${HOLE} ${HOLE * TILT} 0 0 0 ${at(HOLE, s.a0)} Z`;
+        // The walls in view: the near half of the outside and the far half of the inside, each one piece on a whole ring.
+        const near = full ? [[0, Math.PI] as [number, number]] : within(s.a0, s.a1, 0);
+        const far = full ? [[Math.PI, 2 * Math.PI] as [number, number]] : within(s.a0, s.a1, Math.PI);
         return (
           <g key={s.k} className="vt-ring-slice" style={lift} role="button" tabIndex={0} aria-pressed={picked === s.k}
             aria-label={`${LEVEL[s.k].word}: ${n} of ${total} rules, ${pct}%. Show them`}
             data-on={picked === s.k ? "true" : undefined} data-hot={hot === s.k ? "true" : undefined}
             onClick={press} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); press(); } }}
             onMouseEnter={() => onSay(s.k)} onMouseLeave={() => onSay(null)} onFocus={() => onSay(s.k)} onBlur={() => onSay(null)}>
-            {within(s.a0, s.a1, Math.PI).map(([x, y]) => <path key={`in${x}`} d={side(HOLE, x, y)} style={{ fill: shade(s.k, 62) }} />)}
-            {/* The cut ends sit under the neighbouring slices until this one lifts out. */}
-            {[s.a0, s.a1].map((x) => (
-              <path key={`cut${x}`} d={`M ${at(HOLE, x)} L ${at(R, x)} L ${at(R, x, DEPTH)} L ${at(HOLE, x, DEPTH)} Z`} style={{ fill: shade(s.k, 58) }} />
-            ))}
-            {within(s.a0, s.a1, 0).map(([x, y]) => (
-              <path key={`out${x}`} d={side(R, x, y)} fill={`url(#${uid}-side-${s.k})`} style={{ stroke: "var(--vt-raised)" }} strokeWidth={1.2} strokeLinejoin="round" />
-            ))}
-            {/* Two half arcs each way, so a level holding every rule still draws a whole ring. */}
-            <path className="vt-ring-top" fill={`url(#${uid}-top-${s.k})`} style={{ stroke: "var(--vt-raised)" }} strokeWidth={1.5} strokeLinejoin="round"
-              d={`M ${at(R, s.a0)} A ${R} ${R * TILT} 0 0 1 ${at(R, s.mid)} A ${R} ${R * TILT} 0 0 1 ${at(R, s.a1)} L ${at(HOLE, s.a1)}
-                A ${HOLE} ${HOLE * TILT} 0 0 0 ${at(HOLE, s.mid)} A ${HOLE} ${HOLE * TILT} 0 0 0 ${at(HOLE, s.a0)} Z`} />
-            {/* Too thin a slice has no room for its number; the row under the ring carries it. */}
-            {s.span > 0.35 && (
-              <text x={lx.toFixed(1)} y={ly.toFixed(1)} textAnchor="middle" pointerEvents="none"
-                style={{ fill: "var(--vt-ring-label)" }} fontSize={16} fontWeight={600}>
-                {n}<tspan dx={3} fontSize={11}>{pct}%</tspan>
-              </text>
-            )}
+            {/* The still hit area: the top and the near side at rest. */}
+            <path className="vt-ring-hit" d={top} fillRule="evenodd" />
+            {near.map(([x, y]) => <path key={`hit${x}`} className="vt-ring-hit" d={side(R, x, y)} />)}
+            <g className="vt-ring-lift">
+              {far.map(([x, y]) => <path key={`in${x}`} d={side(HOLE, x, y)} style={{ fill: shade(s.k, 62) }} />)}
+              {!full && [s.a0, s.a1].map((x) => (
+                <path key={`cut${x}`} className="vt-ring-cut" d={`M ${at(HOLE, x)} L ${at(R, x)} L ${at(R, x, DEPTH)} L ${at(HOLE, x, DEPTH)} Z`} style={{ fill: shade(s.k, 58) }} />
+              ))}
+              {near.map(([x, y]) => (
+                <path key={`out${x}`} d={side(R, x, y)} fill={`url(#${uid}-side-${s.k})`} style={{ stroke: "var(--vt-raised)" }} strokeWidth={1.2} strokeLinejoin="round" />
+              ))}
+              <path className="vt-ring-top" d={top} fillRule="evenodd" fill={`url(#${uid}-top-${s.k})`} style={{ stroke: "var(--vt-raised)" }} strokeWidth={1.5} strokeLinejoin="round" />
+              {/* Too thin a slice has no room for its number; the row under the ring carries it. */}
+              {s.span > 0.35 && (
+                <text x={lx.toFixed(1)} y={ly.toFixed(1)} textAnchor="middle" pointerEvents="none" paintOrder="stroke"
+                  style={{ fill: "var(--vt-ring-label)", stroke: "var(--vt-ring-halo)" }} strokeWidth={3} strokeLinejoin="round" fontSize={16} fontWeight={600}>
+                  {n}<tspan dx={3} fontSize={11}>{pct}%</tspan>
+                </text>
+              )}
+            </g>
           </g>
         );
       })}
