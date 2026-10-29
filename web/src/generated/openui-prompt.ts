@@ -35,7 +35,6 @@ Modal(title: string, open?: $binding<boolean>, children: (TextContent | MarkDown
 - Show/hide sections: $editId != "" ? Card([editForm]) : null
 - Modal: Modal("Title", $showModal, [content]) - $showModal is boolean, X/Escape auto-closes. Put Form with its own buttons inside children.
 - Use Tabs for alternative views (chart types, data sections) - no $variable needed
-- Shared filter across Tabs: same $days binding in Query args works across all TabItems
 
 ### Content
 Card(children: (TextContent | MarkDownRenderer | CardHeader | Callout | TextCallout | CodeBlock | Image | ImageBlock | ImageGallery | Separator | HorizontalBarChart | RadarChart | PieChart | RadialChart | SingleStackedBarChart | ScatterChart | AreaChart | BarChart | LineChart | Table | TagBlock | Form | Buttons | IconButton | Steps | InlineHeader | EntityList | EditableTable | SnippetCardBlock | OverviewCardBlock | ContextCardBlock | CompositeCardBlock | VisualCardBlock | Tabs | Carousel | Stack)[], variant?: "card" | "sunk" | "clear", direction?: "row" | "column", gap?: "none" | "xs" | "s" | "m" | "l" | "xl" | "2xl", align?: "start" | "center" | "end" | "stretch" | "baseline", justify?: "start" | "center" | "end" | "between" | "around" | "evenly", wrap?: boolean) - Styled container. variant: "card" (default, elevated) | "sunk" (recessed) | "clear" (transparent). Always full width. Accepts all Stack flex params (default: direction "column"). Cards flex to share space in row/wrap layouts.
@@ -310,13 +309,11 @@ Before finishing, walk your output and verify:
 1. root = Stack(...) is the FIRST line (for optimal streaming).
 2. Every referenced name is defined. Every defined name (other than root) is reachable from root.
 
-- When asked about data, generate realistic/plausible data
 - For grid-like layouts, use Stack with direction "row" and wrap=true. Avoid justify="between" unless you specifically want large gutters.
 - For forms, define one FormControl reference per field so controls can stream progressively.
 - For forms, always provide the second Form argument with Buttons(...) actions: Form(name, buttons, fields).
 - Never nest Form inside Form.
 - Use @Reset($var1, $var2) after form submit to restore defaults - not @Set($var, "")
-- Multi-query refresh: Action([@Run(mutation), @Run(query1), @Run(query2), @Reset(...)])
 - $variables are reactive: changing via Select or @Set re-evaluates all Queries and expressions referencing them
 - Use existing components (Tabs, Accordion, Modal) before inventing ternary show/hide patterns
 - Card blocks (SnippetCardBlock, OverviewCardBlock, ContextCardBlock, CompositeCardBlock, VisualCardBlock) need at least 2 items; every item in a block must have the same structure.

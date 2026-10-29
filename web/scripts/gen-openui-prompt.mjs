@@ -10,7 +10,13 @@ const { openuiLibrary, openuiPromptOptions } = require("@openuidev/react-ui");
 
 // House style forbids em dashes anywhere in the repo, generated files included;
 // a plain hyphen reads the same to the model.
-const prompt = openuiLibrary.prompt(openuiPromptOptions).replaceAll("\u2014", "-");
+// Two kinds of library advice are dropped because they work against Ask Inki: "generate realistic/plausible
+// data" (Inki must use only the workspace's data, and with it the model filled gaps with made-up escalations
+// and events), and the live-data syntax (Query, @Run, mutations), which this page never runs: given it, the
+// model wrote its lookups into the answer instead of calling them.
+const UNWANTED = /plausible data|Query|@Run\(|mutation/;
+const prompt = openuiLibrary.prompt(openuiPromptOptions).replaceAll("\u2014", "-")
+  .split("\n").filter((line) => !(line.startsWith("- ") && UNWANTED.test(line))).join("\n");
 // A template literal (not JSON) keeps the prompt human-readable in diffs.
 const escaped = prompt.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
 const out = new URL("../src/generated/openui-prompt.ts", import.meta.url);
