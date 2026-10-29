@@ -339,3 +339,52 @@ def test_live_events_carry_the_quoted_words(client, world):  # noqa: F811
              "message": {"conversation_id": cid, "text": "", "reply_to": {"id": first["id"], "sender": "c",
                                                                            "excerpt": "", "deleted": False}}}
     assert _opened(seal, event)["message"]["reply_to"]["excerpt"] == "Is the caption fine?"
+
+
+class _Redis:
+    """Just enough of Redis for the page cache."""
+
+    def __init__(self):
+        self.data = {}
+
+    async def get(self, key):
+        return self.data.get(key)
+
+    async def set(self, key, value, ex=None):
+        self.data[key] = value
+
+    async def incr(self, key):
+        self.data[key] = str(int(self.data.get(key) or 0) + 1)
+
+
+def test_a_page_cached_from_another_database_is_never_shown(client, world, tmp_path):  # noqa: F811
+    # A demo reset brings a new database and a new message key while Redis keeps the old pages: shown as they
+    # were, every message read "This message can't be opened."
+    cid, _ = _start(client, world)
+    assert _send(client, world["creator"], cid, text="Is the launch line fine as it is?").status_code == 201
+    hub = client.app.state.messages
+    fake, size = _Redis(), hub.cache_size
+    hub._redis, hub.cache_size = fake, 50
+    # Pages live under the message key's name, never under the bare namespace a reset would leave behind.
+    assert hub._pages == f"verytas:{client.app.state.message_seal.fingerprint()}:conv"
+    try:
+        stale = MessageSeal(tmp_path)  # another key, as before a reset
+        page = [{"id": 1, "conversation_id": cid, "sender_id": None, "asked_by": None, "kind": "text",
+                 "content_id": None, "reply_to_id": None, "created_at": "2026-10-28T00:00:00+00:00",
+                 "edited_at": None, "deleted_at": None, "sealed": stale.seal(cid, {"text": "old"})}]
+        import json
+        # Under the old key's name, and under the unscoped name used before pages were scoped: never read.
+        fake.data[f"verytas:{stale.fingerprint()}:conv:{cid}:recent:0"] = json.dumps(page)
+        fake.data[f"verytas:conv:{cid}:recent:0"] = json.dumps(page)
+        # And under the current name, as a page that does not end at the newest message (a write that missed
+        # the version bump).
+        fake.data[f"{hub._pages}:{cid}:recent:0"] = json.dumps([{**page[0], "id": 999}])
+        shown = client.get(f"/conversations/{cid}/messages", headers=_auth(world["creator"])).json()
+        texts = [m["text"] for m in shown]
+        assert texts == ["Is the launch line fine as it is?"]
+        # The page read from the database is cached, and served from there next time.
+        assert json.loads(fake.data[f"{hub._pages}:{cid}:recent:0"])[-1]["id"] != 999
+        again = client.get(f"/conversations/{cid}/messages", headers=_auth(world["creator"])).json()
+        assert [m["text"] for m in again] == texts
+    finally:
+        hub._redis, hub.cache_size = None, size

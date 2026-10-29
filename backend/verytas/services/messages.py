@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -72,6 +73,10 @@ class MessageSeal:
             raise ValueError(f"{self._path} is not a 256-bit key")
         return key
 
+    def fingerprint(self) -> str:
+        """A short, one-way name for the key, so caches of what it sealed can be told apart from another key's."""
+        return hashlib.sha256(b"verytas-message-key:" + self._load_or_create()).hexdigest()[:12]
+
     def seal(self, conversation_id: int, payload: dict[str, Any]) -> str:
         nonce = os.urandom(12)
         body = self._cipher().encrypt(nonce, json.dumps(payload, separators=(",", ":")).encode(),
@@ -104,11 +109,18 @@ class MessageHub:
         # see each other's events or pages.
         self._ns = namespace
         self._channel = f"{namespace}:user:"
+        self._pages = f"{namespace}:conv"
         self._local: dict[int, set[asyncio.Queue[dict[str, Any]]]] = {}
         self._redis: Any = None
         self._listener: asyncio.Task[None] | None = None
         # True while this process is subscribed, so a publish through Redis comes back to its own screens.
         self._subscribed = False
+
+    def scope_pages(self, key_name: str) -> None:
+        """Keep cached pages under the message key's name. A demo reset or a restore brings a new database and
+        a new key while Redis keeps the old pages; those were sealed under the old key and would show as
+        unreadable, so they must never be found again."""
+        self._pages = f"{self._ns}:{key_name}:conv"
 
     @property
     def mode(self) -> str:
@@ -199,8 +211,8 @@ class MessageHub:
         if self._redis is None or not self.cache_size:
             return None, None
         try:
-            version = int(await self._redis.get(f"{self._ns}:conv:{conversation_id}:v") or 0)
-            raw = await self._redis.get(f"{self._ns}:conv:{conversation_id}:recent:{version}")
+            version = int(await self._redis.get(f"{self._pages}:{conversation_id}:v") or 0)
+            raw = await self._redis.get(f"{self._pages}:{conversation_id}:recent:{version}")
         except Exception:  # noqa: BLE001
             return None, None
         return version, (json.loads(raw) if raw else None)
@@ -209,11 +221,11 @@ class MessageHub:
         if self._redis is None or version is None:
             return
         with contextlib.suppress(Exception):
-            await self._redis.set(f"{self._ns}:conv:{conversation_id}:recent:{version}", json.dumps(rows, default=str),
+            await self._redis.set(f"{self._pages}:{conversation_id}:recent:{version}", json.dumps(rows, default=str),
                                   ex=_CACHE_TTL_S)
 
     async def forget_page(self, conversation_id: int) -> None:
         if self._redis is None:
             return
         with contextlib.suppress(Exception):
-            await self._redis.incr(f"{self._ns}:conv:{conversation_id}:v")
+            await self._redis.incr(f"{self._pages}:{conversation_id}:v")

@@ -101,6 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await prism.recover()
         sweep = asyncio.create_task(storage.sweep_forever(db.sessionmaker, settings.orphan_upload_ttl_h))
         seal.ensure_key()
+        hub.scope_pages(seal.fingerprint())
         await hub.start()
         if settings.memory_enabled:
             # The embedding model loads now, off the event loop, rather than inside the first question asked.

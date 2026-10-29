@@ -578,7 +578,11 @@ async def messages(conversation_id: Id, request: Request, session: Session, user
     version = None
     if newest:
         version, cached = await hub.cached_page(conv.id)
-        if cached is not None:
+        # Served only while it still ends at the conversation's newest message: one indexed lookup, and a page
+        # left over from another database (a reset, a restore) or a write that missed the version bump is
+        # read again instead of shown.
+        if cached is not None and cached and cached[-1]["id"] == await session.scalar(
+                select(func.max(Message.id)).where(Message.conversation_id == conv.id)):
             return await _render(session, _seal(request), cached[-limit:])
     q = select(Message).where(Message.conversation_id == conv.id)
     if after is not None:
