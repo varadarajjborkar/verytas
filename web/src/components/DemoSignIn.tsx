@@ -119,6 +119,13 @@ export function DemoSignIn({ companies, resetsOn, next, selfSignup }:
               </li>
             ))}
           </ul>
+          {/* The picker offers a few people to sign in as; the company has more, and their work shows up too. */}
+          {side === "creator" && (
+            <p className="text-xs text-subtle">
+              {brand} works with more creators than these. Signed in on the brand team, you will see all of
+              them in the review queue, escalations and Creators; a creator sees only their own work.
+            </p>
+          )}
         </section>
       ))}
 
