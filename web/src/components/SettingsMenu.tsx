@@ -222,13 +222,13 @@ function SettingsDialog({ onClose, first }: { onClose: () => void; first: Tab })
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div role="tablist" aria-label="Settings sections" aria-orientation="vertical"
-          className="mx-5 mt-4 grid grid-cols-4 gap-1 rounded-xl bg-sunken p-1 text-[13px] font-medium md:m-0 md:flex md:w-52 md:shrink-0 md:flex-col md:gap-0.5 md:rounded-none md:border-r md:border-line md:bg-transparent md:p-3"
+          className="mx-5 mt-4 flex gap-1 overflow-x-auto rounded-xl bg-sunken p-1 text-[13px] font-medium [scrollbar-width:none] md:m-0 md:overflow-visible md:flex md:w-52 md:shrink-0 md:flex-col md:gap-0.5 md:rounded-none md:border-r md:border-line md:bg-transparent md:p-3"
           onKeyDown={(e) => arrows(e, TABS.map((t) => t.value), tab, setTab)}>
           {TABS.map((t, i) => (
             <button key={t.value} role="tab" type="button" aria-selected={tab === t.value} onClick={() => setTab(t.value)}
               id={`${ids}-tab-${t.value}`} aria-controls={`${ids}-panel`} tabIndex={tab === t.value ? 0 : -1}
               data-autofocus={i === 0 ? true : undefined}
-              className={`rounded-lg px-2 py-1.5 transition md:px-3 md:py-2 md:text-left md:text-sm ${tab === t.value
+              className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-2 transition md:px-3 md:py-2 md:text-left md:text-sm ${tab === t.value
                 ? "bg-raised text-ink shadow-[var(--vt-shadow)] md:bg-accent/12 md:shadow-none" : "text-muted hover:text-ink md:hover:bg-sunken"}`}>
               {t.label}
             </button>

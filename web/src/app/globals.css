@@ -158,6 +158,10 @@ table, .tabular-nums { font-variant-numeric: tabular-nums; }
   .vt-btn:hover:not(:disabled) { border-color: var(--vt-line-strong); }
   .vt-btn-sm { height: 2rem; padding: 0 0.75rem; font-size: 0.75rem; }
   .vt-btn-xs { height: 1.75rem; padding: 0 0.6rem; font-size: 0.75rem; border-radius: 7px; }
+  /* A finger needs more than a cursor: on touch screens the small sizes grow to 36px, a desk keeps its density. */
+  @media (pointer: coarse) {
+    .vt-btn-sm, .vt-btn-xs { height: 2.25rem; }
+  }
   .vt-btn:active:not(:disabled) { transform: scale(0.98); }
   .vt-btn:disabled { cursor: not-allowed; opacity: 0.5; }
   .vt-btn-primary { border-color: transparent; background: var(--vt-accent); color: var(--vt-accent-ink); }
@@ -615,3 +619,9 @@ body { padding-bottom: var(--vt-cookie-h, 0px); }
 .vt-ring-slice:focus-visible .vt-ring-top { stroke: var(--vt-ink); stroke-width: 2.5; }
 .vt-ring[data-dim="true"] .vt-ring-slice:not([data-on="true"]) { opacity: 0.28; }
 @media (prefers-reduced-motion: reduce) { .vt-ring-slice, .vt-ring-lift, .vt-ring-cut { transition: none; } }
+
+/* Touch: native dropdowns, the small text inputs beside them and segmented choices (filter chips, tab rows,
+   on/off pairs) get a fingertip's height too. */
+@media (pointer: coarse) {
+  select, input.vt-input, [role="tablist"] > button, button[aria-pressed] { min-height: 2.25rem; }
+}

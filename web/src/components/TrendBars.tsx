@@ -81,9 +81,11 @@ export function TrendBars({ data, series }: {
       </div>
       <div className="mt-1.5 flex gap-1.5">
         {data.map((d, i) => (
-          <span key={d.label} className={`min-w-0 flex-1 truncate text-center text-[11px] tabular-nums transition-colors ${
-            active === i ? "font-medium text-ink" : "text-subtle"}`}>
-            {/* Every other day, counted back from today so the latest is always labelled; the pointed-at day always. */}
+          // Counted back from today so the latest is always labelled, and the pointed-at day always: every other
+          // day, or every fourth on a phone, where a day's column is narrower than its date. A label may run past
+          // its own column into the unlabelled ones beside it rather than shrink to "1…".
+          <span key={d.label} className={`flex min-w-0 flex-1 justify-center overflow-visible whitespace-nowrap text-[11px] tabular-nums transition-colors ${
+            active === i ? "font-medium text-ink" : "text-subtle"} ${active !== i && (n - 1 - i) % 4 !== 0 ? "max-sm:invisible" : ""}`}>
             {(n - 1 - i) % 2 === 0 || active === i ? d.label : ""}
           </span>
         ))}
