@@ -238,7 +238,63 @@ def test_my_reviews_counts_brand_team_news_until_the_creator_opens_the_piece(cli
     client.post(f"/contents/{content_id}/comments", headers=_auth(approver), json={"body": "Looks good to go."})
     client.post(f"/contents/{content_id}/seen", headers=_auth(approver))
     assert news()["unread"] == 1
-    assert client.get("/me/review-updates", headers=_auth(approver)).json() == {"unread": 0, "pieces": []}
+
+
+
+def test_news_runs_both_ways_on_the_dashboard(client, world):
+    creator, approver = world["creator"], world["approver"]
+    made = _post(client, creator, LEAK)
+    content_id = made["content"]["id"]
+    feed = lambda who: client.get("/me/news", headers=_auth(who)).json()  # noqa: E731
+
+    # The creator escalates: the brand team hears it, the creator (who did it) doesn't.
+    f = _blocker(client, creator, made)
+    raised = client.post(f"/findings/{f['id']}/escalations", headers=_auth(creator),
+                         json={"message": "The launch is public now; marketing announced it on stage."})
+    assert raised.status_code == 201
+    team = feed(approver)
+    assert team["unread"] == 1 and team["items"][0]["kind"] == "escalated"
+    assert team["items"][0]["note"].startswith("The launch is public")
+    assert feed(creator)["unread"] == 0
+
+    # The brand team answers: the creator hears which way it went.
+    client.post(f"/escalations/{raised.json()['id']}/resolve", headers=_auth(approver),
+                json={"outcome": "cleared", "reason_code": "not_applicable", "note": "Fine for this post."})
+    mine = feed(creator)
+    assert mine["items"][0]["kind"] == "escalation_cleared" and mine["items"][0]["note"] == "Fine for this post."
+
+    # Sent for approval, then approved: each side hears the other's step.
+    client.post(f"/contents/{content_id}/transition", headers=_auth(creator), json={"to": "in_review"})
+    assert any(i["kind"] == "submitted" and i["unread"] for i in feed(approver)["items"])
+    assert client.post(f"/contents/{content_id}/transition", headers=_auth(approver),
+                       json={"to": "approved"}).status_code == 200
+    top = feed(creator)["items"][0]
+    assert top["kind"] == "approved" and "Ready to publish" in top["text"] and top["unread"]
+
+    # Opening the piece reads it, for that person only.
+    client.post(f"/contents/{content_id}/seen", headers=_auth(creator))
+    assert feed(creator)["unread"] == 0 and not feed(creator)["items"][0]["unread"]
+    # Once decided, nothing on it waits on the brand team any more, so it isn't news for them either.
+    assert feed(approver)["unread"] == 0
+
+
+def test_news_stays_with_the_people_who_may_see_the_piece(client, world):
+    admin = world["admin"]
+    other = client.post("/users", headers=_auth(admin),
+                        json={"email": "c3@acme.io", "name": "Third Creator", "role": "creator"}).json()["token"]
+    made = _post(client, world["creator"], LEAK)
+    f = _blocker(client, world["creator"], made)
+    client.post(f"/findings/{f['id']}/escalations", headers=_auth(world["creator"]),
+                json={"message": "The launch is public now; marketing announced it on stage."})
+    assert client.get("/me/news", headers=_auth(other)).json() == {"unread": 0, "items": []}
+
+    # The escalation is news for the brand team cleared for the piece (internal), not for one cleared only to
+    # public material.
+    public = client.post("/users", headers=_auth(admin), json={"email": "pr@acme.io", "name": "Public Reviewer",
+                                                               "role": "reviewer", "clearance": "public"})
+    news = lambda token: {i["content_id"] for i in client.get("/me/news", headers=_auth(token)).json()["items"]}  # noqa: E731
+    assert made["content"]["id"] in news(world["reviewer"])
+    assert made["content"]["id"] not in news(public.json()["token"])
 
 
 def test_news_goes_only_to_people_who_may_read_the_piece(client, world, monkeypatch):

@@ -223,14 +223,15 @@ export function ReviewView({ contentId, role, userId, onChanged, onNext }: {
 
   const manager = sideOf(role) === "manager";
   const author = userId != null && content?.created_by === userId;
-  // The author has it open: what was new on it is read, and the "My reviews" badge counts again. Again when
-  // news arrives while it is open (the status or the brand team's calls changed), since they are looking at it.
+  // The piece is open: what was new on it is read, for whoever is looking (the author or the brand team), and
+  // the badge counts again. Again when news arrives while it is open, since they are looking at it.
   const contentStatus = content?.status;
   const seenFor = timeline?.items.length;
+  const opened = content != null;
   useEffect(() => {
-    if (!author) return;
+    if (!opened) return;
     markSeen(contentId).then(() => window.dispatchEvent(new Event(REVIEWS_SEEN_EVENT))).catch(() => {});
-  }, [author, contentId, contentStatus, seenFor]);
+  }, [opened, contentId, contentStatus, seenFor]);
   // The creator's tools (edit, apply fixes, dispute, re-check) belong to the author.
   const creatorTools = !manager || author;
   const deciding = manager && canDecide(role) && !readOnly;

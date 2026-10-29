@@ -84,8 +84,9 @@ type SubmitOut = { content: { id: number }; version: { id: number; version_no: n
 export const submit = (body: unknown) => api<SubmitOut>("contents", json(body));
 export const getReview = (id: number) => api<Review>(`reviews/${id}`);
 export const listDisputes = (contentId: number) => api<Dispute[]>(`contents/${contentId}/disputes`);
-export type ReviewNews = { unread: number; pieces: { content_id: number; title: string; status: string; at: string }[] };
-export const reviewUpdates = () => api<ReviewNews>("me/review-updates");
+export type NewsItem = { content_id: number; title: string; status: string; kind: string; text: string;
+  actor: string | null; note: string | null; at: string; unread: boolean };
+export const getNews = (limit = 30) => api<{ unread: number; items: NewsItem[] }>(`me/news?limit=${limit}`);
 export const markSeen = (contentId: number) => api<null>(`contents/${contentId}/seen`, { method: "POST" });
 export const fileDispute = (findingId: number, claim: string, language: string | null) =>
   api<Dispute>(`findings/${findingId}/disputes`, json({ claim, language }));

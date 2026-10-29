@@ -726,8 +726,8 @@ class Escalation(Base):
 
 
 class ContentSeen(Base):
-    """When a creator last opened one of their pieces: brand-team news on it after this is unread on "My
-    reviews" (services/review_news.py)."""
+    """When a person last opened a piece: news on it from the other side after this is unread for them
+    (services/review_news.py)."""
 
     __tablename__ = "content_seen"
     __table_args__ = (UniqueConstraint("user_id", "content_id"),)

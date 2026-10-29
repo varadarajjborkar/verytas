@@ -31,8 +31,9 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^me\/tokens$/],
   ["DELETE", /^me\/tokens\/\d+$/],
   // What Inki keeps about the person from Ask Inki; the API scopes it to them.
-  // The "My reviews" badge: a creator's pieces with news since they opened them, and marking one opened.
-  ["GET", /^me\/review-updates$/],
+  // What happened on the pieces this person waits on (the dashboard, the sign-in notice and the nav badge),
+  // and marking a piece opened.
+  ["GET", /^me\/news$/],
   ["POST", /^contents\/\d+\/seen$/],
   ["GET", /^me\/memories$/],
   ["DELETE", /^me\/memories$/],

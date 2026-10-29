@@ -3,8 +3,9 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useStored, writeStored } from "@/lib/stored";
-import { isOffline, listContents, reviewUpdates, submit } from "@/lib/review-client";
-import { onLive, REVIEWS_SEEN_EVENT } from "@/lib/live";
+import { isOffline, listContents, submit } from "@/lib/review-client";
+import { onLive } from "@/lib/live";
+import { useNews } from "./news/News";
 import type { ContentRow, Review } from "@/lib/types";
 import { BackButton } from "./BackButton";
 import { Drawer } from "./Drawer";
@@ -74,20 +75,11 @@ function CreatorWorkspace({ initialBody }: { initialBody: string }) {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  // Which pieces have news from the brand team: marked in the list, and the list's statuses read again the
-  // moment there is news, so an approval shows here without a refresh.
-  const [fresh, setFresh] = useState<Set<number>>(new Set());
-  useEffect(() => {
-    let live = true;
-    const check = () => reviewUpdates()
-      .then((r) => { if (live) setFresh(new Set(r.pieces.map((p) => p.content_id))); }).catch(() => {});
-    check();
-    window.addEventListener(REVIEWS_SEEN_EVENT, check);
-    const off = onLive((e) => {
-      if (e.type === "review" || e.type === "escalations") { check(); void refresh(); }
-    });
-    return () => { live = false; window.removeEventListener(REVIEWS_SEEN_EVENT, check); off(); };
-  }, [refresh]);
+  // Which pieces have unread news from the other side: marked in the list, and the list's statuses read again
+  // the moment there is news, so an approval shows here without a refresh.
+  const { items: newsItems } = useNews();
+  const fresh = useMemo(() => new Set((newsItems ?? []).filter((i) => i.unread).map((i) => i.content_id)), [newsItems]);
+  useEffect(() => onLive((e) => { if (e.type === "review" || e.type === "escalations") void refresh(); }), [refresh]);
   // Keep the list fresh while anything in it is still being checked: one request
   // at a time, and none while the tab is in the background.
   const pending = rows.some((r) => r.latest_review && (r.latest_review.status === "queued" || r.latest_review.status === "running"));

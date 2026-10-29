@@ -2,27 +2,20 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getTimeline, isOffline, listContents, relativeTime, STATUS_HINT, STATUS_LABEL } from "@/lib/review-client";
-import type { ContentRow, Person, TimelineItem } from "@/lib/types";
-import { ArrowRightIcon, ChatIcon, PlusIcon } from "../Icons";
+import { isOffline, listContents, relativeTime, STATUS_HINT, STATUS_LABEL } from "@/lib/review-client";
+import type { ContentRow } from "@/lib/types";
+import { ArrowRightIcon, PlusIcon } from "../Icons";
+import { NewsList } from "../news/News";
 import { StageDots } from "../Journey";
-import { useViewer } from "../Viewer";
 import { TalkCard } from "../conversations/TalkCard";
 import { Panel } from "../ui";
 import { useOnRefresh } from "@/lib/refresh";
-
-// Timelines are one request each, so the feed reads only the most recently active pieces.
-const FEED_PIECES = 6;
-const FEED_SHOWN = 6;
-
-type Note = { at: string; who: Person | null; piece: ContentRow; text: string; kind: "comment" | "status" };
+import { onLive } from "@/lib/live";
 
 /** A creator's front page: what needs them, what is with the brand team, and what the team said. */
 export function CreatorHome() {
-  const { me, loading: viewerLoading } = useViewer();
   const [rows, setRows] = useState<ContentRow[] | null>(null);
   const [demo, setDemo] = useState(false);
-  const [notes, setNotes] = useState<Note[] | null>(null);
 
   const load = useCallback(() => {
     listContents(true).then(setRows).catch((err) => {
@@ -32,25 +25,8 @@ export function CreatorHome() {
   }, []);
   useEffect(() => { load(); }, [load]);
   useOnRefresh(load);
-
-  useEffect(() => {
-    if (!rows || !me) return;
-    let live = true;
-    const recent = rows.slice(0, FEED_PIECES);
-    Promise.all(recent.map((r) => getTimeline(r.id).then((t) => ({ r, items: t.items })).catch(() => ({ r, items: [] }))))
-      .then((all) => {
-        if (!live) return;
-        const out: Note[] = [];
-        for (const { r, items } of all) for (const i of items) {
-          const n = noteOf(i, r, me.id);
-          if (n) out.push(n);
-        }
-        setNotes(out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, FEED_SHOWN));
-      });
-    return () => { live = false; };
-  }, [rows, me]);
-  // Without an account there is no "someone else" to tell apart: the empty state, not a skeleton.
-  const feed = rows && !viewerLoading && !me ? [] : notes;
+  // An approval or a piece sent back moves it between the groups below: read the list again the moment it happens.
+  useEffect(() => onLive((e) => { if (e.type === "review" || e.type === "escalations") load(); }), [load]);
 
   const groups = useMemo(() => {
     const list = rows ?? [];
@@ -98,24 +74,7 @@ export function CreatorHome() {
           )}
         </Panel>
         <Panel title="From the brand team" className="xl:col-span-2" scroll>
-          {feed === null ? <Skeleton /> : feed.length === 0 ? (
-            <p className="text-sm text-muted">No comments or decisions on your recent pieces yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-3.5">
-              {feed.map((n, i) => (
-                <li key={`${n.piece.id}-${n.at}-${i}`}>
-                  <Link href={`/review?id=${n.piece.id}`} className="group block">
-                    <p className="flex items-center gap-1.5 text-[11px] text-subtle">
-                      <ChatIcon size={12} />
-                      <span className="truncate">{n.who?.name ?? "Brand team"} on <span className="text-muted">{n.piece.title}</span></span>
-                      <span className="ml-auto shrink-0">{relativeTime(n.at)}</span>
-                    </p>
-                    <p className={`mt-0.5 line-clamp-2 text-sm group-hover:text-accent ${n.kind === "status" ? "font-medium" : ""}`}>{n.text}</p>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
+          <NewsList empty="No decisions or comments on your pieces in the last two weeks." />
         </Panel>
       </div>
 
@@ -168,19 +127,4 @@ function PieceList({ rows }: { rows: ContentRow[] }) {
 
 function Skeleton() {
   return <ul className="flex flex-col gap-2">{[0, 1, 2].map((i) => <li key={i} className="h-11 animate-pulse rounded-lg bg-sunken" />)}</ul>;
-}
-
-/** What someone else said or decided about one of my pieces; my own actions are left out. */
-function noteOf(i: TimelineItem, piece: ContentRow, myId: number): Note | null {
-  if (!i.actor || i.actor.id === myId) return null;
-  if (i.type === "comment") return { at: i.at, who: i.actor, piece, text: i.body, kind: "comment" };
-  if (i.type === "status" && (i.to === "changes_requested" || i.to === "approved" || i.to === "published")) {
-    const what = { changes_requested: "Asked for changes", approved: "Approved it", published: "Published it" }[i.to];
-    return { at: i.at, who: i.actor, piece, text: i.note ? `${what}: ${i.note}` : what, kind: "status" };
-  }
-  if (i.type === "escalation" && (i.state === "upheld" || i.state === "cleared")) {
-    const what = i.state === "cleared" ? `Cleared "${i.finding}" after your request` : `Kept "${i.finding}" after your request`;
-    return { at: i.at, who: i.actor, piece, text: i.message ? `${what}: ${i.message}` : what, kind: "status" };
-  }
-  return null;
 }

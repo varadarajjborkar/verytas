@@ -68,8 +68,8 @@ from verytas.schemas import (
 )
 from verytas.security.audit import append
 from verytas.services.contacts import screened
-from verytas.services.notify import review_changed
-from verytas.services.review_news import mark_seen, news_for
+from verytas.services.notify import piece_news
+from verytas.services.review_news import feed_for, mark_seen, news_for
 
 log = logging.getLogger("verytas.api.content")
 router = APIRouter(tags=["content"])
@@ -271,6 +271,7 @@ async def add_version(content_id: int, body: VersionIn, session: Session, user: 
     await append(session, workspace_id=user.workspace_id, actor=f"user:{user.id}", action="version.created",
                  object_type="content", object_id=content.id, detail={"version_no": version.version_no})
     review_id = await _start_review(session, prism, version, wait)
+    await piece_news(session, content.id, user.id)
     return SubmitOut(content=ContentOut.model_validate(content), version=VersionOut.model_validate(version),
                      review_id=review_id)
 
@@ -593,7 +594,7 @@ async def decide(finding_id: int, body: DecisionIn, session: Session, user: Revi
                  detail={"content_id": content.id, "action": body.action, "reason_code": body.reason_code,
                          "rule_id": finding.rule_id, "level": finding.level})
     await session.commit()
-    await review_changed(content.created_by, user.id, content.id)
+    await piece_news(session, content.id, user.id)
     return decision
 
 
@@ -666,7 +667,7 @@ async def transition(content_id: int, body: TransitionIn, session: Session, user
                  detail={"from": current, "to": target, "blockers_overridden": overridden,
                          "unchecked_overridden": unchecked, "note": body.note})
     await session.commit()
-    await review_changed(content.created_by, user.id, content.id)
+    await piece_news(session, content.id, user.id)
     return content
 
 
@@ -679,7 +680,7 @@ async def list_comments(content_id: int, session: Session, user: CurrentUser) ->
 
 @router.post("/contents/{content_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
 async def add_comment(content_id: int, body: CommentIn, session: Session, user: Writer) -> Comment:
-    content = await _content(session, user, content_id)
+    await _content(session, user, content_id)
     # Comments reach Inki's context, so a bribe or an instruction aimed at the model is still refused. Contact
     # details only flag: "the 9876543210 order code is wrong" is feedback, not an attempt to go off the record.
     await screened(session, workspace_id=user.workspace_id, actor_id=user.id, text=body.body, where="comment")
@@ -701,25 +702,31 @@ async def add_comment(content_id: int, body: CommentIn, session: Session, user: 
     comment = Comment(content_id=content_id, actor_id=user.id, **body.model_dump())
     session.add(comment)
     await session.commit()
-    await review_changed(content.created_by, user.id, content_id)
+    await piece_news(session, content_id, user.id)
     return comment
 
 
 @router.get("/me/review-updates")
 async def review_updates(session: Session, user: CurrentUser) -> dict[str, Any]:
-    """The badge on a creator's "My reviews": their pieces with news since they last opened them."""
-    if user.role is not Role.creator:
-        return {"unread": 0, "pieces": []}
+    """The badge on "My reviews" / "Review queue": the pieces with news this person hasn't opened."""
     news = await news_for(session, user)
     return {"unread": len(news), "pieces": news}
 
 
+@router.get("/me/news")
+async def my_news(session: Session, user: CurrentUser,
+                  limit: Annotated[int, Query(ge=1, le=100)] = 30) -> dict[str, Any]:
+    """What happened on the pieces this person waits on, newest first: the dashboard card and the notice on
+    sign-in (services/review_news.py)."""
+    feed = await feed_for(session, user)
+    return {"unread": len({i["content_id"] for i in feed if i["unread"]}), "items": feed[:limit]}
+
+
 @router.post("/contents/{content_id}/seen", status_code=status.HTTP_204_NO_CONTENT)
 async def seen(content_id: int, session: Session, user: CurrentUser) -> Response:
-    """The creator opened their piece: what was new on it is read."""
-    content = await _content(session, user, content_id)
-    if content.created_by == user.id:
-        await mark_seen(session, user, content_id)
+    """This person opened the piece: what was new on it is read, for them."""
+    await _content(session, user, content_id)
+    await mark_seen(session, user, content_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -936,6 +943,7 @@ async def resubmit(content_id: int, body: ResubmitIn, session: Session, user: Wr
     next_review = Review(version_id=new.id)
     session.add(next_review)
     await session.commit()
+    await piece_news(session, content.id, user.id)
     dispute_ids = [d.id for d in filed]
 
     async def chain() -> None:

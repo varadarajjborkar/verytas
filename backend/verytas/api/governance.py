@@ -52,7 +52,7 @@ from verytas.security.audit import append
 from verytas.security.guard import normalize_contact
 from verytas.services import events as chain
 from verytas.services.contacts import screened
-from verytas.services.notify import escalations_changed, review_changed
+from verytas.services.notify import escalations_changed, piece_news
 
 router = APIRouter(tags=["governance"])
 Admin = Annotated[User, Depends(require(Role.brand_admin))]
@@ -166,9 +166,7 @@ async def resolve_escalation(esc_id: int, body: EscalationResolveIn, session: Se
                          "rule_id": finding.rule_id, "level": finding.level})
     await session.commit()
     await escalations_changed(session, esc.content_id, esc.raised_by)
-    content = await session.get(Content, esc.content_id)
-    if content is not None:
-        await review_changed(content.created_by, user.id, esc.content_id)
+    await piece_news(session, esc.content_id, user.id)
     return await _view(session, user, esc)
 
 

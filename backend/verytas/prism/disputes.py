@@ -52,6 +52,7 @@ from verytas.models import (
 from verytas.providers.base import Question
 from verytas.security.audit import append
 from verytas.security.redaction import Redactor
+from verytas.services import notify
 
 log = logging.getLogger("verytas.prism.disputes")
 
@@ -124,6 +125,7 @@ async def evaluate(prism, dispute_id: int) -> None:
             dispute.verdict = {"decided_by": "error", "reason": "re-evaluation failed; a reviewer will decide"}
             dispute.decided_at = utcnow()
             await session.commit()
+        await notify.dispute_decided(session, dispute.content_id, dispute.user_id, dispute.status == "escalated")
 
 
 async def _evaluate(prism, session: AsyncSession, dispute: Dispute) -> None:

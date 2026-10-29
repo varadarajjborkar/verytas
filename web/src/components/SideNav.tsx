@@ -5,8 +5,9 @@ import { usePathname } from "next/navigation";
 import { usePersistedFlag } from "@/lib/persisted-flag";
 import { ROLE_LABEL } from "@/lib/roles";
 import { useEffect, useState } from "react";
-import { countEscalations, reviewUpdates } from "@/lib/review-client";
-import { onLive, REVIEWS_SEEN_EVENT } from "@/lib/live";
+import { countEscalations } from "@/lib/review-client";
+import { onLive } from "@/lib/live";
+import { NewsNotice, useNews } from "./news/News";
 import { CONVERSATIONS_SEEN_EVENT, unreadMessages } from "@/lib/conversations-client";
 import { BookIcon, ChatIcon, DashboardIcon, GaugeIcon, HomeIcon, InboxIcon, InkiLineIcon, PanelIcon, ReviewIcon, UsersIcon } from "./Icons";
 import { Logo } from "./Logo";
@@ -44,7 +45,10 @@ export function SideNav() {
   const links = LINKS[loading && !app ? "loading" : side];
   const waiting = useOpenEscalations(Boolean(me) && side === "manager" && !(loading && !app));
   const unread = useUnreadMessages(Boolean(me) && me?.role !== "auditor");
-  const news = useReviewNews(Boolean(me) && side === "creator");
+  // Both sides wait on each other: a creator on the brand team's calls, the brand team on pieces sent in. The
+  // count is the pieces with unread news, from the same store as the dashboard and the notice.
+  const newsState = useNews();
+  const news = loading && !app ? 0 : newsState.unread;
   // Desktop only: on phones the nav is already a single row of tabs.
   const [collapsed, setCollapsed] = usePersistedFlag("vt-nav-collapsed", false);
   const demo = useDemoSignin();
@@ -59,6 +63,7 @@ export function SideNav() {
   // The sign-in page comes before any account: there is nothing to navigate yet.
   if (pathname === "/signin" || pathname.startsWith("/signin/")) return null;
   return (
+    <>
     <header className={`border-b border-line bg-surface/70 backdrop-blur md:sticky md:top-0 md:flex md:h-screen md:shrink-0 md:flex-col md:border-b-0 md:border-r md:transition-[width] md:duration-300 md:ease-out ${
       collapsed ? "md:w-[4.5rem]" : "md:w-60"}`}>
       <div className={`flex items-center gap-2.5 px-5 py-4 md:py-6 ${collapsed ? "md:flex-col md:px-0" : ""}`}>
@@ -135,6 +140,9 @@ export function SideNav() {
         </div>
       )}
     </header>
+    {/* Outside the header: its backdrop blur would pin a fixed notice to the rail instead of the window. */}
+    {me && <NewsNotice />}
+    </>
   );
 }
 
@@ -171,33 +179,6 @@ function useOpenEscalations(enabled: boolean): number {
     window.addEventListener("focus", check);
     const off = onLive((e) => { if (e.type === "escalations" || e.type === "ready") check(); });
     return () => { live = false; clearInterval(t); window.removeEventListener("focus", check); off(); };
-  }, [enabled]);
-  return enabled ? count : 0;
-}
-
-/** A creator's pieces with news from the brand team since they last opened them ("My reviews"): on load,
- * the moment there is news (live), when they open a piece, on focus, and every half minute as a fallback. */
-function useReviewNews(enabled: boolean): number {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    if (!enabled) return;
-    let live = true;
-    const check = () => {
-      if (document.hidden) return;
-      reviewUpdates().then((r) => { if (live) setCount(r.unread); }).catch(() => {});
-    };
-    check();
-    const t = setInterval(check, 30_000);
-    window.addEventListener("focus", check);
-    window.addEventListener(REVIEWS_SEEN_EVENT, check);
-    const off = onLive((e) => { if (e.type === "review" || e.type === "escalations" || e.type === "ready") check(); });
-    return () => {
-      live = false;
-      clearInterval(t);
-      window.removeEventListener("focus", check);
-      window.removeEventListener(REVIEWS_SEEN_EVENT, check);
-      off();
-    };
   }, [enabled]);
   return enabled ? count : 0;
 }
