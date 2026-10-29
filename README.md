@@ -30,21 +30,19 @@ A brand works with dozens of creators and agencies who post every day, in many l
 
 | Capability | What it means |
 | --- | --- |
-| **Reads everything in a post** | The caption, text inside images (OCR), every page of a PDF or Word file (including text drawn as shapes), every slide of a PowerPoint deck (speaker notes and hidden slides too), every sheet of an Excel workbook, an HTML page or email (title, share text, alt text; nothing linked is fetched), and video: on-screen text, subtitles and speech. |
-| **Sees what is in the pictures** | Finds the brand's official artwork and says how it was misused: stretched, squashed, skewed, mirrored, recoloured or redrawn, with the box. Finds the brand's mascots even when an AI has redrawn them and names what changed (a wrong colour, an extra eye, a missing tail), with the box and, in video, the time range. Identifies faces against the brand's approved people and flags anyone shown without an agreement. |
-| **Hears what is said** | Speech in English, Hindi and Hinglish is transcribed on the server. A codename said aloud is caught by how it sounds, and a price or percentage spoken in Hindi ("chalis pratishat") is read as the figure, so it is checked against the caption and the approved facts like any written one. |
-| **Checks it against the brand's own sources** | Approved facts with validity dates, banned and preferred words, confidential terms, official artwork, tone, accessibility and AI-disclosure rules. |
-| **Explains every flag** | Each issue quotes the exact passage and cites the rule or fact behind it, with page numbers. No unexplained scores. |
-| **Shows where, in every file** | Issues are marked in place: in the caption, boxed on the image, and inside attached documents page by page (slide by slide, sheet by sheet). *Preview* shows a document as it looks, with a box on each flagged phrase; a sheet becomes a table with the flagged cells tinted. |
-| **Fixes, not just flags** | It swaps a phrase, rewrites a sentence or removes a dig, whichever the rule needs, and a judge that knows the rule checks the offer and call to action survive. One click applies it. |
-| **Keeps people in charge** | Creators can dispute a reading; the brand team walks through the issues one by one (asking for a fix, keeping it as is with a reason, or escalating), then approves or sends the piece back with the fixes it asked for, and every override needs a written reason. |
-| **Easy to pick up** | A guided tour on the first visit to each side, plain-word summaries of any piece, and every status, score and empty page explained where it appears. Shaped by [user testing](docs/research/user-testing.md) with three first-time users. |
-| **Talks it through** | *Conversations* between a creator and the brand team, next to the piece in question: replies, edits, deletes, files with previews, and meeting links that become a Join card. Encrypted at rest, live over Redis (it falls back to one process without it). Mention **@Inki** and the assistant answers from the record, only after the person asking has agreed that it may read the conversation. In a long thread it finds the earlier turns the question depends on, so a budget agreed 40 messages ago still reaches it. |
-| **Marks the exact spot** | Videos play in the review with each issue on the timeline; drag along it to comment on a stretch, at 0.5x to 2x, with no download. Images take a marker, an eraser and text, saved with the comment, so the creator sees what to change in place. |
-| **Learns how posts did** | Once a piece is live, its link and the platform's numbers go on the piece (typed, or a sheet for the brand team). Guideline health then shows, per rule, how posts that ran into it did against those that didn't, as a range, and only once there are enough posts. Nothing is read from the platforms. |
-| **Remembers how you work** | Tell *Ask Inki* "I run the Instagram channel, keep answers short" once, and it keeps that for you alone. Settings lists everything it kept, and each item or all of it can be forgotten. Nothing is kept from shared conversations. |
-| **Works from your AI client** | A personal token lets Claude Desktop, Claude Code or any MCP client read your reviews, search and submit text as you, never more: no approving, no confidential terms ([how](docs/mcp.md)). |
-| **Learns from decisions** | Rules that reviewers keep overriding are surfaced as unclear, and model-judged rules tune how confident they must be before flagging. |
+| **Reads every part of a post** | The caption, text inside images, every page of a PDF or Word file, every slide (speaker notes too), every sheet, HTML pages and emails, and video: on-screen text, subtitles and speech. |
+| **Sees the pictures** | Finds the brand's artwork and says how it was misused (stretched, recoloured, redrawn), finds mascots even when an AI redrew them and names what changed, and flags faces shown without an agreement. |
+| **Hears what is said** | English, Hindi and Hinglish speech is transcribed on the server; a codename is caught by its sound, and a spoken figure is checked like a written one. |
+| **Checks against the brand's own sources** | Approved facts with validity dates, banned and preferred words, confidential terms, artwork, tone, accessibility and AI-disclosure rules. |
+| **Explains and shows every flag** | Each issue quotes the passage and cites the rule or fact behind it, marked in place: in the caption, boxed on the image, page by page in documents. |
+| **Fixes, not just flags** | The smallest fix (swap a phrase, rewrite a sentence, remove a dig), checked so the offer and call to action survive. One click applies it. |
+| **Keeps people in charge** | Creators can dispute a finding; the brand team decides each one, and every override needs a written reason. |
+| **Marks the exact spot** | Issues sit on the video timeline, comments cover a stretch of it, and images take drawn marks the creator sees in place. |
+| **Talks it through** | *Conversations* beside each piece, encrypted at rest, with files and Join cards for meeting links. **@Inki** answers from the record once the asker agrees, and finds the earlier turns a question depends on. |
+| **Remembers how you work** | *Ask Inki* keeps what you say about your role and style, for you alone; Settings shows it and forgets it. On the demo's shared people it is per browser and lapses after a day. |
+| **Learns** | Guideline health shows the rules reviewers keep overriding and how posts that broke a rule did once live; model-judged rules tune their confidence from decisions. |
+| **Easy to pick up** | A guided tour, plain-word summaries, and help wherever a status or score appears, shaped by [user testing](docs/research/user-testing.md). |
+| **Works from your AI client** | A personal token lets Claude or any MCP client read and submit as you, never approve ([how](docs/mcp.md)). |
 
 ## Try it in 60 seconds
 
@@ -209,13 +207,12 @@ flowchart LR
 
 | Decision | Why |
 | --- | --- |
-| **Pull-based deploys** | The server pulls a branch that only CI can move, with a read-only key. No inbound SSH from CI, and a commit that fails any check never ships. Each release builds beside the live one and rolls back automatically if it fails its health checks. |
-| **Heavy media work stays local** | OCR, speech to text, PDF rendering and artwork matching run on the server's CPU, so raw images and audio never leave the machine. Only redacted text and pixels go to a model. |
-| **Bounded concurrency everywhere** | A shared pool of model slots, a cap on reviews running at once, and per-step deadlines. A burst of uploads queues instead of exhausting memory or hammering a provider. |
-| **Circuit breakers on every model** | If a provider is down, its checks are marked *degraded* on the review instead of failing the whole thing or pretending they passed. |
-| **Vision on a worker that sleeps** | Finding redrawn mascots needs three image models and torch, too heavy for the always-on server. They run on a second instance that the API starts on the first review needing it and that stops itself after 20 idle minutes, so it costs nothing most of the time. It installs from GitHub alone and holds no brand data. |
-| **Untrusted files in a sealed room** | Word and PowerPoint previews need LibreOffice, a large program reading files strangers upload. It runs in its own socket-started service, one file at a time, as a user created for that run, with no network and no view of the app's files or secrets, under memory, CPU and time limits; the file has every reference to anything outside it cut before it gets there. |
-| **One cheap server** | One small ARM instance behind a free edge, with an AWS budget that stops it at a hard cap. The demo runs on credits, at no cost to the team. |
+| **Pull-based deploys** | The server pulls a branch only green CI can move, builds beside the live release and rolls back if health checks fail. |
+| **Media stays local** | OCR, speech, PDF rendering and artwork matching run on the server's CPU; only redacted text and pixels reach a model. |
+| **Bounded and degradable** | Shared model slots, a cap on reviews at once and per-step deadlines; a provider that is down marks its checks *degraded* rather than failing or passing them. |
+| **Vision on a worker that sleeps** | The mascot models run on a second instance that starts on demand and stops after 20 idle minutes. |
+| **Untrusted files sealed off** | Word and PowerPoint are converted by LibreOffice in a throwaway service with no network and hard limits. |
+| **One cheap server** | One small ARM instance behind a free edge, under a hard AWS budget cap. |
 
 ## Tech stack
 
@@ -233,34 +230,19 @@ flowchart LR
 
 ## Accessibility
 
-**In what it reviews.** Built-in rules, on for every brand: images without alt text, text below WCAG
-contrast, hashtags not written in CamelCase (screen readers read them as one word), long runs in capitals,
-links described only as "click here", paragraphs too long to read easily, video speech without captions,
-and runs of emoji (each is read aloud by name). Missing alt text and low contrast must be fixed before
-approval; the rest are suggestions.
-
-**In the app itself.** Every control is reachable by keyboard with a visible focus ring, a skip link leads to
-the content, icon buttons carry labels, toasts and progress are announced through live regions, animation is
-turned off for anyone who asks their system for less motion, both apps have a light and a dark theme, and the
-page language is declared. It has not been audited against WCAG by an outside tester.
+**In what it reviews:** missing alt text, low contrast, CamelCase hashtags, "click here" links, long paragraphs,
+uncaptioned speech and emoji runs, on for every brand. **In the app:** full keyboard use with visible focus,
+labelled controls, announced updates, reduced motion on request, light and dark themes. Not audited by an
+outside tester.
 
 ## Trust and security
 
-- **Every finding is signed** when it is made, so an edited verdict shows as tampered.
-- **Every action is logged** in a hash-chained audit log; changing or deleting an old entry breaks the chain, and anyone with audit access can verify it.
-- **Confidential terms never reach a model**: they are redacted from text and blacked out in image pixels first, including a codename said without its "Project". Confidential-tier content is never sent as pixels at all.
-- **The assistants keep their instructions to themselves.** Asking a chat for its prompt gets a fixed answer, and a reply that starts reciting it is cut off before any of it is sent ([how](docs/security/README.md#the-chat-assistants-instructions)).
-- **People's faces follow the brand's records.** A face is identified against the approved-people library; public portraits are looked up only when the brief names someone and the content isn't confidential.
-- **Uploaded files are handled as hostile.** Types are read from the bytes; zips, XML and pictures are read within size and pixel budgets; a web page is shown only in a frame with no scripts and a policy that loads nothing from outside, after every outside address is cut from it; Word and PowerPoint are converted in a sealed service (above).
-- **Checked before going public.** The whole git history was scanned for secrets with gitleaks: none.
-- **What Inki keeps about you is yours.** It is drawn only from your own Ask Inki chats, never from a shared conversation, with confidential terms dropped. Only you can see it, in Settings, and forgetting it removes it from disk, not just from the list.
-- **Signing out ends the session at the server.** A password account's token is revoked on sign-out and lapses after 7 days.
-- **What people type is screened too.** Bribes and instructions aimed at the AI are refused before they are stored. Contact details are flagged for the brand team, never refused: a long number is as often an order code.
-- **Access follows role and clearance**, checked on the server on every request, including in the audit log.
-- **Your own AI client can use it, as you and no more.** A personal token lets Claude Desktop, Claude Code or any MCP client read your content and reviews and submit text, with your permissions, a clearance ceiling, a rate limit and an audit entry per call; it can never decide, approve or publish ([how](docs/mcp.md)).
-- **Audited.** A security review with the Cloudflare security-audit method ran on this codebase; its confirmed findings and the leads it raised are fixed, each with a regression test. The [security report](docs/security/README.md) lists every item, the commit that fixed it, and what is still open.
-- **Locked dependencies.** The backend and the vision worker install from hashed lock files, and model files are pinned by SHA-256, so production runs exactly what the tests ran.
-- **The live site is reviewed too.** Role checks, cross-site refusals, the browser-only route allowlist, cookie flags and the shipped bundles were checked against the deployed demo; what it found is fixed and listed in the security report.
+- **Signed and logged.** Every finding is signed and every action goes into a hash-chained audit log, so an edit shows.
+- **Confidential terms never reach a model:** they are redacted from text and blacked out in images first.
+- **Hostile input is expected.** File types are read from the bytes and parsed within budgets, web pages render with no scripts, Office files convert in a sealed service, and instructions aimed at the AI are refused.
+- **Role and clearance are checked on the server** on every request; sign-out revokes the session.
+- **Your data stays yours.** Inki keeps facts only from your own Ask Inki chats, and forgetting removes them from disk. The first visit asks about cookies; nothing tracks you.
+- **Audited.** A security review ran on the code and the live site; each finding is fixed with a regression test or listed as open in the [security report](docs/security/README.md). Dependencies install from hashed lock files.
 
 ## Round 3: what changed
 
@@ -268,22 +250,16 @@ The three improvements committed to after Round 2, and where each stands.
 
 | Improvement | Built | Not built, and why |
 |---|---|---|
-| **Creators and managers talk it through** | *Conversations* beside the piece in question: replies, edits, files with previews, unread counts, and Meet, Teams or Zoom links that become a Join card. Each exchange is kept with its time, beside the piece, so the meeting's record is the conversation itself. | Voice through masked temporary phone numbers. Telephony is a separate, paid infrastructure; for a prototype it would cost money every month and add little over the free meeting apps people already use. |
-| **Sharper vision and speech** | Recoloured app icons found by outline: 33% to 100%. Mascots: a part the cut-out clipped no longer reads as missing, and a stretched body is named (false alarms 64 to 50 of 180, stretched 0 to 18 of 30). The vision worker wakes on demand and is kept warm in judging hours inside a 10 USD cap. Before and after are published for each ([artwork](backend/evals/results/assets.md), [mascots](backend/evals/results/mascots.md)). | A GPU, and with it a stronger Hindi speech model: AWS refused the GPU quota twice, so the models run on CPU. Hindi is helped instead by matching codenames by sound. |
-| **The Brand Console runs it** | An approved-people tab with agreement dates; videos with each finding as a mark on the timeline, range comments and 0.5x to 2x; images marked up with a marker, eraser and text, which the creator sees in place. | |
+| **Creators and managers talk it through** | *Conversations* beside each piece, with files, unread counts and Meet, Teams or Zoom links as Join cards. The thread, kept with its times beside the piece, is the meeting's record. | Voice through masked phone numbers: telephony is separate, paid infrastructure, and adds little for a prototype over the free meeting apps people already use. |
+| **Sharper vision and speech** | Recoloured app icons found by outline (33% to 100%); mascot cut-outs repaired and stretching named (false alarms 64 to 50 of 180). The vision worker wakes on demand. Before and after: [artwork](backend/evals/results/assets.md), [mascots](backend/evals/results/mascots.md). | A GPU, and with it a stronger Hindi speech model: AWS refused the quota twice, so the models run on CPU. Codenames are matched by sound instead. |
+| **The Brand Console runs it** | An approved-people tab with agreement dates, findings as marks on the video timeline, and markup on images and video moments that the creator sees in place. | |
 
 <p align="center"><img src="docs/assets/conversations.png" alt="Conversations: the brand team's inbox on the left, and a thread with a creator about a piece, with a Google Meet link shown as a Join card and Ask Inki shortcuts above the message box" width="900"></p>
 
-Also added in Round 3: performance feedback (a live post's link and numbers on the piece, compared per rule in
-Guideline health), a personal-token MCP endpoint, a landing page, Redis behind conversations, and memory for
-Inki: the earlier turns of a long conversation, and what a person tells Ask Inki about how they work
-([how it was measured](backend/evals/results/memory.md)).
-
-**Reliability.** A test sends every API route the inputs nobody should send (ids that overflow, wrong types,
-empty and oversized bodies) as each role, and fails on any server error; it found and fixed a class of 500s.
-The live site is crawled as every demo person, every page loaded and refreshed, with console and server
-errors recorded. Every batch of changes is reviewed for bugs before it is committed, and each finding is
-fixed or answered with a reason in the project ledger.
+**Also added:** performance feedback per rule in Guideline health, a personal-token MCP endpoint, a landing page,
+and memory for Inki ([measured here](backend/evals/results/memory.md)). **Reliability:** a test sends every API
+route bad input as every role and fails on any server error, the live site is crawled as every demo person, and
+every batch of changes is reviewed for bugs before it is committed.
 
 ## Quality
 
@@ -304,30 +280,24 @@ method and the full results.
 | [Inki's memory](backend/evals/results/memory.md) | 28 long conversations, 5 seeds each | an early decision reaches Inki in about **3 in 4** conversations it was never tuned on (**0%** before, with only the last 12 turns); **5/5** answered right on the live demo |
 | [Black-box simulator](blackbox/README.md) | 216 cases | **96%** recall, **0%** false alarms on clean posts |
 
-- **Over 700 backend tests** run offline on every push, including a sweep that sends every API route input nobody should send and fails on any server error, with type checks, lint and a production build for the web apps.
-- **Tried by people.** Three first-time users outside the team used the live demo and wrote up what confused them. Each point has a shipped change, listed in the [user testing report](docs/research/user-testing.md).
-- **Tested from the outside.** [`blackbox/`](blackbox/README.md) knows Verytas only through its API: it invents brands and posts with planted violations and steers each round toward what Verytas misses.
+- **760 backend tests** run offline on every push, with type checks, lint and a production build for the web app.
+- **Tried by people:** three first-time users used the live demo; every point they raised has a shipped change ([report](docs/research/user-testing.md)).
+- **Tested from the outside:** [`blackbox/`](blackbox/README.md) knows Verytas only through its API and steers each round toward what it misses.
 
 ## Known limits
 
-- **Measured on generated sets.** Every benchmark above is generated or hand-labelled, not live traffic, and
-  some thresholds were set on the same sets, so real figures will be lower.
-- **Mascots on busy backgrounds** still raise false alarms (50 of 180 acceptable scenes); most come from the
-  cut-out, not the comparison.
-- **Hindi speech** is transcribed with much error on CPU; codenames are caught by sound, other Hindi claims
-  less reliably.
-- **A decision changed later in a long thread** reaches Inki in about half to two thirds of cases where the
-  change is worded unlike the question; Inki is told the later turn stands, but it has to see both.
-- **Post numbers are typed or imported**, not read from the platforms.
-- **No voice calls inside Verytas**; meetings run on the apps people already use.
-- **Open security items** (a script nonce, token rotation, per-user limits on Ask Inki) are listed in the
-  [security report](docs/security/README.md#hardening-notes).
+- **Measured on generated sets**, not live traffic, and some thresholds were set on them, so real figures will be lower.
+- **Mascots on busy backgrounds** still raise false alarms (50 of 180 acceptable scenes).
+- **Hindi speech** is transcribed with much error on CPU; codenames are caught by sound, other Hindi claims less reliably.
+- **A decision changed later in a long thread** reaches Inki in about half to two thirds of hard cases.
+- **Post numbers are typed or imported**, not read from the platforms, and there are **no voice calls** inside Verytas.
+- **Open security items** are listed in the [security report](docs/security/README.md#hardening-notes).
 
-## What comes next
+## Roadmap
 
-- **Sharper visual checks on busy backgrounds**, where a mascot's cut-out still clips or takes in background: a better segmenter for thin appendages would close most of the gap to the true mask (50 against 21 false alarms in 180).
-- **Performance from the platforms themselves:** Instagram's insights first, pulled for posts whose link is recorded, so the numbers no longer need typing.
-- **A GPU** for the language, vision and Hindi speech models once AWS grants the quota; the general speech model still mishears much Hindi.
+- **A GPU** for the language, vision and Hindi speech models once AWS grants the quota.
+- **A better segmenter** for mascots on busy backgrounds, which would close most of the false-alarm gap (50 against 21 in 180).
+- **Performance from the platforms:** Instagram's insights first, so live numbers no longer need typing.
 
 ## Run it locally
 
@@ -347,7 +317,7 @@ pnpm dev:manager                     # Brand Console on :3000
 pnpm dev:creator                     # Studio on :3001
 ```
 
-The seed creates the *Kitepath* brand with seven creators and eight weeks of history, and writes their tokens into `web/.env.local`. Without any API keys, model-judged checks fall back to an offline heuristic and every review says so. Without a backend, the web app shows clearly labelled sample data. On first start the API fetches the 65 MB embedding model for Inki's memory into `backend/.memory/`; without a network Inki reads only the recent turns, and `VERYTAS_MEMORY_ENABLED=false` turns memory off.
+The seed creates the *Kitepath* brand with seven creators and eight weeks of history, and writes their tokens into `web/.env.local`. Without any API keys, model-judged checks fall back to an offline heuristic and every review says so. Without a backend, the web app shows clearly labelled sample data. On first start the API fetches the 65 MB embedding model for Inki's memory into `backend/.memory/`; without a network Inki reads only the recent turns, and `VERYTAS_MEMORY_ENABLED=false` turns memory off. With sign-in off everyone shares the seeded accounts, so, as on the demo, what Ask Inki keeps is per browser and lapses after a day.
 
 ## Repository layout
 
