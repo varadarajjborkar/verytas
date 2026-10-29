@@ -40,7 +40,9 @@ _PARSER = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=Fal
 _NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
        "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
-       "a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
+       "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+       "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
+       "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
@@ -177,7 +179,7 @@ def _pdf(raw: bytes) -> Reading:
     except MediaError as exc:
         return Reading("document", notes=[f"couldn't read the PDF: {exc}"])
     pages = [p.text for p in book.pages]
-    out = Reading("document", "\n\n".join(pages)[:MAX_TEXT], pages)
+    out = Reading("document", "\n\n".join(pages)[:MAX_TEXT], pages, notes=list(book.notes))
     # Figures in the document (charts, logos, photos) are read like any picture handed over.
     out.images = [png for p in book.pages for img in p.images if (png := _as_png(img.data))][:MAX_IMAGES]
     if any(p.scanned for p in book.pages):
@@ -191,7 +193,82 @@ def _docx(raw: bytes) -> Reading:
     except MediaError as exc:
         return Reading("document", notes=[f"couldn't read the Word file: {exc}"])
     pages = [p.text for p in book.pages]
-    return Reading("document", "\n\n".join(pages)[:MAX_TEXT], pages)
+    out = Reading("document", "\n\n".join(pages)[:MAX_TEXT], pages, notes=list(book.notes))
+    # The text above has each table cell on its own line, as the review reads it. The rows are kept as tables
+    # too, so a "Say / Instead of" table reaches the understanding step as rows, not a column of words.
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            # Under the same limit the text was read under: a body too big for the text is not read for tables.
+            if zf.getinfo("word/document.xml").file_size <= documents.MAX_DOCX_PART:
+                out.tables = _grid_tables(_Budget().xml(zf, "word/document.xml"), "w", "Table", out.notes)
+    except (zipfile.BadZipFile, KeyError, MediaError, etree.XMLSyntaxError) as exc:
+        out.notes.append(f"the Word file's tables couldn't be read as rows: {exc}")
+    return out
+
+
+MAX_TABLES = 40  # tables kept from one Word file or one deck
+
+
+def _grid_tables(xml, ns: str, label: str, notes: list[str]) -> list[Table]:
+    """Top-level tables in a Word body (ns "w") or a slide (ns "a"), as Tables named "<label> 1", "<label> 2" by
+    their place in the source, so a skipped layout table doesn't renumber the ones after it.
+
+    A cell's text is what the reader sees: inserted text but not tracked-deleted text, field codes or the
+    fallback copy of a text box (a price changed from 299 to 349 reads 349, not "299349"). A merged cell
+    (gridSpan) keeps the columns after it in place, and rows and columns are capped like a sheet's, since
+    padding rows to a 20,000-cell header would cost gigabytes."""
+    tbl, tr, tc, p, t = (f"{{{_NS[ns]}}}{x}" for x in ("tbl", "tr", "tc", "p", "t"))
+    fallback = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
+    w = _NS["w"]
+    # A tab or a line break inside a cell separates words ("Say<tab>this" is not "Saythis").
+    breaks = [f"{{{w}}}tab", f"{{{w}}}br"] if ns == "w" else [f"{{{_NS['a']}}}br"]
+
+    def own(el, tag, parent):
+        return [x for x in el.iter(tag) if next(x.iterancestors(parent.tag), None) is parent]
+
+    def text(cell) -> str:
+        paras = []
+        for para in cell.iter(p):
+            if next(para.iterancestors(fallback), None) is not None:
+                continue
+            words = "".join(x.text or "" if x.tag == t else " " for x in para.iter(t, *breaks)
+                            if next(x.iterancestors(p), None) is para).strip()
+            if words:
+                paras.append(words)
+        return " ".join(paras)[:MAX_CELL]
+
+    def width(cell) -> int:
+        if ns == "a":
+            return 1  # a slide keeps a placeholder cell (hMerge) for every column a merge covers
+        # The cell's own properties, not those of a table nested in it.
+        g = cell.find(f"{{{w}}}tcPr/{{{w}}}gridSpan")
+        raw = g.get(f"{{{w}}}val") if g is not None else None
+        return max(1, min(int(raw), MAX_COLS)) if raw and raw.isdigit() else 1
+
+    tables, seen = [], 0
+    for el in xml.iter(tbl):
+        if next(el.iterancestors(tbl), None) is not None:
+            continue  # a table inside a cell is read as that cell's text
+        seen += 1
+        if len(tables) >= MAX_TABLES:
+            _note_once(notes, f"only the first {MAX_TABLES} tables were read as rows")
+            break
+        grid = []
+        for row in own(el, tr, el)[:MAX_ROWS + 10]:
+            cells: list[str] = []
+            for cell in own(row, tc, el):  # cells wrapped in a content control (w:sdt) included
+                cells += [text(cell)] + [""] * (width(cell) - 1)
+                if len(cells) >= MAX_COLS:
+                    break
+            grid.append(cells[:MAX_COLS])
+        if (found := _table_from_grid(f"{label} {seen}", grid)) is not None:
+            tables.append(found)
+    return tables
+
+
+def _note_once(notes: list[str], note: str) -> None:
+    if note not in notes:
+        notes.append(note)
 
 
 class _Budget:
@@ -387,10 +464,26 @@ def _pptx(raw: bytes) -> Reading:
         zf = zipfile.ZipFile(io.BytesIO(raw))
         slides = sorted((n for n in zf.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)),
                         key=lambda n: int(re.findall(r"\d+", n)[-1]))
-        for n in slides[:200]:
+        read_notes: set[str] = set()
+        for i, n in enumerate(slides[:200], 1):
             xml = budget.xml(zf, n)
-            paras = ["".join(p.itertext()).strip() for p in xml.iter(f"{{{_NS['a']}}}p")]
-            out.pages.append("\n".join(p for p in paras if p))
+            # A table's cells are read as its rows, not as a column of words.
+            tbl = f"{{{_NS['a']}}}tbl"
+            paras = ["".join(p.itertext()).strip() for p in xml.iter(f"{{{_NS['a']}}}p")
+                     if next(p.iterancestors(tbl), None) is None]
+            tables = _grid_tables(xml, "a", f"Slide {i} table", out.notes)
+            if len(out.tables) + len(tables) > MAX_TABLES:
+                tables = tables[:max(0, MAX_TABLES - len(out.tables))]
+                _note_once(out.notes, f"only the first {MAX_TABLES} tables were read as rows")
+            out.tables += tables
+            try:
+                notes = _slide_notes(zf, n, budget, read_notes)
+            except (KeyError, MediaError, etree.XMLSyntaxError) as exc:
+                # Notes are extra: one that can't be read costs its own words, never the deck's.
+                notes = ""
+                out.notes.append(f"the speaker notes of slide {i} couldn't be read: {exc}")
+            out.pages.append("\n".join([p for p in paras if p] + [_table_text(t) for t in tables]
+                                       + ([f"[Speaker notes] {notes}"] if notes else [])))
         for n in sorted(x for x in zf.namelist() if x.startswith("ppt/media/"))[:MAX_IMAGES]:
             if zf.getinfo(n).file_size < 15 * 1024 * 1024:
                 png = _as_png(zf.read(n))
@@ -400,6 +493,26 @@ def _pptx(raw: bytes) -> Reading:
         out.notes.append(f"couldn't read the slides: {exc}")
     out.text = "\n\n".join(f"[Slide {i + 1}]\n{p}" for i, p in enumerate(out.pages))[:MAX_TEXT]
     return out
+
+
+def _slide_notes(zf: zipfile.ZipFile, slide: str, budget: _Budget, read: set[str]) -> str:
+    """The speaker notes of one slide: often where the presenter's actual claims and talking points are. Only the
+    notes body is read, not the slide image and number a notes page also carries, and a notes page shared by
+    several slides is read once."""
+    rels = slide.replace("ppt/slides/", "ppt/slides/_rels/") + ".rels"
+    if rels not in zf.namelist():
+        return ""
+    target = next((r.get("Target", "") for r in budget.xml(zf, rels).iter(f"{{{_NS['rel']}}}Relationship")
+                   if r.get("Type", "").endswith("/notesSlide")), "")
+    # Relative to the slide ("../notesSlides/n.xml") or to the package root ("/ppt/notesSlides/n.xml").
+    name = "ppt/" + target.removeprefix("../") if target.startswith("../") else target.removeprefix("/")
+    if not re.fullmatch(r"ppt/notesSlides/[\w.-]+\.xml", name) or name not in zf.namelist() or name in read:
+        return ""
+    read.add(name)
+    xml, ph = budget.xml(zf, name), f"{{{_NS['p']}}}ph"
+    body = [sp for sp in xml.iter(f"{{{_NS['p']}}}sp") if any(e.get("type") == "body" for e in sp.iter(ph))]
+    paras = ("".join(p.itertext()).strip() for sp in body for p in sp.iter(f"{{{_NS['a']}}}p"))
+    return " ".join(p for p in paras if p)[:MAX_TEXT]
 
 
 def _csv(raw: bytes, name: str) -> Reading:

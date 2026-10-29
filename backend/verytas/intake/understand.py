@@ -200,7 +200,10 @@ def heuristic(name: str, note: str, reading: Reading, pictures: list[Picture]) -
              for r in rulebook.heuristic_rules(reading.text)][:40]
     terms = [TermCandidate(term=m.group(1).strip(), why="named as confidential or a project in the source",
                            quote=m.group(0)) for m in _CODENAME.finditer(reading.text)][:30]
-    plans = [TablePlan(table=t.name, fact=plan) for t in reading.tables if (plan := default_plan(t))]
+    # Only a sheet's or a data file's tables: a table in a Word guide or a deck is as often layout as a list
+    # of facts, and without a model to tell which, guessing would fill the review queue with noise.
+    plans = [TablePlan(table=t.name, fact=plan) for t in reading.tables
+             if reading.kind in ("sheet", "data") and (plan := default_plan(t))]
     questions = []
     if reading.kind == "image" and not (note.strip() or reading.text.strip()):
         questions.append("What is this picture, and how should it be used: official artwork, a chart, or an example?")

@@ -51,6 +51,96 @@ def pptx(slides: list[str]) -> bytes:
     return buf.getvalue()
 
 
+def test_slide_tables_and_speaker_notes_and_word_tables_are_read_as_rows():
+    a, pn = "http://schemas.openxmlformats.org/drawingml/2006/main", "http://schemas.openxmlformats.org/presentationml/2006/main"
+    rel = "http://schemas.openxmlformats.org/package/2006/relationships"
+    cell = lambda t: f"<a:tc><a:txBody><a:p><a:r><a:t>{t}</a:t></a:r></a:p></a:txBody></a:tc>"  # noqa: E731
+    row = lambda *c: "<a:tr>" + "".join(cell(x) for x in c) + "</a:tr>"  # noqa: E731
+    ph = lambda kind, t: (f'<p:sp><p:nvSpPr><p:nvPr><p:ph type="{kind}"/></p:nvPr></p:nvSpPr>'  # noqa: E731
+                          f"<p:txBody><a:p><a:r><a:t>{t}</a:t></a:r></a:p></p:txBody></p:sp>")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("ppt/slides/slide1.xml", f'<p:sld xmlns:a="{a}" xmlns:p="{pn}"><a:p><a:r><a:t>Channel limits</a:t>'
+                   f'</a:r></a:p><a:tbl>{row("Channel", "Limit")}{row("instagram", "2200")}</a:tbl></p:sld>')
+        z.writestr("ppt/slides/_rels/slide1.xml.rels", f'<Relationships xmlns="{rel}"><Relationship Id="r1" Type='
+                   '"http://x/notesSlide" Target="../notesSlides/notesSlide1.xml"/></Relationships>')
+        z.writestr("ppt/notesSlides/notesSlide1.xml", f'<p:notes xmlns:a="{a}" xmlns:p="{pn}">{ph("sldNum", "1")}'
+                   f'{ph("body", "Say we are rated 4.8 by parents")}</p:notes>')
+    deck = readers.read(buf.getvalue(), readers.PPTX)
+    assert deck.pages[0].startswith("Channel limits")
+    assert deck.pages[0] == ("Channel limits\n[Slide 1 table 1]\nChannel | Limit\ninstagram | 2200\n"
+                             "[Speaker notes] Say we are rated 4.8 by parents")
+    assert deck.tables[0].rows == [["instagram", "2200"]] and deck.tables[0].cell(0, 1) == "Slide 1 table 1!B2"
+    # A merge across two columns keeps its placeholder cell, so the column after it stays in place.
+    merged = (f'<p:sld xmlns:a="{a}" xmlns:p="{pn}"><a:tbl>{row("Plan", "Price", "Months")}<a:tr>'
+              '<a:tc gridSpan="2"><a:txBody><a:p><a:r><a:t>Group</a:t></a:r></a:p></a:txBody></a:tc>'
+              f'<a:tc hMerge="1"><a:txBody><a:p/></a:txBody></a:tc>{cell("6")}</a:tr></a:tbl></p:sld>')
+    one = io.BytesIO()
+    with zipfile.ZipFile(one, "w") as z:
+        z.writestr("ppt/slides/slide1.xml", merged)
+    assert readers.read(one.getvalue(), readers.PPTX).tables[0].rows == [["Group", "", "6"]]
+
+    from docx import Document
+    doc = Document()
+    doc.add_paragraph("Words we use")
+    t = doc.add_table(rows=3, cols=2)
+    for r, (say, avoid) in enumerate([("Say", "Instead of"), ("learners", "students"), ("course", "package")]):
+        t.cell(r, 0).text, t.cell(r, 1).text = say, avoid
+    out = io.BytesIO()
+    doc.save(out)
+    word = readers.read(out.getvalue(), readers.DOCX)
+    assert "learners\nstudents" in word.text  # the text the review reads is unchanged
+    assert word.tables[0].header == ["Say", "Instead of"] and word.tables[0].rows == [["learners", "students"],
+                                                                                      ["course", "package"]]
+
+
+def test_word_table_cells_read_what_the_reader_sees_within_limits():
+    w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+    def docx(body: str) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("word/document.xml", f'<w:document xmlns:w="{w}"><w:body>{body}</w:body></w:document>')
+        return buf.getvalue()
+
+    def tc(inner: str, span: int = 1) -> str:
+        props = f'<w:tcPr><w:gridSpan w:val="{span}"/></w:tcPr>' if span > 1 else ""
+        return f"<w:tc>{props}<w:p>{inner}</w:p></w:tc>"
+
+    run = lambda t: f"<w:r><w:t>{t}</w:t></w:r>"  # noqa: E731
+    changed = ("<w:del><w:r><w:delText>299</w:delText></w:r></w:del><w:ins>" + run("349") + "</w:ins>")
+    body = (f"<w:tbl><w:tr>{tc(run('Plan'))}{tc(run('Price'))}{tc(run('Months'))}</w:tr>"
+            f"<w:tr>{tc(run('Pro'))}{tc(changed)}{tc(run('12'))}</w:tr>"
+            f"<w:tr>{tc(run('Group offer'), span=2)}{tc(run('6'))}</w:tr></w:tbl>")
+    [t] = readers.read(docx(body), readers.DOCX).tables
+    assert t.rows == [["Pro", "349", "12"], ["Group offer", "", "6"]]  # 299 was deleted; the merge keeps Months
+    tab = run("learners") + "<w:r><w:tab/></w:r>" + run("always")
+    tabbed = f"<w:tbl><w:tr>{tc(run('Say'))}{tc(run('Why'))}</w:tr><w:tr>{tc(tab)}{tc(run('warmer'))}</w:tr></w:tbl>"
+    assert readers.read(docx(tabbed), readers.DOCX).tables[0].rows == [["learners always", "warmer"]]
+    wide = "<w:tbl>" + ("<w:tr>" + "".join(tc(run(f"h{i}")) for i in range(500)) + "</w:tr>") * 3 + "</w:tbl>"
+    [t] = readers.read(docx(wide), readers.DOCX).tables
+    assert len(t.header) == readers.MAX_COLS and all(len(r) == readers.MAX_COLS for r in t.rows)
+
+
+def test_a_bad_notes_page_costs_its_own_words_only():
+    a, pn = "http://schemas.openxmlformats.org/drawingml/2006/main", "http://schemas.openxmlformats.org/presentationml/2006/main"
+    rel = "http://schemas.openxmlformats.org/package/2006/relationships"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for i in (1, 2):
+            z.writestr(f"ppt/slides/slide{i}.xml", f'<p:sld xmlns:a="{a}" xmlns:p="{pn}"><a:p><a:r><a:t>Slide {i}</a:t>'
+                       "</a:r></a:p></p:sld>")
+            z.writestr(f"ppt/slides/_rels/slide{i}.xml.rels", f'<Relationships xmlns="{rel}"><Relationship Id="r1" '
+                       f'Type="http://x/notesSlide" Target="/ppt/notesSlides/notesSlide{i}.xml"/></Relationships>')
+        z.writestr("ppt/notesSlides/notesSlide1.xml", "x" * (readers.MAX_XML + 1))
+        z.writestr("ppt/notesSlides/notesSlide2.xml", f'<p:notes xmlns:a="{a}" xmlns:p="{pn}"><p:sp><p:nvSpPr><p:nvPr>'
+                   '<p:ph type="body"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:r><a:t>Mention the 4.8 rating</a:t>'
+                   "</a:r></a:p></p:txBody></p:sp></p:notes>")
+    deck = readers.read(buf.getvalue(), readers.PPTX)
+    assert deck.pages == ["Slide 1", "Slide 2\n[Speaker notes] Mention the 4.8 rating"]
+    assert any("speaker notes of slide 1" in n for n in deck.notes)
+
+
 def test_office_files_and_text_formats_are_read_with_addresses():
     raw = xlsx([["Kitepath price list", ""], ["Plan", "Price (Rs)", "From"], ["Basic", 299, 46023],
                 ["Pro", 599, 46023], ["", "", ""]])
