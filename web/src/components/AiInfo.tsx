@@ -66,10 +66,11 @@ const FLOW: { icon: typeof ShieldIcon; title: string; what: string; who: Who[] }
 
 const PLACES: { title: string; tone: string; items: string[] }[] = [
   { title: "Stays on our server", tone: "border-line",
-    items: ["Reading text in images", "Speech in video", "Matching artwork and faces", "Rule and fact checks"] },
+    items: ["Reading text in images", "Speech in video", "Matching artwork and faces", "Rule and fact checks",
+      "Searching what Inki remembers"] },
   { title: "Sent, redacted", tone: "border-accent/40",
     items: ["Text to gpt-oss for tone, claims and fixes", "Images to gemma, never from confidential pieces",
-      "A public post's unsupported claim to web search"] },
+      "A public post's unsupported claim to web search", "Your Ask Inki messages, to note what to remember"] },
   { title: "Never sent", tone: "border-[var(--vt-blocker)]/40",
     items: ["Confidential codenames", "Confidential pieces to any image model", "Anything internal to web search"] },
 ];
@@ -79,6 +80,8 @@ const GUARDS: { title: string; detail: string }[] = [
   { title: "AI never approves or publishes", detail: "Only people move a piece forward" },
   { title: "A must-fix needs an approver", detail: "Setting one aside takes a reason, and is recorded" },
   { title: "Every call is on the record", detail: "Decisions go into a tamper-evident audit trail" },
+  { title: "Ask Inki sees only what you may open", detail: "Within your clearance, and never confidential pieces" },
+  { title: "What Inki remembers is yours", detail: "Only from your own Ask Inki chats, and deletable in Settings. Demo people: per browser, 24 hours" },
 ];
 
 export function AiInfoContent() {
@@ -159,9 +162,9 @@ export function AiInfoContent() {
           facts, and banned words, codenames and artwork are matched against the library, by code. AI reads tone and
           meaning, and explains. Every finding names the rule or fact behind it, and quotes the words when it is about
           words, so you can check it in seconds; a person makes every call. How often each check is right is measured and
-          published with the code: the artwork check, for example, catches 93% of misuse and wrongly flags about 5% of
-          correct use across 1,200 generated test pictures, though recoloured icons are still caught only a third
-          of the time. Dismissing a finding with a reason teaches Verytas where a rule
+          published with the code: the artwork check, for example, catches 96% of misuse and wrongly flags under 5% of
+          correct use across 1,200 generated test pictures, though a correctly used wordmark is still flagged about
+          one time in seven. Dismissing a finding with a reason teaches Verytas where a rule
           reads unclearly; each review lists the exact models it used, under &ldquo;How it was checked&rdquo;.</span>
       </p>
     </div>
