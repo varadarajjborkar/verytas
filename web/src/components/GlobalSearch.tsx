@@ -38,7 +38,8 @@ type Remote = { q: string; hits: SearchHit[]; failed: boolean };
 
 const WHERE_RUN: Record<ActionId, string> = {
   "theme:light": "Appearance", "theme:dark": "Appearance", "theme:system": "Appearance", "settings:profile": "Settings",
-  "settings:social": "Settings", "settings:theme": "Settings", signout: "Account", "switch:manager": "Account",
+  "settings:social": "Settings", "settings:theme": "Settings", "settings:tokens": "Settings", "settings:memory": "Settings",
+  signout: "Account", "switch:manager": "Account",
   "switch:creator": "Account",
 };
 

@@ -8,7 +8,7 @@ import type { SearchHit, SearchHitType } from "./types";
 export type IconKey = "page" | "action" | "settings" | "sun" | "moon" | "monitor" | "signout" | "switch" | "recent" | SearchHitType;
 
 export type ActionId = "theme:light" | "theme:dark" | "theme:system" | "settings:profile" | "settings:social"
-  | "settings:theme" | "signout" | "switch:manager" | "switch:creator";
+  | "settings:theme" | "settings:tokens" | "settings:memory" | "signout" | "switch:manager" | "switch:creator";
 export type Target = { href: string } | { run: ActionId };
 
 export type Entry = {
@@ -54,9 +54,12 @@ const action = (id: string, title: string, sub: string, href: string, keywords: 
 const setting = (id: string, icon: IconKey, title: string, sub: string, run: ActionId, keywords: string): Entry =>
   ({ id, group: "Settings", icon, title, sub, keywords, target: { run } });
 
+const CONVERSATIONS = page("talk", "Conversations", "Messages between creators and the brand team", "/conversations",
+  "chat messages inbox talk dm meeting");
 const CREATOR_PAGES = [
   page("home", "My work", "Your pieces and what each needs next", "/", "home overview"),
   page("reviews", "My reviews", "A new post and every review so far", "/review", "history submit check"),
+  CONVERSATIONS,
   page("ask", "Ask Inki", "Questions about the brand guidelines", "/ask", "chat assistant help"),
   page("ai", "How AI is used", "Where models are involved and what they see", "/ai", "disclosure transparency privacy"),
 ];
@@ -64,6 +67,7 @@ const MANAGER_PAGES = [
   page("home", "Dashboard", "What needs a decision and how work flows", "/", "home overview"),
   page("queue", "Review queue", "Every creator's pieces, ranked by what needs you first", "/review", "pending approve reviews"),
   page("esc", "Escalations", "Requests creators raised to a person", "/escalations", "asks inbox"),
+  CONVERSATIONS,
   page("creators", "Creators", "Everyone writing for the brand", "/creators", "people roster writers"),
   page("library", "Brand library", "Rules, facts, terms, events and artwork", "/library", "guidelines brand book"),
   page("health", "Guideline health", "Rules reviewers keep overriding", "/guidelines", "ambiguity unclear clarify"),
@@ -73,6 +77,8 @@ const MANAGER_PAGES = [
 const LIBRARY_TABS = [
   page("lib-facts", "Facts", "Brand library · numbers posts may cite", "/library?tab=facts", "claims statistics figures"),
   page("lib-events", "Events", "Brand library · launches, sales and campaigns", "/library?tab=events", "campaign blackout"),
+  page("lib-people", "Approved people", "Brand library · who may be shown, and until when", "/library?tab=people",
+    "faces ambassadors talent likeness consent"),
   page("lib-contacts", "Public contacts", "Brand library · phone numbers and handles that may appear", "/library?tab=contacts", "email phone"),
   page("lib-assets", "Artwork", "Brand library · official logos and marks", "/library?tab=assets", "logo mascot images brand assets"),
 ];
@@ -96,7 +102,8 @@ export function staticEntries(who: Who): Entry[] {
         action("add-rule", "Add a rule", "Brand library · rules", "/library", "new create guideline"),
         action("add-fact", "Add a fact", "Brand library · facts", "/library?tab=facts", "new create number claim"),
         action("add-term", "Add a confidential term", "Brand library · confidential terms", "/library?tab=terms", "new create secret codename embargo"),
-        action("import", "Import a brand book", "Brand library · import", "/library?tab=import", "upload pdf guidelines extract"),
+        action("import", "Import a brand book", "Brand library · intake", "/library?tab=import",
+          "upload pdf guidelines extract intake sheet deck link"),
         action("add-event", "Plan a brand event", "Brand library · events", "/library?tab=events", "new campaign launch sale blackout"),
         action("add-asset", "Add official artwork", "Brand library · artwork", "/library?tab=assets", "upload logo mascot image"),
       );
@@ -107,6 +114,12 @@ export function staticEntries(who: Who): Entry[] {
   out.push(
     setting("set-profile", "settings", "Profile and role", "Settings · name, role, clearance" + (admin ? ", join code" : ""),
       "settings:profile", "account email clearance" + (admin ? " join code invite creators" : "")),
+    setting("set-cookies", "settings", "Cookie choices", "Settings · profile · all or necessary only", "settings:profile",
+      "cookies consent privacy storage tracking"),
+    setting("set-memory", "settings", "Inki's memory", "Settings · what Ask Inki remembers about you", "settings:memory",
+      "remember forget delete facts privacy personal"),
+    setting("set-tokens", "settings", "Personal tokens", "Settings · connect your own AI client", "settings:tokens",
+      "api key mcp claude chatgpt cursor connect integration"),
     setting("set-social", "settings", "Social profiles", "Settings · the handles posts are checked against", "settings:social",
       "instagram linkedin x twitter youtube tiktok facebook handles"),
     setting("set-theme", "settings", "Appearance", "Settings · light, dark or follow the system", "settings:theme", "theme colour mode"),
@@ -168,12 +181,13 @@ export function destination(href: string): string {
     case "/escalations": return "Escalations";
     case "/creators": return "Creators";
     case "/guidelines": return "Guideline health";
+    case "/conversations": return "Conversations";
     case "/ask": return "Ask Inki";
     case "/ai": return "How AI is used";
     case "/library": {
       const tab = params.get("tab") ?? "rules";
-      return `Library · ${({ rules: "Rules", facts: "Facts", events: "Events", contacts: "Contacts", terms: "Terms",
-        assets: "Artwork", import: "Import" } as Record<string, string>)[tab] ?? "Rules"}`;
+      return `Library · ${({ rules: "Rules", facts: "Facts", events: "Events", people: "People", contacts: "Contacts",
+        terms: "Terms", assets: "Artwork", import: "Intake" } as Record<string, string>)[tab] ?? "Rules"}`;
     }
     default: return "Open";
   }
