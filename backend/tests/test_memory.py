@@ -181,41 +181,45 @@ def _on(token, device):
 
 
 def test_a_shared_demo_person_keeps_facts_per_browser(client, world):  # noqa: F811
-    one, two = "browserOne_0123456789abcd", "browserTwo_0123456789abcd"
+    one = _on(world["creator"], "browserOne_0123456789abcd")
+    two = _on(world["creator"], "browserTwo_0123456789abcd")
     msgs = [{"role": "user", "content": "I'm a designer and I prefer short answers."},
             {"role": "assistant", "content": "Okay."}]
-    assert client.post("/chats", headers=_on(world["creator"], one), json={"title": "Chat", "messages": msgs}).status_code == 201
+    assert client.post("/chats", headers=one, json={"title": "Chat", "messages": msgs}).status_code == 201
     deadline = time.monotonic() + 10
-    while not (kept := client.get("/me/memories", headers=_on(world["creator"], one)).json()) and time.monotonic() < deadline:
+    while not (kept := client.get("/me/memories", headers=one).json()) and time.monotonic() < deadline:
         time.sleep(0.05)
     assert kept
+    q = {"q": "designer short answers"}
     # Another visitor who picked the same person, on another browser, starts with nothing and can't delete it.
-    assert client.get("/me/memories", headers=_on(world["creator"], two)).json() == []
-    ctx = client.get("/assistant/context", headers=_on(world["creator"], two), params={"q": "designer short answers"}).json()
-    assert ctx.get("about_you") == []
-    assert client.delete(f"/me/memories/{kept[0]['id']}", headers=_on(world["creator"], two)).status_code == 404
+    assert client.get("/me/memories", headers=two).json() == []
+    assert client.get("/assistant/context", headers=two, params=q).json().get("about_you") == []
+    assert client.delete(f"/me/memories/{kept[0]['id']}", headers=two).status_code == 404
     # Nor does it reach the person's own (non-shared) sessions, or a shared one whose browser id is missing.
     assert client.get("/me/memories", headers=_auth(world["creator"])).json() == []
     assert client.get("/me/memories", headers=_on(world["creator"], "-")).json() == []
-    ctx = client.get("/assistant/context", headers=_on(world["creator"], one), params={"q": "designer short answers"}).json()
-    assert ctx.get("about_you")
+    assert client.get("/assistant/context", headers=one, params=q).json().get("about_you")
 
 
 def test_a_shared_demo_persons_saved_chats_stay_with_their_browser(client, world):  # noqa: F811
-    one, two = "chatsOne_0123456789abcdef", "chatsTwo_0123456789abcdef"
-    msgs = [{"role": "user", "content": "Draft me three hooks for the festive reel."}, {"role": "assistant", "content": "Okay."}]
-    tid = client.post("/chats", headers=_on(world["creator"], one), json={"title": "Hooks", "messages": msgs}).json()["id"]
-    assert [t["id"] for t in client.get("/chats", headers=_on(world["creator"], one)).json()] == [tid]
+    one = _on(world["creator"], "chatsOne_0123456789abcdef")
+    two = _on(world["creator"], "chatsTwo_0123456789abcdef")
+    blind, own = _on(world["creator"], "-"), _auth(world["creator"])
+    msgs = [{"role": "user", "content": "Draft me three hooks for the festive reel."},
+            {"role": "assistant", "content": "Okay."}]
+    body = {"title": "Hooks", "messages": msgs}
+    tid = client.post("/chats", headers=one, json=body).json()["id"]
+    assert [t["id"] for t in client.get("/chats", headers=one).json()] == [tid]
     # The next visitor on the same person, and the person's own sign-in, neither list nor open nor change it.
-    assert client.get("/chats", headers=_on(world["creator"], two)).json() == []
-    assert client.get("/chats", headers=_auth(world["creator"])).json() == []
-    assert client.get(f"/chats/{tid}", headers=_on(world["creator"], two)).status_code == 404
-    assert client.put(f"/chats/{tid}", headers=_on(world["creator"], two), json={"title": "x", "messages": msgs}).status_code == 404
-    assert client.delete(f"/chats/{tid}", headers=_auth(world["creator"])).status_code == 404
+    assert client.get("/chats", headers=two).json() == []
+    assert client.get("/chats", headers=own).json() == []
+    assert client.get(f"/chats/{tid}", headers=two).status_code == 404
+    assert client.put(f"/chats/{tid}", headers=two, json=body).status_code == 404
+    assert client.delete(f"/chats/{tid}", headers=own).status_code == 404
     # A shared sign-in without a usable browser id reads nothing and can't save.
-    assert client.get("/chats", headers=_on(world["creator"], "-")).json() == []
-    assert client.post("/chats", headers=_on(world["creator"], "-"), json={"title": "x", "messages": msgs}).status_code == 409
-    assert client.delete(f"/chats/{tid}", headers=_on(world["creator"], one)).status_code == 204
+    assert client.get("/chats", headers=blind).json() == []
+    assert client.post("/chats", headers=blind, json=body).status_code == 409
+    assert client.delete(f"/chats/{tid}", headers=one).status_code == 204
 
 
 def test_a_shared_sign_ins_facts_lapse_after_a_day(client, world):  # noqa: F811

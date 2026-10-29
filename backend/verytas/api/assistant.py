@@ -112,7 +112,8 @@ async def context_for_conversation(body: Conversation, request: Request, session
 @router.get("/context")
 async def context(request: Request, session: Session, user: CurrentUser,
                   q: str = Query("", max_length=2000)) -> dict[str, Any]:
-    return await _context(session, user, q, await _redactor(session, user), request.app, request.headers.get(DEVICE_HEADER))
+    return await _context(session, user, q, await _redactor(session, user), request.app,
+                          request.headers.get(DEVICE_HEADER))
 
 
 async def _context(session: Session, user: CurrentUser, q: str, redactor: Redactor, app: Any = None,

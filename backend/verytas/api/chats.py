@@ -111,7 +111,8 @@ def chat_scope(request: Request, user, writing: bool = False) -> tuple[Any, ...]
 
 async def _own(session: Session, request: Request, user: CurrentUser, thread_id: int,
                writing: bool = False) -> ChatThread:
-    thread = await session.scalar(select(ChatThread).where(ChatThread.id == thread_id, *chat_scope(request, user, writing)))
+    thread = await session.scalar(
+        select(ChatThread).where(ChatThread.id == thread_id, *chat_scope(request, user, writing)))
     if thread is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found")
     return thread
@@ -127,7 +128,8 @@ async def list_threads(request: Request, session: Session, user: CurrentUser) ->
 
 @router.post("/chats", response_model=ThreadOut, status_code=status.HTTP_201_CREATED)
 async def create_thread(body: ThreadIn, request: Request, session: Session, user: CurrentUser) -> ChatThread:
-    held = await session.scalar(select(func.count()).select_from(ChatThread).where(*chat_scope(request, user, writing=True)))
+    held = await session.scalar(
+        select(func.count()).select_from(ChatThread).where(*chat_scope(request, user, writing=True)))
     if (held or 0) >= MAX_THREADS:
         raise HTTPException(status.HTTP_409_CONFLICT, "too many saved conversations; delete some old ones first")
     thread = ChatThread(workspace_id=user.workspace_id, user_id=user.id, title=body.title,
