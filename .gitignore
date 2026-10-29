@@ -27,6 +27,7 @@ venv/
 .keys/
 # What Inki keeps about people, and its embedding models (verytas/memory)
 .memory/
+.memory-*/
 .pytest_cache/
 .ruff_cache/
 
