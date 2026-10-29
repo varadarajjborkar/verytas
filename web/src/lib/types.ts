@@ -207,7 +207,7 @@ export type Review = {
     second_looks?: SecondLooks | null;
     precedents?: { cases: number; rules: number; attached: number; examples: boolean };
     calibration?: { decisions: Record<string, number>; families: string[]; workspace: boolean; warn_floor: number | null };
-    research?: { provider: string; searched: { query: string; outcome: string; likely_support?: number }[]; skipped: number;
+    research?: { provider: string; searched: { query: string; outcome: string; likely_support?: number; dropped?: number }[]; skipped: number;
       note?: string } | null;
   };
   error: string | null;

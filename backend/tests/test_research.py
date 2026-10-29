@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from verytas.checks.base import RawFinding
-from verytas.prism.research import DailyCap, query_for, research
+from verytas.prism.research import DailyCap, brand_name, checkable, english, keep, known_site, query_for, research
 from verytas.providers.offline import OfflineJudge
 from verytas.providers.websearch import WebResult, _results
 
@@ -16,17 +16,23 @@ from verytas.providers.websearch import WebResult, _results
 class FakeSearch:
     name = "fake/web_search"
 
-    def __init__(self, fail: bool = False) -> None:
+    def __init__(self, fail: bool = False, results: list[WebResult] | None = None) -> None:
         self.queries: list[str] = []
         self.fail = fail
+        self.results = results
 
     async def search(self, query: str, max_results: int = 3) -> list[WebResult]:
         self.queries.append(query)
         if self.fail:
             raise RuntimeError("down")
-        return [WebResult("Survey of learning apps", "https://example.org/survey", "Kitepath was rated the best "
+        if self.results is not None:
+            return self.results
+        return [WebResult("Survey of learning apps", "https://www.thehindu.com/survey", "Kitepath was rated the best "
                           "app by students across India in the 2026 survey."),
-                WebResult("Unrelated", "https://example.org/other", "Recipes for monsoon evenings.")]
+                WebResult("Something big is coming", "https://en.namu.wiki/w/x",
+                          "Kitepath 섬띵 빅 이즈 커밍은 송민경의 노래이다."),
+                WebResult("Kitepath Limited - Company Profile", "https://open.endole.co.uk/k", "Kitepath Limited, UK."),
+                WebResult("Learning apps in 2026", "https://www.livemint.com/apps", "Recipes for monsoon evenings.")]
 
 
 def _claim(quote="Rated the best app by students across India"):
@@ -38,10 +44,61 @@ def test_unsupported_claims_get_web_results_and_nothing_else_changes():
     f, other = _claim(), RawFinding("p2", "tone", "t", "x", 0.7, "semantic", rule_code="VOICE-01", quote="q")
     search = FakeSearch()
     log = asyncio.run(research([f, other], search, OfflineJudge(), lambda t: t, "Kitepath", DailyCap(10)))
-    assert search.queries == ["Kitepath Rated the best app by students across India"]
-    assert [r["site"] for r in f.research] == ["example.org", "example.org"] and other.research is None
+    assert search.queries == ['"Kitepath" Rated the best app by students across India']
+    # The Korean page, the unknown company register and the page that never names the brand are dropped.
+    assert [r["site"] for r in f.research] == ["thehindu.com"] and other.research is None
     assert f.level_cap is None and f.confidence == 0.8  # evidence only: the finding itself is untouched
-    assert log["searched"][0]["outcome"] == "2 results"
+    assert log["searched"][0]["outcome"] == "1 result" and log["searched"][0]["dropped"] == 3
+
+
+def test_only_claims_a_page_could_confirm_are_searched():
+    assert query_for(_claim("Something big is coming"), lambda t: t, "Kitepath") is None
+    assert query_for(_claim("Guaranteed results in your board exams with Kitepath."), lambda t: t, "Kitepath") is None
+    assert query_for(_claim("Kitepath is the number one app in India"), lambda t: t, "Kitepath") == (
+        '"Kitepath" is the number one app in India')
+    assert all(checkable(q) for q in ("Loved by 98% of parents", "Rated the best app", "Trusted by a million",
+                                      "Award-winning courses", "India's #1 learning app"))
+    search = FakeSearch()
+    log = asyncio.run(research([_claim("Something big is coming")], search, OfflineJudge(), lambda t: t,
+                               "Kitepath", DailyCap(10)))
+    assert search.queries == [] and log["skipped"] == 1
+
+
+def test_results_must_be_english_from_a_known_source_and_about_the_brand():
+    assert english("Kitepath was rated the best app") and not english("섬띵 빅 이즈 커밍은 송민경의 노래이다")
+    assert not english("【影音】Subverse 2023 活動直播 影片 回顧 精彩 片段")
+    assert known_site("timesofindia.indiatimes.com") and known_site("ugc.gov.in") and known_site("iitb.ac.in")
+    assert not known_site("open.endole.co.uk") and not known_site("linkedin.com") and not known_site("notreuters.com")
+    f = _claim()
+    junk = [WebResult("Kitepath Limited", "https://open.endole.co.uk/k", "Kitepath Limited, UK."),
+            WebResult("Kitepath", "https://en.namu.wiki/w/x", "섬띵 빅 이즈 커밍은 송민경의 노래이다")]
+    log = asyncio.run(research([f], FakeSearch(results=junk), OfflineJudge(), lambda t: t, "Kitepath", DailyCap(10)))
+    assert f.research is None
+    assert log["searched"][0]["outcome"] == "no result in English from a known source naming Kitepath (2 found)"
+    assert log["searched"][0]["dropped"] == 2
+    assert not english("Le meilleur cours de programmation en Inde, selon les étudiants et les parents du pays")
+    assert english("The best coding school in India, according to students and parents across the country")
+
+
+def test_the_brand_is_matched_as_people_write_it():
+    assert brand_name("Kitepath Learning Pvt. Ltd.") == "Kitepath Learning" and brand_name("Byju\u2019s") == "Byju's"
+    page = WebResult("Byju\u2019s: India's once most valuable start-up", "https://www.bbc.co.uk/news/x",
+                     "Byju\u2019s ...")
+    assert keep(page, "Byju's")
+    quoted = '"Kitepath" is the number one app'
+    assert query_for(_claim(quoted), lambda t: t, "Kitepath") == quoted
+    assert query_for(_claim("Kitepaths are the best"), lambda t: t, "Kitepath") == '"Kitepath" Kitepaths are the best'
+    f = _claim()
+    search = FakeSearch()
+    asyncio.run(research([f], search, OfflineJudge(), lambda t: t, "Kitepath Pvt Ltd", DailyCap(10)))
+    assert search.queries == ['"Kitepath" Rated the best app by students across India'] and f.research
+
+
+def test_teasers_do_not_use_up_the_searches_of_a_review():
+    claims = [_claim("Something big is coming"), _claim("Something else is coming"), _claim("Loved by 98% of parents")]
+    search = FakeSearch()
+    log = asyncio.run(research(claims, search, OfflineJudge(), lambda t: t, None, DailyCap(10), per_review=1))
+    assert search.queries == ["Loved by 98% of parents"] and log["skipped"] == 2
 
 
 def test_codenames_are_never_searched_and_limits_hold():
@@ -116,7 +173,7 @@ def test_a_review_shows_web_results_for_an_unsupported_claim_but_only_on_public_
     rev = review("Kitepath is the number one learning app in India, loved by 98% of parents.", "public")
     claims = [f for f in rev["findings"]
               if f["citations"] and f["citations"][0]["label"].startswith("CLAIM-UNSUPPORTED")]
-    assert claims and claims[0]["research"][0]["url"] == "https://example.org/survey"
+    assert claims and claims[0]["research"][0]["url"] == "https://www.thehindu.com/survey"
     assert rev["coverage"]["research"]["provider"] == "fake/web_search"
     searched = len(search.queries)
     for tier in ("internal", "confidential"):
