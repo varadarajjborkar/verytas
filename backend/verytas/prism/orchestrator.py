@@ -63,6 +63,7 @@ from verytas.models import (
 )
 from verytas.prism import calibration, fixstyle, precedent, research
 from verytas.prism.agents import MEDIA_COVERS, WORKER_COVERS, AgentTree, OfficialAsset, ReviewRun, plan
+from verytas.prism.carryover import carry_dismissals
 from verytas.prism.dedupe import collapse
 from verytas.prism.disputes import is_mechanical, rule_thresholds
 from verytas.prism.governor import CircuitBreaker, Governor, GuardedJudge, GuardedLLM
@@ -494,7 +495,15 @@ class Prism:
         }
         # Agent details come from numpy-heavy media code; store plain JSON only.
         review.coverage = _plain(review.coverage)
+        try:
+            carried = await carry_dismissals(session, review, version.content_id)
+        except Exception:  # noqa: BLE001, a call not carried is asked again; it must not fail the check itself
+            log.exception("review %s: earlier dismissals could not be carried", review.id)
+            carried = []
         review.status, review.finished_at = ReviewStatus.done, utcnow()
+        if carried:
+            await append(session, workspace_id=content.workspace_id, actor="agent:prism", action="decision.carried",
+                         object_type="review", object_id=review.id, detail={"carried": carried})
         if escalations:
             await append(session, workspace_id=content.workspace_id, actor="agent:prism", action="review.escalated",
                          object_type="review", object_id=review.id,

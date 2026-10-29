@@ -164,7 +164,7 @@ async def load(session: AsyncSession, workspace_id: int, tier: Tier) -> Calibrat
         .join(Content, Content.id == ContentVersion.content_id)
         .outerjoin(Rule, Rule.id == Finding.rule_id)
         .where(Content.workspace_id == workspace_id, Content.tier.in_([t for t in Tier if t.rank <= tier.rank]),
-               Decision.id.in_(last))
+               Decision.id.in_(last), Decision.carried_from_id.is_(None))
         .order_by(Decision.id.desc()).limit(MAX_DECISIONS))
     points, warned = [], []
     for cat, modelled, conf, action, reason, severity in rows.all():

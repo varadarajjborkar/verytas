@@ -738,7 +738,9 @@ async def timeline(content_id: int, session: Session, user: CurrentUser) -> dict
     decisions = (await session.execute(
         select(Decision, Finding.title, Finding.level, Review.version_id)
         .join(Finding, Decision.finding_id == Finding.id).join(Review, Finding.review_id == Review.id)
-        .where(Review.version_id.in_(list(version_no))).order_by(Decision.id))).all()
+        # A dismissal carried onto a re-check repeats a call already on the timeline.
+        .where(Review.version_id.in_(list(version_no)), Decision.carried_from_id.is_(None))
+        .order_by(Decision.id))).all()
     actor_ids = ({v.created_by for v in versions} | {e.actor_id for e in events} | {c.actor_id for c in comments}
                  | {d.actor_id for d, *_ in decisions} | {content.created_by})
     people = {u.id: {"id": u.id, "name": u.name, "role": u.role} for u in (await session.scalars(

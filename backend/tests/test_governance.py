@@ -127,6 +127,82 @@ def test_a_request_about_an_earlier_check_is_answered_on_the_finding_the_creator
     assert decided["decisions"][-1]["action"] == "rejected"
 
 
+def test_a_cleared_finding_stays_cleared_when_the_creator_checks_again(client, world):
+    # The brand team clears an upcoming project's name, then the creator marks everything done and re-checks:
+    # the new check raises the same words again, and the call already made must still stand on it.
+    creator, approver = world["creator"], world["approver"]
+    made = _post(client, creator, LEAK)
+    old = _blocker(client, creator, made)
+    raised = client.post(f"/findings/{old['id']}/escalations", headers=_auth(creator),
+                         json={"message": "The launch is public now; marketing announced it on stage."})
+    assert client.post(f"/escalations/{raised.json()['id']}/resolve", headers=_auth(approver),
+                       json={"outcome": "cleared", "reason_code": "not_applicable",
+                             "note": "Cleared for this post."}).status_code == 200
+
+    content_id = made["content"]["id"]
+    again = client.post(f"/contents/{content_id}/resubmit?wait=true", headers=_auth(creator),
+                        json={"resolved": [old["id"]]})
+    assert again.status_code in (200, 201), again.text
+    review_id = again.json()["submit"]["review_id"]
+    new = _blocker(client, creator, {"review_id": review_id})
+    assert new["id"] != old["id"] and new["quote"] == old["quote"]
+    assert new["decisions"][-1]["action"] == "rejected" and new["decisions"][-1]["reason_code"] == "not_applicable"
+
+    # Nothing left holding the piece: it can be approved without an override.
+    client.post(f"/contents/{content_id}/transition", headers=_auth(creator), json={"to": "in_review"})
+    approved = client.post(f"/contents/{content_id}/transition", headers=_auth(approver), json={"to": "approved"})
+    assert approved.status_code == 200, approved.text
+    # The call shows once on the timeline, not once per check.
+    items = client.get(f"/contents/{content_id}/timeline", headers=_auth(creator)).json()["items"]
+    assert len([i for i in items if i["type"] == "decision"]) == 1
+
+
+def test_a_call_survives_a_check_in_between_that_nobody_answered(client, world, monkeypatch):
+    # A piece already re-checked before the carry existed has an undecided copy in between; the next check
+    # must still find the call made before it.
+    from verytas.prism import orchestrator
+
+    creator, approver = world["creator"], world["approver"]
+    made = _post(client, creator, LEAK)
+    old = _blocker(client, creator, made)
+    assert client.post(f"/findings/{old['id']}/decision", headers=_auth(approver),
+                       json={"action": "rejected", "reason_code": "not_applicable"}).status_code in (200, 201)
+    content_id = made["content"]["id"]
+
+    async def nothing(*_args, **_kwargs):
+        return []
+
+    with monkeypatch.context() as m:
+        m.setattr(orchestrator, "carry_dismissals", nothing)
+        between = client.post(f"/contents/{content_id}/resubmit?wait=true", headers=_auth(creator), json={})
+    assert not _blocker(client, creator, {"review_id": between.json()["submit"]["review_id"]})["decisions"]
+    after = client.post(f"/contents/{content_id}/resubmit?wait=true", headers=_auth(creator), json={})
+    carried = _blocker(client, creator, {"review_id": after.json()["submit"]["review_id"]})["decisions"]
+    assert carried and carried[-1]["action"] == "rejected"
+
+
+def test_a_cleared_name_in_a_rewritten_sentence_is_asked_about_again(client, world):
+    creator, approver = world["creator"], world["approver"]
+    made = _post(client, creator, LEAK)
+    old = _blocker(client, creator, made)
+    assert client.post(f"/findings/{old['id']}/decision", headers=_auth(approver),
+                       json={"action": "rejected", "reason_code": "not_applicable",
+                             "reason_text": "Cleared for this post."}).status_code in (200, 201)
+    content_id = made["content"]["id"]
+
+    # The same sentence (a fix elsewhere in the piece) keeps the call; a rewritten one around the name does not.
+    kept = client.post(f"/contents/{content_id}/resubmit?wait=true", headers=_auth(creator),
+                       json={"body": LEAK + "\n\nSign up for early access today."})
+    assert kept.status_code in (200, 201), kept.text
+    assert _blocker(client, creator, {"review_id": kept.json()["submit"]["review_id"]})["decisions"]
+
+    rewritten = client.post(f"/contents/{content_id}/resubmit?wait=true", headers=_auth(creator),
+                            json={"body": "Project Lumen ships on 3 November with a price cut for every plan."})
+    assert rewritten.status_code in (200, 201), rewritten.text
+    fresh = _blocker(client, creator, {"review_id": rewritten.json()["submit"]["review_id"]})
+    assert fresh["quote"] == old["quote"] and not fresh["decisions"]
+
+
 def test_a_request_waits_for_a_re_check_still_running_before_it_is_answered(client, world, monkeypatch):
     # Answered mid-check, the decision would sit on the old finding and the new check's copy of it would come
     # back undecided. The brand team is asked to wait for the check instead.

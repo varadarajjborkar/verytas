@@ -395,6 +395,9 @@ class Decision(Base):
     reason_code: Mapped[str | None] = mapped_column(String(40))
     reason_text: Mapped[str | None] = mapped_column(Text)
     edited_text: Mapped[str | None] = mapped_column(Text)
+    # Set on a dismissal copied onto the same issue in a later check (prism/carryover.py): the call it repeats.
+    # Learning reads only the original, so one call counts once.
+    carried_from_id: Mapped[int | None] = mapped_column(ForeignKey("decisions.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     finding: Mapped[Finding] = relationship(back_populates="decisions")

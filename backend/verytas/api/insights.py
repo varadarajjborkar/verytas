@@ -90,7 +90,7 @@ async def overview_for(session, user: User, tiers: list[Tier], days: int = 30) -
     findings = await _workspace_findings(session, user, tiers)
     rules = await _rules(session, user, tiers)
 
-    decisions = [d for f in findings for d in f.decisions]
+    decisions = [d for f in findings for d in f.decisions if d.carried_from_id is None]
     by_action = Counter(d.action.value for d in decisions)
     acted = by_action["accepted"] + by_action["edited"] + by_action["rejected"]
 
@@ -138,7 +138,7 @@ async def recurring_for(session, user: User, tiers: list[Tier], min_count: int =
 
 
 def _health(rule: Rule, findings: list[Finding]) -> dict:
-    decisions: list[Decision] = [d for f in findings for d in f.decisions]
+    decisions: list[Decision] = [d for f in findings for d in f.decisions if d.carried_from_id is None]
     accepted = sum(d.action in (DecisionAction.accepted, DecisionAction.edited) for d in decisions)
     rejected = sum(d.action is DecisionAction.rejected for d in decisions)
     unclear = sum(d.reason_code == "guideline_unclear" for d in decisions)

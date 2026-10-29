@@ -145,7 +145,7 @@ async def cases(session: AsyncSession, rule: Rule, mask: Callable[[str], str]) -
         .where(Rule.workspace_id == rule.workspace_id, Rule.code == rule.code,
                Content.workspace_id == rule.workspace_id,
                Content.tier.in_([t for t in Tier if t.rank <= rule.tier.rank]),
-               Decision.id.in_(last), Finding.quote.is_not(None))
+               Decision.id.in_(last), Decision.carried_from_id.is_(None), Finding.quote.is_not(None))
         .order_by(Decision.created_at.desc(), Decision.id.desc()).limit(PER_SIDE * 6))).all()
     out = Cases()
     seen: set[str] = set()

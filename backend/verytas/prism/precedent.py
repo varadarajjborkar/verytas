@@ -170,8 +170,8 @@ async def load(session: AsyncSession, workspace_id: int, tier: Tier, mask: Calla
         .join(ContentVersion, ContentVersion.id == Review.version_id)
         .join(Content, Content.id == ContentVersion.content_id)
         .where(Rule.workspace_id == workspace_id, Content.workspace_id == workspace_id, Content.tier.in_(allowed),
-               Decision.id.in_(last), Decision.action.in_([DecisionAction.accepted, DecisionAction.edited,
-                                                          DecisionAction.rejected]),
+               Decision.id.in_(last), Decision.carried_from_id.is_(None),
+               Decision.action.in_([DecisionAction.accepted, DecisionAction.edited, DecisionAction.rejected]),
                Finding.quote.is_not(None))
         .order_by(Decision.created_at.desc()).limit(MAX_CASES))
     found = rows.all()
