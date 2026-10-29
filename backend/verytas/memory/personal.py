@@ -17,6 +17,9 @@ account, never from anything a request carries.
   every request, and the term itself must not be kept.
 - Each fact carries the clearance of the person when it was said; read back only within their clearance now.
 - They can see the list, delete one, or forget everything (/me/memories).
+- A shared demo person is whoever picked them from the sign-in page, so their facts are kept per browser too
+  (the web server's device cookie, sent only for those sessions) and lapse after a day: one visitor's
+  "I'm a designer" never reaches the next one who picks the same person.
 """
 
 from __future__ import annotations
@@ -25,7 +28,9 @@ import asyncio
 import os
 import re
 import threading
+import time
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +43,9 @@ os.environ.setdefault("MEM0_TELEMETRY", "False")
 # bge-small, the Instagram and the LinkedIn channel at 0.84.
 SAME = 0.92
 MAX_FACTS = 200  # per person; the oldest go first
+# Sent by the web server for a shared sign-in only: the browser's id, or "-" when it has none yet.
+DEVICE_HEADER = "x-verytas-device"
+_DEVICE = re.compile(r"[A-Za-z0-9_-]{16,64}")
 
 
 class _NoModel:
@@ -108,21 +116,41 @@ class Scope:
     workspace_id: int
     user_id: int
     tier: str  # the person's clearance now
+    device: str | None = None  # set for a shared sign-in: one browser's share of that person
+    blind: bool = False  # a shared sign-in with no usable device id: nothing is kept or read
 
     @property
     def key(self) -> str:
-        return f"w{self.workspace_id}:u{self.user_id}"
+        base = f"w{self.workspace_id}:u{self.user_id}"
+        return f"{base}:d{self.device}" if self.device else base
 
 
-def scope_of(user) -> Scope:
-    return Scope(user.workspace_id, user.id, str(getattr(user.clearance, "value", user.clearance)))
+def scope_of(user, device: str | None = None) -> Scope:
+    """`device` is the shared-sign-in header as received (None when the session is a person's own). The
+    workspace and person still come from the signed-in account; the header can only narrow them."""
+    tier = str(getattr(user.clearance, "value", user.clearance))
+    if device is None:
+        return Scope(user.workspace_id, user.id, tier)
+    if not _DEVICE.fullmatch(device):
+        return Scope(user.workspace_id, user.id, tier, blind=True)
+    return Scope(user.workspace_id, user.id, tier, device=device)
+
+
+def _when(row: dict) -> datetime | None:
+    try:
+        t = datetime.fromisoformat(row.get("created_at") or "")
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=UTC)
 
 
 class PersonalMemory:
-    def __init__(self, directory: Path, embedder, models: Path | None = None) -> None:
+    def __init__(self, directory: Path, embedder, models: Path | None = None, shared_hours: int = 24) -> None:
         self.directory = directory
         self.models = models
         self.embedder = embedder
+        self.shared_ttl = timedelta(hours=shared_hours) if shared_hours else None
+        self._lapsed_at: dict[str, float] = {}  # when each shared scope was last cleared, by its key
         self._mem = None
         self._lock = threading.Lock()
 
@@ -168,6 +196,9 @@ class PersonalMemory:
     # --- writing ------------------------------------------------------------------------------------
 
     async def remember(self, scope: Scope, facts: list[str], source: str = "ask-inki") -> int:
+        if scope.blind:
+            return 0
+        await self._lapse(scope, now=True)  # a lapsed fact must be gone before it can match as a near-duplicate
         kept = 0
         for fact in facts:
             fact = " ".join(fact.split())[:300]
@@ -183,19 +214,25 @@ class PersonalMemory:
     async def recall(self, scope: Scope, query: str, allowed_tiers: list[str], k: int) -> list[str]:
         """The k facts closest to the question, with no floor: a person's role and how they like answers bear
         on most questions however they are worded, and k keeps the block small."""
-        if k <= 0 or not query.strip():
+        if k <= 0 or not query.strip() or scope.blind:
             return []
+        await self._lapse(scope)
         hits = await self._run(lambda m: m.search(query, top_k=k, threshold=0.0, filters={
             "user_id": scope.key, "workspace_id": scope.workspace_id, "tier": {"in": allowed_tiers}}))
-        return [h["memory"] for h in hits.get("results", [])]
+        return [h["memory"] for h in hits.get("results", []) if self._live(scope, h)]
 
     async def listing(self, scope: Scope) -> list[dict[str, Any]]:
+        if scope.blind:
+            return []
+        await self._lapse(scope)
         got = await self._run(lambda m: m.get_all(filters={"user_id": scope.key}, top_k=MAX_FACTS))
         rows = [{"id": r["id"], "text": r["memory"], "created_at": r.get("created_at"),
-                 "updated_at": r.get("updated_at")} for r in got.get("results", [])]
+                 "updated_at": r.get("updated_at")} for r in got.get("results", []) if self._live(scope, r)]
         return sorted(rows, key=lambda r: r["updated_at"] or r["created_at"] or "", reverse=True)
 
     async def forget(self, scope: Scope, memory_id: str | None = None) -> int:
+        if scope.blind:
+            return 0
         if memory_id is None:
             n = len(await self.listing(scope))
             await self._run(lambda m: m.delete_all(user_id=scope.key))
@@ -205,6 +242,49 @@ class PersonalMemory:
             return 0
         await self._run(lambda m: m.delete(memory_id))
         return 1
+
+    # --- a shared sign-in's facts lapse ---------------------------------------------------------------------
+
+    def _live(self, scope: Scope, row: dict) -> bool:
+        """Exact on every read, whenever the deleting last ran: a lapsed fact is never shown or used."""
+        if not (scope.device and self.shared_ttl):
+            return True
+        t = _when(row)
+        return t is None or t >= datetime.now(UTC) - self.shared_ttl
+
+    async def _lapse(self, scope: Scope, now: bool = False) -> None:
+        # Deleting scans the store (local qdrant has no payload index), so per scope at most every ten minutes;
+        # _live hides anything lapsed meanwhile, and the hourly sweep catches browsers that never come back.
+        if not (scope.device and self.shared_ttl):
+            return
+        t = time.monotonic()
+        if not now and t - self._lapsed_at.get(scope.key, -1e9) < 600:
+            return
+        if len(self._lapsed_at) > 10_000:
+            self._lapsed_at = {k: v for k, v in self._lapsed_at.items() if t - v < 600}
+        self._lapsed_at[scope.key] = t
+        await self._run(_drop_lapsed, {"user_id": scope.key}, datetime.now(UTC) - self.shared_ttl)
+
+    async def sweep(self, now: datetime | None = None) -> int:
+        """Delete every shared sign-in's facts older than the limit, read or not: a browser that never comes
+        back would otherwise leave its facts on disk until the demo is reseeded."""
+        if not self.shared_ttl or not (self.directory / "qdrant").exists():
+            return 0
+        return await self._run(_drop_lapsed, {"shared": True}, (now or datetime.now(UTC)) - self.shared_ttl)
+
+
+def _drop_lapsed(m, filters: dict, before: datetime) -> int:
+    store, old, offset = m.vector_store, [], None
+    query = store._create_filter(filters)
+    while True:  # every page, not a capped first one
+        points, offset = store.client.scroll(collection_name=store.collection_name, scroll_filter=query,
+                                             limit=1000, offset=offset, with_payload=True, with_vectors=False)
+        old += [p.id for p in points if (t := _when(p.payload or {})) is not None and t < before]
+        if offset is None:
+            break
+    for pid in old:
+        m.delete(str(pid))
+    return len(old)
 
 
 def _upsert(m, scope: Scope, fact: str, source: str, embedder) -> int:
@@ -218,7 +298,8 @@ def _upsert(m, scope: Scope, fact: str, source: str, embedder) -> int:
             m.update(top["id"], fact)
         return 1
     m.add(fact, user_id=scope.key, infer=False,
-          metadata={"workspace_id": scope.workspace_id, "tier": scope.tier, "source": source})
+          metadata={"workspace_id": scope.workspace_id, "tier": scope.tier, "source": source,
+                    **({"shared": True} if scope.device else {})})
     return 1
 
 

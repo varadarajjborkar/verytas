@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { APP, ONLY_FOR, SESSION_COOKIE } from "@/lib/app";
+import { DEVICE_COOKIE, deviceCookieOptions, newDeviceId, validDevice } from "@/lib/device";
 import { crossOrigin } from "@/lib/same-origin";
 
 // An optimistic gate in front of every page and API route: no session cookie,
@@ -12,6 +13,15 @@ const devAutologin = process.env.NODE_ENV !== "production" && process.env.VERYTA
 
 
 export function proxy(request: NextRequest) {
+  // A browser without its id gets one here, on the request too so this very page's API calls carry it.
+  const fresh = validDevice(request.cookies.get(DEVICE_COOKIE)?.value) ? null : newDeviceId();
+  if (fresh) request.cookies.set(DEVICE_COOKIE, fresh);
+  const res = gate(request);
+  if (fresh) res.cookies.set(DEVICE_COOKIE, fresh, deviceCookieOptions());
+  return res;
+}
+
+function gate(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
   const api = pathname.startsWith("/api/");
 
@@ -31,7 +41,7 @@ export function proxy(request: NextRequest) {
   }
   // Demo mode has no accounts to sign in to; there is nothing behind the gate.
   if (!signinRequired || !backendConfigured || devAutologin || request.cookies.get(SESSION_COOKIE)?.value) {
-    return NextResponse.next();
+    return NextResponse.next({ request: { headers: request.headers } });
   }
   if (api) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   // Someone arriving at the front door without a session sees the landing page, which leads to the demo

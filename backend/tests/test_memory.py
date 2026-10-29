@@ -176,6 +176,68 @@ def test_forgotten_facts_leave_nothing_on_disk(client, world):  # noqa: F811
     assert b"Zebra" not in left  # no history log of what was said, deleted or not
 
 
+def _on(token, device):
+    return {**_auth(token), "X-Verytas-Device": device}
+
+
+def test_a_shared_demo_person_keeps_facts_per_browser(client, world):  # noqa: F811
+    one, two = "browserOne_0123456789abcd", "browserTwo_0123456789abcd"
+    msgs = [{"role": "user", "content": "I'm a designer and I prefer short answers."},
+            {"role": "assistant", "content": "Okay."}]
+    assert client.post("/chats", headers=_on(world["creator"], one), json={"title": "Chat", "messages": msgs}).status_code == 201
+    deadline = time.monotonic() + 10
+    while not (kept := client.get("/me/memories", headers=_on(world["creator"], one)).json()) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert kept
+    # Another visitor who picked the same person, on another browser, starts with nothing and can't delete it.
+    assert client.get("/me/memories", headers=_on(world["creator"], two)).json() == []
+    ctx = client.get("/assistant/context", headers=_on(world["creator"], two), params={"q": "designer short answers"}).json()
+    assert ctx.get("about_you") == []
+    assert client.delete(f"/me/memories/{kept[0]['id']}", headers=_on(world["creator"], two)).status_code == 404
+    # Nor does it reach the person's own (non-shared) sessions, or a shared one whose browser id is missing.
+    assert client.get("/me/memories", headers=_auth(world["creator"])).json() == []
+    assert client.get("/me/memories", headers=_on(world["creator"], "-")).json() == []
+    ctx = client.get("/assistant/context", headers=_on(world["creator"], one), params={"q": "designer short answers"}).json()
+    assert ctx.get("about_you")
+
+
+def test_a_shared_demo_persons_saved_chats_stay_with_their_browser(client, world):  # noqa: F811
+    one, two = "chatsOne_0123456789abcdef", "chatsTwo_0123456789abcdef"
+    msgs = [{"role": "user", "content": "Draft me three hooks for the festive reel."}, {"role": "assistant", "content": "Okay."}]
+    tid = client.post("/chats", headers=_on(world["creator"], one), json={"title": "Hooks", "messages": msgs}).json()["id"]
+    assert [t["id"] for t in client.get("/chats", headers=_on(world["creator"], one)).json()] == [tid]
+    # The next visitor on the same person, and the person's own sign-in, neither list nor open nor change it.
+    assert client.get("/chats", headers=_on(world["creator"], two)).json() == []
+    assert client.get("/chats", headers=_auth(world["creator"])).json() == []
+    assert client.get(f"/chats/{tid}", headers=_on(world["creator"], two)).status_code == 404
+    assert client.put(f"/chats/{tid}", headers=_on(world["creator"], two), json={"title": "x", "messages": msgs}).status_code == 404
+    assert client.delete(f"/chats/{tid}", headers=_auth(world["creator"])).status_code == 404
+    # A shared sign-in without a usable browser id reads nothing and can't save.
+    assert client.get("/chats", headers=_on(world["creator"], "-")).json() == []
+    assert client.post("/chats", headers=_on(world["creator"], "-"), json={"title": "x", "messages": msgs}).status_code == 409
+    assert client.delete(f"/chats/{tid}", headers=_on(world["creator"], one)).status_code == 204
+
+
+def test_a_shared_sign_ins_facts_lapse_after_a_day(client, world):  # noqa: F811
+    from datetime import UTC, datetime, timedelta
+
+    from verytas.memory.personal import Scope
+
+    personal = client.app.state.personal
+    shared, own = Scope(1, 998, "public", device="lapseTest_0123456789abc"), Scope(1, 998, "public")
+
+    async def go():
+        await personal.remember(shared, ["Writes the weekly study-tips reel"])
+        await personal.remember(own, ["Signs off the LinkedIn copy"])
+        early = await personal.sweep(datetime.now(UTC) + timedelta(hours=23))
+        late = await personal.sweep(datetime.now(UTC) + timedelta(hours=25))
+        return early, late, await personal.listing(shared), await personal.listing(own)
+
+    early, late, left_shared, left_own = client.portal.call(go)
+    assert (early, late) == (0, 1) and left_shared == []
+    assert [r["text"] for r in left_own] == ["Signs off the LinkedIn copy"]  # a person's own facts never lapse
+
+
 def test_a_deleted_message_takes_its_vector_with_it(client, world):  # noqa: F811
     cid, _ = _start(client, world)
     client.post("/conversations/inki-consent", headers=_auth(world["reviewer"]), json={"accept": True})

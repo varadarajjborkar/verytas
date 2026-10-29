@@ -626,6 +626,9 @@ class ChatThread(Base):
     messages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     # How many of the person's own messages have been read for things to remember (verytas/memory/personal.py).
     remembered: Mapped[int | None] = mapped_column(Integer)
+    # The browser it was had in, on a shared demo sign-in (memory/personal.py): visitors who pick the same
+    # person don't see each other's chats. Null for a person's own account.
+    device: Mapped[str | None] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 

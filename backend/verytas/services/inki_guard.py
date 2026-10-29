@@ -101,11 +101,14 @@ class RateLimit:
 
     def __init__(self, per_hour: int = 20) -> None:
         self.per_hour = per_hour
-        self._seen: dict[int, deque[float]] = {}
+        self._seen: dict[object, deque[float]] = {}
 
-    def take(self, user_id: int, now: float | None = None) -> bool:
+    def take(self, who: object, now: float | None = None) -> bool:
+        """`who` is a person's id, or anything finer (a person on one browser) where one id is many people."""
         now = time.monotonic() if now is None else now
-        q = self._seen.setdefault(user_id, deque())
+        if len(self._seen) > 10_000:  # keys can be per browser: drop the ones idle for an hour
+            self._seen = {k: v for k, v in self._seen.items() if v and now - v[-1] <= 3600}
+        q = self._seen.setdefault(who, deque())
         while q and now - q[0] > 3600:
             q.popleft()
         if len(q) >= self.per_hour:

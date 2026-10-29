@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 
 from verytas.api.deps import CurrentUser, Session
-from verytas.memory.personal import FactTask, scope_of
+from verytas.memory.personal import DEVICE_HEADER, FactTask, scope_of
 from verytas.models import ChatThread, User, utcnow
 from verytas.prism.disputes import workspace_redactor
 from verytas.schemas import UTCModel
@@ -97,29 +97,42 @@ class ThreadOut(ThreadSummary):
     messages: list[dict[str, Any]]
 
 
-async def _own(session: Session, user: CurrentUser, thread_id: int) -> ChatThread:
-    thread = await session.get(ChatThread, thread_id)
-    if thread is None or thread.user_id != user.id or thread.workspace_id != user.workspace_id:
+def chat_scope(request: Request, user, writing: bool = False) -> tuple[Any, ...]:
+    """Which chats are this session's: the person's own (no device), or, on a shared demo sign-in, the ones
+    had in this browser. A shared sign-in with no usable browser id reads nothing and may not save."""
+    scope = scope_of(user, request.headers.get(DEVICE_HEADER))
+    if scope.blind:
+        if writing:
+            raise HTTPException(status.HTTP_409_CONFLICT, "this browser has no id yet; reload the page and try again")
+        return (ChatThread.id.is_(None),)  # matches nothing
+    return (ChatThread.user_id == user.id, ChatThread.workspace_id == user.workspace_id,
+            ChatThread.device == scope.device if scope.device else ChatThread.device.is_(None))
+
+
+async def _own(session: Session, request: Request, user: CurrentUser, thread_id: int,
+               writing: bool = False) -> ChatThread:
+    thread = await session.scalar(select(ChatThread).where(ChatThread.id == thread_id, *chat_scope(request, user, writing)))
+    if thread is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found")
     return thread
 
 
 @router.get("/chats", response_model=list[ThreadSummary])
-async def list_threads(session: Session, user: CurrentUser) -> list[ChatThread]:
+async def list_threads(request: Request, session: Session, user: CurrentUser) -> list[ChatThread]:
     rows = await session.scalars(
-        select(ChatThread).where(ChatThread.user_id == user.id, ChatThread.workspace_id == user.workspace_id)
+        select(ChatThread).where(*chat_scope(request, user))
         .order_by(ChatThread.updated_at.desc()).limit(MAX_THREADS_LISTED))
     return list(rows)
 
 
 @router.post("/chats", response_model=ThreadOut, status_code=status.HTTP_201_CREATED)
 async def create_thread(body: ThreadIn, request: Request, session: Session, user: CurrentUser) -> ChatThread:
-    held = await session.scalar(select(func.count()).select_from(ChatThread).where(
-        ChatThread.user_id == user.id, ChatThread.workspace_id == user.workspace_id))
+    held = await session.scalar(select(func.count()).select_from(ChatThread).where(*chat_scope(request, user, writing=True)))
     if (held or 0) >= MAX_THREADS:
         raise HTTPException(status.HTTP_409_CONFLICT, "too many saved conversations; delete some old ones first")
     thread = ChatThread(workspace_id=user.workspace_id, user_id=user.id, title=body.title,
-                        messages=[m.model_dump() for m in body.messages])
+                        messages=[m.model_dump() for m in body.messages],
+                        device=scope_of(user, request.headers.get(DEVICE_HEADER)).device)
     session.add(thread)
     await session.commit()
     _learn_later(request, user, thread.id)
@@ -127,14 +140,14 @@ async def create_thread(body: ThreadIn, request: Request, session: Session, user
 
 
 @router.get("/chats/{thread_id}", response_model=ThreadOut)
-async def get_thread(thread_id: int, session: Session, user: CurrentUser) -> ChatThread:
-    return await _own(session, user, thread_id)
+async def get_thread(thread_id: int, request: Request, session: Session, user: CurrentUser) -> ChatThread:
+    return await _own(session, request, user, thread_id)
 
 
 @router.put("/chats/{thread_id}", response_model=ThreadOut)
 async def replace_thread(thread_id: int, body: ThreadIn, request: Request, session: Session,
                          user: CurrentUser) -> ChatThread:
-    thread = await _own(session, user, thread_id)
+    thread = await _own(session, request, user, thread_id, writing=True)
     thread.title = body.title
     thread.messages = [m.model_dump() for m in body.messages]
     thread.updated_at = utcnow()
@@ -144,8 +157,8 @@ async def replace_thread(thread_id: int, body: ThreadIn, request: Request, sessi
 
 
 @router.delete("/chats/{thread_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_thread(thread_id: int, session: Session, user: CurrentUser) -> None:
-    await session.delete(await _own(session, user, thread_id))
+async def delete_thread(thread_id: int, request: Request, session: Session, user: CurrentUser) -> None:
+    await session.delete(await _own(session, request, user, thread_id))
     await session.commit()
 
 
@@ -157,16 +170,18 @@ LEARN_FROM = 4  # the person's newest unread messages at most, per save
 # charged to a self-serve company's daily budget: that pays for reviews and edits people ask for, and a
 # background call they never see should not use it up.
 LEARN_PER_HOUR = 20
+LEARN_PER_PERSON_HOUR = 200  # across every browser on one shared demo person
 
 
 def _learn_later(request: Request, user, thread_id: int) -> None:
     """After a save, in the background: durable facts from what the person newly typed (memory/personal.py)."""
     app = request.app
     if app.state.settings.memory_enabled and app.state.settings.memory_personal_k:
-        app.state.prism.schedule_job(lambda: _learn(app, user.id, thread_id))
+        device = request.headers.get(DEVICE_HEADER)
+        app.state.prism.schedule_job(lambda: _learn(app, user.id, thread_id, device))
 
 
-async def _learn(app, user_id: int, thread_id: int) -> None:
+async def _learn(app, user_id: int, thread_id: int, device: str | None = None) -> None:
     async with app.state.db.sessionmaker() as session:
         thread, user = await session.get(ChatThread, thread_id), await session.get(User, user_id)
         if thread is None or user is None or thread.user_id != user.id:
@@ -176,12 +191,18 @@ async def _learn(app, user_id: int, thread_id: int) -> None:
         # matched as a near-duplicate rather than stored twice.
         start = thread.remembered or 0
         new = [s for s in said[start if start <= len(said) else 0:] if s.strip()][-LEARN_FROM:]
+        scope = scope_of(user, device)
+        if scope.blind or thread.device != scope.device:
+            return
         if not hasattr(app.state, "learning"):
             app.state.learning = RateLimit(per_hour=LEARN_PER_HOUR)
-        if not new or not app.state.learning.take(user.id):
+        if not hasattr(app.state, "learning_all"):
+            app.state.learning_all = RateLimit(per_hour=LEARN_PER_PERSON_HOUR)
+        # Per browser on a shared sign-in, so one visitor's chatter doesn't use up the next one's hour; and a
+        # ceiling per person, since a browser id is only a cookie and clearing it would otherwise reset the count.
+        if not new or not app.state.learning.take((user.id, scope.device)) or not app.state.learning_all.take(user.id):
             return
         redactor = await workspace_redactor(session, user.workspace_id)
-        scope = scope_of(user)
         await session.commit()  # no transaction held across the model call
     _, llm, _, _ = app.state.prism.guarded_providers(redactor)
     try:
@@ -204,20 +225,20 @@ async def _learn(app, user_id: int, thread_id: int) -> None:
 @router.get("/me/memories")
 async def my_memories(request: Request, user: CurrentUser) -> list[dict[str, Any]]:
     """Everything Inki has kept about this person, newest first."""
-    return await request.app.state.personal.listing(scope_of(user))
+    return await request.app.state.personal.listing(scope_of(user, request.headers.get(DEVICE_HEADER)))
 
 
 @router.delete("/me/memories")
 async def forget_me(request: Request, user: CurrentUser) -> dict[str, int]:
     """Forget everything Inki kept about this person."""
-    return {"forgotten": await request.app.state.personal.forget(scope_of(user))}
+    return {"forgotten": await request.app.state.personal.forget(scope_of(user, request.headers.get(DEVICE_HEADER)))}
 
 
 @router.delete("/me/memories/{memory_id}")
 async def forget_one(memory_id: str, request: Request, user: CurrentUser) -> dict[str, int]:
     if not re.fullmatch(r"[0-9a-fA-F-]{32,36}", memory_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
-    n = await request.app.state.personal.forget(scope_of(user), memory_id)
+    n = await request.app.state.personal.forget(scope_of(user, request.headers.get(DEVICE_HEADER)), memory_id)
     if not n:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
     return {"forgotten": n}

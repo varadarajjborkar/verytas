@@ -16,10 +16,11 @@ import asyncio
 from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
+from verytas.api.chats import chat_scope
 from verytas.api.deps import CurrentUser, Session, require
 from verytas.api.governance import add_contact
 from verytas.api.knowledge import create_asset, create_fact, create_rule, create_term
@@ -186,10 +187,11 @@ async def _team_steps(session, user: User, asked: bool) -> list[Step]:
 
 
 @router.get("/onboarding", response_model=OnboardingOut)
-async def onboarding(session: Session, user: CurrentUser) -> OnboardingOut:
+async def onboarding(request: Request, session: Session, user: CurrentUser) -> OnboardingOut:
     ws = await session.get(Workspace, user.workspace_id)
     lib = await _library(session, user.workspace_id)
-    asked = await _count(session, ChatThread, ChatThread.user_id == user.id) > 0
+    # This session's own chats: on a shared demo person, this browser's, not whoever picked them before.
+    asked = await _count(session, ChatThread, *chat_scope(request, user)) > 0
     if user.role is Role.brand_admin:
         steps = await _admin_steps(session, user, lib)
     elif user.role is Role.creator:

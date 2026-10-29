@@ -24,7 +24,7 @@ from verytas.api.accounts import SelfServeBudget
 from verytas.api.content import _aware, list_contents
 from verytas.api.deps import CurrentUser, Session
 from verytas.api.insights import _visible_tiers, guideline_health_for, overview_for, recurring_for
-from verytas.memory.personal import scope_of
+from verytas.memory.personal import DEVICE_HEADER, scope_of
 from verytas.models import ConfidentialTerm, Content, ContentVersion, Finding, Review, Role, Tier
 from verytas.security.redaction import Redactor
 
@@ -104,17 +104,19 @@ async def context_for_conversation(body: Conversation, request: Request, session
     """
     redactor = await _redactor(session, user)
     messages = [redactor.redact(m) for m in body.messages]
-    out = await _context(session, user, body.messages[-1][:2000] if body.messages else "", redactor, request.app)
+    out = await _context(session, user, body.messages[-1][:2000] if body.messages else "", redactor, request.app,
+                         request.headers.get(DEVICE_HEADER))
     return out | {"messages": messages}
 
 
 @router.get("/context")
 async def context(request: Request, session: Session, user: CurrentUser,
                   q: str = Query("", max_length=2000)) -> dict[str, Any]:
-    return await _context(session, user, q, await _redactor(session, user), request.app)
+    return await _context(session, user, q, await _redactor(session, user), request.app, request.headers.get(DEVICE_HEADER))
 
 
-async def _context(session: Session, user: CurrentUser, q: str, redactor: Redactor, app: Any = None) -> dict[str, Any]:
+async def _context(session: Session, user: CurrentUser, q: str, redactor: Redactor, app: Any = None,
+                   device: str | None = None) -> dict[str, Any]:
 
     rows = [r for r in await list_contents(session, user, state=None, mine=False, limit=200)
             if r.tier != Tier.confidential][:MAX_LISTED]
@@ -149,7 +151,7 @@ async def _context(session: Session, user: CurrentUser, q: str, redactor: Redact
         await session.commit()
         try:
             out["about_you"] = await app.state.personal.recall(
-                scope_of(user), q, [t.value for t in _visible_tiers(user)], settings.memory_personal_k)
+                scope_of(user, device), q, [t.value for t in _visible_tiers(user)], settings.memory_personal_k)
         except Exception:  # noqa: BLE001 - without it Inki answers from the record alone, as before
             log.warning("inki memory unavailable", exc_info=True)
     if user.role in ANALYSTS:

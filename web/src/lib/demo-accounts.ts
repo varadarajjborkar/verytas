@@ -1,6 +1,6 @@
 import "server-only";
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 
 // The shared demo's sign-in: instead of pasting a token, a visitor picks one of the seeded people and is
 // signed in as that real account (roles and clearances apply as for anyone). The tokens live in a
@@ -51,6 +51,28 @@ export function demoAccounts(): { resetsOn: string; companies: DemoCompany[] } |
       people: people.map(({ key, name, side, title, blurb }) => ({ key, name, side, title, blurb })),
     })),
   };
+}
+
+// Asked on every API call, so the token set is read once per version of the file (the reset rewrites it) and
+// the last good set stands if a read fails mid-rewrite.
+let tokens: { mtime: number; set: Set<string> } | null = null;
+
+/** Whether a session token is one of the picker's people, shared by every visitor who picks them. */
+export function isDemoToken(token: string): boolean {
+  const path = process.env.VERYTAS_DEMO_ACCOUNTS;
+  if (!path) return false;
+  try {
+    const mtime = statSync(path).mtimeMs;
+    if (tokens?.mtime !== mtime) {
+      const f = load();
+      if (f) tokens = { mtime, set: new Set(companies(f).flatMap((c) => c.people.map((p) => p.token))) };
+    }
+  } catch {
+    // Keep the last set read.
+  }
+  // Never read yet on a server that has the file: treat every session as shared, so on a bad first read
+  // memory is per browser rather than pooled. (Without the file there is no picker, so nothing is shared.)
+  return tokens ? tokens.set.has(token) : true;
 }
 
 /** The token for one person at one company. Keys repeat across companies ("admin"), so both are needed;

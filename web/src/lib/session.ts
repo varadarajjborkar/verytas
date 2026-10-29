@@ -47,6 +47,9 @@ export async function sessionToken(): Promise<string | null> {
   return DEV_TOKEN || null;
 }
 
+/** The service accounts used while sign-in is off: everyone on this server is them. */
+export const isServiceToken = (token: string) => token === DEV_TOKEN || token === CREATOR_TOKEN;
+
 export function cookieOptions() {
   return {
     httpOnly: true,

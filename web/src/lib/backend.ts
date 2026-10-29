@@ -1,7 +1,10 @@
 import "server-only";
 
+import { cookies } from "next/headers";
+import { isDemoToken } from "./demo-accounts";
 import { demoBody, demoHealth, demoOverview, demoRecurring, demoReview } from "./demo-data";
-import { sessionToken } from "./session";
+import { DEVICE_COOKIE, DEVICE_HEADER, validDevice } from "./device";
+import { isServiceToken, sessionToken } from "./session";
 import type { Me, Overview, Recurring, Review, ReviewResult, RuleHealth, Sourced } from "./types";
 
 // The browser never talks to the API directly: these helpers run on the server
@@ -16,6 +19,15 @@ class BackendError extends Error {
   }
 }
 
+/** On a shared sign-in (a demo picker person, or the service account while sign-in is off) the browser's id goes
+ * along, so what Ask Inki keeps is this visitor's alone; "-" says shared but no id yet, and nothing is kept. A
+ * person's own sign-in sends nothing and keeps their memory whole. */
+async function sharedDevice(token: string): Promise<Record<string, string>> {
+  if (!isDemoToken(token) && !isServiceToken(token)) return {};
+  const id = (await cookies()).get(DEVICE_COOKIE)?.value;
+  return { [DEVICE_HEADER]: validDevice(id) ? id : "-" };
+}
+
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await sessionToken();
   if (!token) throw new BackendError(401, `${path}: not signed in`);
@@ -23,6 +35,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     ...init,
     headers: {
       Authorization: `Bearer ${token}`,
+      ...(await sharedDevice(token)),
       "Content-Type": "application/json",
       ...init.headers,
     },
@@ -126,7 +139,7 @@ export async function forward(method: string, path: string, body: ReadableStream
     body,
     // Streamed through rather than buffered: an upload can be 150 MB.
     ...(body ? { duplex: "half" } : {}),
-    headers: { Authorization: `Bearer ${token}`, ...(contentType ? { "Content-Type": contentType } : {}),
+    headers: { Authorization: `Bearer ${token}`, ...(await sharedDevice(token)), ...(contentType ? { "Content-Type": contentType } : {}),
       ...(range && /^bytes=\d*-\d*$/.test(range) ? { Range: range } : {}) },
     cache: "no-store",
     // Reviews with video or many pages take a while; the client polls rather than waiting here.

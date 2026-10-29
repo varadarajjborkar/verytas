@@ -68,6 +68,17 @@ async def _warm(embedder) -> None:
         log.warning("embedding model did not load; Inki's memory is off until it does", exc_info=True)
 
 
+async def _lapse_forever(personal) -> None:
+    """Hourly: a shared demo sign-in's facts are deleted a day after they were kept (memory/personal.py)."""
+    while True:
+        try:
+            if n := await personal.sweep():
+                log.info("inki forgot %d facts kept on shared sign-ins over a day ago", n)
+        except Exception:  # noqa: BLE001 - the next hour tries again; reads skip lapsed facts meanwhile
+            log.warning("inki memory sweep failed", exc_info=True)
+        await asyncio.sleep(3600)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -93,6 +104,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.memory_enabled:
             # The embedding model loads now, off the event loop, rather than inside the first question asked.
             warming = asyncio.create_task(_warm(app.state.embedder))
+            lapsing = asyncio.create_task(_lapse_forever(app.state.personal))
         try:
             if mcp_manager is None:
                 yield
@@ -107,8 +119,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await sweep
             if settings.memory_enabled:
                 warming.cancel()
+                lapsing.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await warming
+                with contextlib.suppress(asyncio.CancelledError):
+                    await lapsing
             await hub.close()
         await prism.drain()
         await db.dispose()
@@ -127,7 +142,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # One embedding model for all of Inki's memory, loaded on first use (verytas/memory/embed.py).
     app.state.embedder = embedder_for(settings.memory_embed_model, settings.memory_dir / "models")
     app.state.personal = PersonalMemory(settings.memory_dir / "personal", app.state.embedder,
-                                        settings.memory_dir / "models")
+                                        settings.memory_dir / "models", settings.memory_shared_hours)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

@@ -100,6 +100,8 @@ class Settings(BaseSettings):
     memory_recall_turns: int = Field(default=6, ge=0, le=20)      # earlier turns added to the recent ones
     memory_recall_scan: int = Field(default=400, ge=20, le=2000)  # how far back a conversation is searched
     memory_personal_k: int = Field(default=5, ge=0, le=20)       # facts about the asker in Ask Inki
+    # A shared demo sign-in's facts (kept per browser) are deleted this many hours after they were kept; 0 keeps them.
+    memory_shared_hours: int = Field(default=24, ge=0, le=24 * 14)
 
     # Conversations (services/messages.py). With Redis, new messages reach open screens through its
     # pub/sub and the latest page of each conversation is served from its cache; without it, one API
