@@ -53,18 +53,24 @@ def load(only: list[str] | None = None) -> list[Company]:
     return out
 
 
+# Written only when the file has no value of its own: without an API address the web app falls back to its
+# labelled sample data, which is what a fresh clone following the README got.
+_ENV_DEFAULTS = {"VERYTAS_API_URL": "http://127.0.0.1:8000"}
+
+
 def _token_env(path: Path, values: dict[str, str]) -> None:
     lines = path.read_text().splitlines() if path.exists() else []
     seen = set()
     out = []
     for line in lines:
-        key = line.split("=", 1)[0].strip()
+        key = line.split("=", 1)[0].strip().removeprefix("export ").strip()  # dotenv accepts "export KEY=..."
         if key in values:
             out.append(f"{key}={values[key]}")
             seen.add(key)
         else:
             out.append(line)
-    out += [f"{k}={v}" for k, v in values.items() if k not in seen]
+            seen.add(key)
+    out += [f"{k}={v}" for k, v in {**_ENV_DEFAULTS, **values}.items() if k not in seen]
     path.write_text("\n".join(out) + "\n")
 
 

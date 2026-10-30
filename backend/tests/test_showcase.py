@@ -133,3 +133,18 @@ def test_accounts_file_is_owner_only_even_over_an_old_open_file(tmp_path):
 def test_an_unknown_company_name_is_refused_by_name():
     with pytest.raises(SystemExit, match="kitepth"):
         engine.load(["kitepth"])
+
+
+def test_the_env_file_gets_the_tokens_and_an_api_address_it_did_not_have(tmp_path):
+    env = tmp_path / ".env.local"
+    engine._token_env(env, {"VERYTAS_API_TOKEN": "a", "VERYTAS_CREATOR_TOKEN": "b"})
+    assert env.read_text().splitlines() == [
+        "VERYTAS_API_URL=http://127.0.0.1:8000", "VERYTAS_API_TOKEN=a", "VERYTAS_CREATOR_TOKEN=b"]
+    # A reseed replaces the tokens and keeps an address someone set themselves.
+    env.write_text("VERYTAS_API_URL=http://api.internal:9000\nVERYTAS_API_TOKEN=old\nOTHER=1\n")
+    engine._token_env(env, {"VERYTAS_API_TOKEN": "c", "VERYTAS_CREATOR_TOKEN": "d"})
+    assert env.read_text().splitlines() == [
+        "VERYTAS_API_URL=http://api.internal:9000", "VERYTAS_API_TOKEN=c", "OTHER=1", "VERYTAS_CREATOR_TOKEN=d"]
+    env.write_text("export VERYTAS_API_URL=http://api.internal:9000\n")
+    engine._token_env(env, {"VERYTAS_API_TOKEN": "e"})
+    assert env.read_text().splitlines() == ["export VERYTAS_API_URL=http://api.internal:9000", "VERYTAS_API_TOKEN=e"]
