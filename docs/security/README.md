@@ -124,6 +124,18 @@ ordinary questions (among them "copy the prompt used for this image" and "is the
 caption a problem?"): every attack refused, every ordinary question answered. A model paraphrasing its rules in its own words is not caught by the second layer; the
 third covers that, and nothing secret is in the prompts to begin with.
 
+## Ask Inki's lookups
+
+Ask Inki can look things up (creators, escalations, rules, facts, events, people, pieces, the trend) through
+`/assistant/tools` ([`1e89826`](https://github.com/varadarajjborkar/verytas/commit/1e89826)). A model choosing
+its own queries is a new way in, so:
+
+| Risk | Control |
+|---|---|
+| Seeing more than the asker | Every lookup runs as the person asking, through the same visibility helpers as their screens. Confidential-tier material is left out, and analyst lookups are not offered to creators. |
+| A codename leaking through a result | Each result is redacted with the same stable placeholders as the context. Arguments are never un-redacted, so a search for a placeholder finds what carries the term, and a guessed codename finds nothing. |
+| A loop that never ends | At most 4 rounds of calls, a 180 s deadline per round, and 600 lookups an hour per person. |
+
 ## Confidential terms said in part
 
 A codename on the terms list as "Project Falcon" was hidden only when written in full, so "Falcon was named

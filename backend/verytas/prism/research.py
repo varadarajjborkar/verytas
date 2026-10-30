@@ -16,7 +16,7 @@ What it is, and is not:
   superlative or an award is searched (a teaser like "Something big is coming" brings back anything at all),
   the brand's name is quoted in the query, and a result is shown only if it is in English, comes from a
   known publication, public body or university (KNOWN_SITES), and names the brand. Measured on the demo's
-  claims before this: a third of the results were not in English and almost none were about the brand;
+  claims before this: 84% of the results came from unknown sites and 63% never named the brand;
 - bounded: at most `per_review` searches per review, `per_workspace` per workspace and `per_day` in all,
   and every search is listed under "How it was checked", including one cut short by the time limit; a
   failed search says so and changes nothing else.

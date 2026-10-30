@@ -33,12 +33,14 @@ A brand works with dozens of creators and agencies who post every day, in many l
 | **Reads every part of a post** | The caption, text inside images, every page of a PDF or Word file, every slide (speaker notes too), every sheet, HTML pages and emails, and video: on-screen text, subtitles and speech. |
 | **Sees the pictures** | Finds the brand's artwork and says how it was misused (stretched, recoloured, redrawn), finds mascots even when an AI redrew them and names what changed, and flags faces shown without an agreement. |
 | **Hears what is said** | English, Hindi and Hinglish speech is transcribed on the server; a codename is caught by its sound, and a spoken figure is checked like a written one. |
-| **Checks against the brand's own sources** | Approved facts with validity dates, banned and preferred words, confidential terms, artwork, tone, accessibility and AI-disclosure rules. |
+| **Checks against the brand's own sources** | Approved facts with validity dates, banned and preferred words, confidential terms, artwork, tone, accessibility and AI-disclosure rules. On a public post, a claim no fact backs also gets web results, English pages from known news and government sites that name the brand, as evidence for the reviewer, never a verdict. |
 | **Explains and shows every flag** | Each issue quotes the passage and cites the rule or fact behind it, marked in place: in the caption, boxed on the image, page by page in documents. |
 | **Fixes, not just flags** | The smallest fix (swap a phrase, rewrite a sentence, remove a dig), checked so the offer and call to action survive. One click applies it. |
-| **Keeps people in charge** | Creators can dispute a finding; the brand team decides each one, and every override needs a written reason. |
+| **Keeps people in charge** | Creators can dispute a finding; the brand team decides each one, and every override needs a written reason. A finding the brand team cleared stays cleared when the creator checks again. |
+| **Keeps both sides in step** | Each dashboard opens on what the other side did since you were last here (approved, sent back, escalated, commented), a short notice says so on sign-in, and badges on *My reviews* and the *Review queue* update within a second, without a reload. |
 | **Marks the exact spot** | Issues sit on the video timeline, comments cover a stretch of it, and images take drawn marks the creator sees in place. |
 | **Talks it through** | *Conversations* beside each piece, encrypted at rest, with files and Join cards for meeting links. **@Inki** answers from the record once the asker agrees, and finds the earlier turns a question depends on. |
+| **Answers from the record** | *Ask Inki* looks up creators, escalations, rules, facts, events and pieces as the person asking, so "which creators drift furthest from the brand" gets an answer from the data, and nobody learns more than their own screens show. |
 | **Remembers how you work** | *Ask Inki* keeps what you say about your role and style, for you alone; Settings shows it and forgets it. On the demo's shared people it is per browser and lapses after a day. |
 | **Learns** | Guideline health shows the rules reviewers keep overriding and how posts that broke a rule did once live; model-judged rules tune their confidence from decisions. |
 | **Easy to pick up** | A guided tour, plain-word summaries, and help wherever a status or score appears, shaped by [user testing](docs/research/user-testing.md). |
@@ -257,7 +259,9 @@ The three improvements committed to after Round 2, and where each stands.
 <p align="center"><img src="docs/assets/conversations.png" alt="Conversations: the brand team's inbox on the left, and a thread with a creator about a piece, with a Google Meet link shown as a Join card and Ask Inki shortcuts above the message box" width="900"></p>
 
 **Also added:** performance feedback per rule in Guideline health, a personal-token MCP endpoint, a landing page,
-and memory for Inki ([measured here](backend/evals/results/memory.md)). **Reliability:** a test sends every API
+memory for Inki ([measured here](backend/evals/results/memory.md)), lookups for Ask Inki, news and live badges
+for both sides, web evidence for unbacked claims, and speaker notes and table rows read from slides and Word
+files ([compared with LlamaIndex](backend/evals/results/ingestion.md)). **Reliability:** a test sends every API
 route bad input as every role and fails on any server error, the live site is crawled as every demo person, and
 every batch of changes is reviewed for bugs before it is committed.
 
@@ -277,10 +281,11 @@ method and the full results.
 | [Parts that disagree](backend/evals/results/crossmodal.md) | 28 posts | **14/14** caught, **0** false alarms |
 | [Judgement rules](backend/evals/results/second_look.md) | 32 sentences | **30/32** right |
 | [Suggested fixes](backend/evals/results/summary.md) | 73 findings | **82%** useful (45% before), **0** invented numbers |
+| [Reading documents](backend/evals/results/ingestion.md) | 6 files + 3 hostile ones, against LlamaIndex's readers | every table row kept together in PDF, Word and slides (LlamaIndex: none in PDF and Word), every sheet value with its cell address (LlamaIndex: none), a 300 MB spreadsheet bomb capped in 0.1 s (LlamaIndex: 36 s and 2.9 GB) |
 | [Inki's memory](backend/evals/results/memory.md) | 28 long conversations, 5 seeds each | an early decision reaches Inki in about **3 in 4** conversations it was never tuned on (**0%** before, with only the last 12 turns); **5/5** answered right on the live demo |
 | [Black-box simulator](blackbox/README.md) | 216 cases | **96%** recall, **0%** false alarms on clean posts |
 
-- **760 backend tests** run offline on every push, with type checks, lint and a production build for the web app.
+- **785 backend tests** run offline on every push, with type checks, lint and a production build for the web app.
 - **Tried by people:** three first-time users used the live demo; every point they raised has a shipped change ([report](docs/research/user-testing.md)).
 - **Tested from the outside:** [`blackbox/`](blackbox/README.md) knows Verytas only through its API and steers each round toward what it misses.
 
