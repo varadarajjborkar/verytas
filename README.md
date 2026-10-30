@@ -54,7 +54,7 @@ A brand works with dozens of creators and agencies who post every day, in many l
 2. As **Dev Sharma** (creator), open *My reviews*, paste a caption like *"Kitepath has 2 million learners. Guaranteed results!"* and run it. The claim is checked against the approved fact (1.2 million), a fix appears, and the promise is flagged. Apply the fixes and send it for approval.
 3. Use **Switch account** to become **Arjun Mehta** (brand team). Your piece is now in the review queue, ranked by what needs attention first. Approve it, or send it back with a note.
 
-<p align="center"><img src="docs/assets/dashboard.png" alt="The brand team's dashboard: pieces waiting for a decision, creators, escalations and how work is flowing" width="900"></p>
+<p align="center"><img src="docs/assets/dashboard.png" alt="The brand team's dashboard: what changed since you were last here beside the pieces that need a decision, the people asking for a person, creators and how work is flowing" width="900"></p>
 
 <p align="center"><img src="docs/assets/tour.png" alt="The guided tour on a first visit: the Review queue in the sidebar is lit, and a card beside it, step 3 of 10, says what the queue is for and how videos and images are marked, with Skip, Back and Next" width="900"></p>
 
