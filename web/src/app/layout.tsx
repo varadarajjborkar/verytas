@@ -25,6 +25,13 @@ const PRODUCT = APP ? `Verytas ${APP_NAME[APP]}` : "Verytas";
 export const metadata: Metadata = {
   title: { default: PRODUCT, template: `%s · ${PRODUCT}` },
   description: "Pre-publication brand governance: cited checks, human review, guidelines that learn.",
+  // A link pasted into chat or social apps shows this card; they need a raster image at an absolute URL.
+  metadataBase: new URL("https://verytas.pages.dev"),
+  openGraph: {
+    siteName: "Verytas",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "The Verytas logo, with the line Every post, on brand before it ships" }],
+  },
+  twitter: { card: "summary_large_image", images: ["/og.png"] },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
