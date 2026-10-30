@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Verytas: Round 3 Final Build</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0f172a; --body: #1e293b; --muted: #475569; --subtle: #64748b;
+    --line: #dbe3ee; --soft: #f4f7fb; --accent: #0b6bcb; --accent-ink: #0a4f96; --accent-soft: #e8f2fd;
+    --ok: #15803d; --ok-soft: #e7f6ec; --warn: #b45309; --warn-soft: #fdf3e3; --bad: #b91c1c; --bad-soft: #fdeaea;
+    --priv: #8a5a00; --priv-soft: #fff7e6;
+  }
+  @page {
+    size: A4; margin: 17mm 16mm 18mm;
+    @bottom-left { content: "Verytas  ·  Team kotekarprajyot953  ·  Round 3: The Final Build"; font: 500 7.5pt Inter, sans-serif; color: #64748b; }
+    @bottom-right { content: counter(page) " / " counter(pages); font: 500 7.5pt Inter, sans-serif; color: #64748b; }
+  }
+  @page cover { margin: 0; @bottom-left { content: none; } @bottom-right { content: none; } }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; background: #fff; color: var(--body); font: 9.4pt/1.52 Inter, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  h1, h2, h3, h4 { color: var(--ink); line-height: 1.25; margin: 0; }
+  h2 { font-size: 17pt; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 4mm; display: flex; align-items: baseline; gap: 3mm; }
+  h2 .n { font-size: 10pt; font-weight: 600; color: var(--accent); min-width: 7mm; }
+  h3 { font-size: 11.5pt; font-weight: 600; margin: 6mm 0 2mm; }
+  h4 { font-size: 9.8pt; font-weight: 600; margin: 3mm 0 1mm; }
+  p { margin: 0 0 2.6mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 5mm; }
+  li { margin: 0 0 1mm; }
+  li::marker { color: var(--subtle); }
+  strong { color: var(--ink); font-weight: 600; }
+  a { color: var(--accent-ink); text-decoration: none; }
+  code, .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 8.4pt; }
+  section.chapter { margin-top: 12mm; }
+  .opener { break-inside: avoid; }
+  .reserve { height: 70mm; margin-bottom: -70mm; }
+  section.newpage { break-before: page; margin-top: 0; }
+  .kicker, h2, .lead, h3, h4 { break-after: avoid; }
+  .lead { font-size: 11pt; line-height: 1.5; color: var(--muted); margin-bottom: 5mm; max-width: 165mm; }
+  .kicker { font-size: 7.6pt; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.5mm; }
+
+  /* Cover */
+  .cover { page: cover; height: 297mm; width: 210mm; position: relative; overflow: hidden; background: #0b1f3a; color: #fff; break-after: page; }
+  .cover .grid { position: absolute; inset: 0; }
+  .cover .inner { position: absolute; left: 20mm; right: 20mm; top: 34mm; }
+  .cover .tag { font-size: 8.5pt; letter-spacing: 0.16em; text-transform: uppercase; color: #8ec5ff; font-weight: 600; }
+  .cover h1 { color: #fff; font-size: 46pt; font-weight: 700; letter-spacing: -0.03em; margin: 8mm 0 3mm; }
+  .cover .sub { font-size: 16pt; color: #d6e7fb; font-weight: 500; max-width: 150mm; line-height: 1.35; }
+  .cover .line { height: 1px; background: rgba(255,255,255,0.18); margin: 12mm 0 8mm; }
+  .cover .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm 10mm; font-size: 9.5pt; color: #c9d9ee; }
+  .cover .meta b { display: block; color: #fff; font-weight: 600; font-size: 10.5pt; margin-top: 0.8mm; }
+  .cover .ctoc { position: absolute; left: 20mm; right: 20mm; top: 176mm; }
+  .cover .ch { font-size: 8.5pt; letter-spacing: 0.16em; text-transform: uppercase; color: #8ec5ff; font-weight: 600; margin-bottom: 3mm; }
+  .cover .cl { columns: 2; column-gap: 12mm; width: 150mm; font-size: 9.5pt; color: #d6e7fb; }
+  .cover .cl div { padding: 1.3mm 0; border-bottom: 1px solid rgba(255,255,255,0.10); break-inside: avoid; }
+  .cover .cl span { color: #8ec5ff; font-weight: 600; display: inline-block; width: 8mm; }
+  .cover .foot { position: absolute; left: 20mm; right: 20mm; bottom: 18mm; font-size: 8.5pt; color: #9fb6d3; display: flex; justify-content: space-between; }
+
+  /* Components */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+  .cols3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .card { border: 1px solid var(--line); border-radius: 3mm; padding: 3.5mm 4mm; background: #fff; break-inside: avoid; }
+  .card.soft { background: var(--soft); border-color: transparent; }
+  .card.accent { background: var(--accent-soft); border-color: #c6dcf5; }
+  .card h4 { margin-top: 0; }
+  .card p:last-child, .card ul:last-child { margin-bottom: 0; }
+  .stat { border-left: 2.5px solid var(--accent); padding: 0.5mm 0 0.5mm 3.5mm; break-inside: avoid; }
+  .stat .v { font-size: 21pt; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; line-height: 1.1; }
+  .stat .l { font-size: 8.4pt; color: var(--muted); margin-top: 1mm; line-height: 1.4; }
+  .stat .s { font-size: 7.2pt; color: var(--subtle); margin-top: 1mm; }
+  .callout { border-radius: 3mm; background: var(--accent-soft); padding: 4mm 5mm; margin: 4mm 0; break-inside: avoid; }
+  .callout p:last-child { margin: 0; }
+  .callout .big { font-size: 12pt; font-weight: 600; color: var(--accent-ink); line-height: 1.4; }
+  table { width: 100%; border-collapse: collapse; margin: 1mm 0 4mm; font-size: 8.6pt; break-inside: auto; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  th { text-align: left; font-weight: 600; color: var(--ink); background: var(--soft); padding: 1.8mm 2.4mm; border-bottom: 1px solid var(--line); vertical-align: bottom; }
+  td { padding: 1.8mm 2.4mm; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.k { font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .pill { display: inline-block; font-size: 7pt; font-weight: 600; padding: 0.3mm 1.8mm; border-radius: 10mm; background: var(--soft); color: var(--muted); white-space: nowrap; }
+  .pill.r2 { background: var(--accent-soft); color: var(--accent-ink); }
+  .pill.r3 { background: var(--ok-soft); color: var(--ok); }
+  .pill.later { background: #f1f5f9; color: var(--subtle); }
+  figure { margin: 3mm 0 5mm; break-inside: avoid; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { font-size: 8pt; color: var(--subtle); margin-top: 2mm; line-height: 1.45; }
+  figcaption b { color: var(--muted); font-weight: 600; }
+  .note { font-size: 8pt; color: var(--subtle); }
+  .toc { columns: 2; column-gap: 10mm; font-size: 10pt; margin-top: 4mm; }
+  .toc div { display: flex; gap: 3mm; padding: 1.6mm 0; border-bottom: 1px solid var(--line); break-inside: avoid; }
+  .toc .n { color: var(--accent); font-weight: 600; min-width: 7mm; }
+  .persona { break-inside: avoid; }
+  .persona .role { font-size: 7.4pt; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  .persona h4 { font-size: 10.5pt; margin: 0.6mm 0 1.5mm; }
+  .persona dl { margin: 0; font-size: 8.5pt; }
+  .persona dt { font-weight: 600; color: var(--ink); margin-top: 1.4mm; }
+  .persona dd { margin: 0; color: var(--muted); }
+
+  /* Finding mock-up */
+  .mock { border: 1px solid var(--line); border-radius: 3.5mm; overflow: hidden; break-inside: avoid; font-size: 8.6pt; }
+  .mock .bar { background: var(--soft); padding: 2mm 4mm; display: flex; justify-content: space-between; color: var(--subtle); font-size: 7.6pt; border-bottom: 1px solid var(--line); }
+  .mock .body { display: grid; grid-template-columns: 1.05fr 1fr; }
+  .mock .doc { padding: 4mm; border-right: 1px solid var(--line); line-height: 1.7; color: var(--body); }
+  .mock mark { background: var(--bad-soft); color: var(--bad); border-bottom: 1.5px solid var(--bad); padding: 0 0.5mm; }
+  .mock mark.w { background: var(--warn-soft); color: var(--warn); border-bottom-color: var(--warn); }
+  .mock .side { padding: 3.5mm 4mm; display: flex; flex-direction: column; gap: 2.5mm; }
+  .mock .f { border: 1px solid var(--line); border-radius: 2.5mm; padding: 2.5mm 3mm; }
+  .mock .f .h { display: flex; gap: 2mm; align-items: center; font-weight: 600; color: var(--ink); }
+  .mock .lv { font-size: 6.8pt; font-weight: 700; padding: 0.3mm 1.6mm; border-radius: 1mm; background: var(--bad-soft); color: var(--bad); }
+  .mock .lv.w { background: var(--warn-soft); color: var(--warn); }
+  .mock .why { color: var(--muted); margin-top: 1mm; }
+  .mock .cite { font-size: 7.4pt; color: var(--accent-ink); margin-top: 1mm; }
+  .mock .fix { margin-top: 1.5mm; background: var(--ok-soft); color: var(--ok); border-radius: 1.5mm; padding: 1.2mm 2mm; font-weight: 500; }
+  .mock .acts { display: flex; gap: 1.5mm; margin-top: 1.8mm; flex-wrap: wrap; }
+  .mock .acts span { font-size: 7pt; border: 1px solid var(--line); border-radius: 1.2mm; padding: 0.3mm 1.6mm; color: var(--muted); }
+  .mock .acts span.p { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  svg text { font-family: Inter, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  .avoid { break-inside: avoid; }
+  .refs { font-size: 7.8pt; color: var(--muted); }
+  .refs li { margin-bottom: 1.2mm; word-break: break-word; }
+  .spacer { height: 3mm; }
+  /* Round 2 additions */
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .shot { margin: 3mm 0 4mm; }
+  .shot img { width: 100%; display: block; border: 1px solid var(--line); border-radius: 2.5mm; }
+  ol.steps { padding-left: 5.5mm; }
+  ol.steps li { margin-bottom: 1.8mm; }
+  ol.steps li::marker { color: var(--accent); font-weight: 600; }
+  .imp { display: grid; grid-template-columns: 11mm 1fr; gap: 4mm; border: 1px solid var(--line); border-radius: 3mm; padding: 4mm 5mm 2mm; margin-bottom: 4mm; break-inside: avoid; }
+  .imp .num { width: 9mm; height: 9mm; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 12pt; display: grid; place-items: center; }
+  .imp h3 { margin-top: 0.8mm; }
+  table.wrap td.k { white-space: normal; }
+</style>
+</head>
+<body>
+<!-- ============================== COVER ============================== -->
+<div class="cover">
+  <svg class="grid" viewBox="0 0 210 297" preserveAspectRatio="none" aria-hidden="true">
+    <defs>
+      <pattern id="dots" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.35" fill="#ffffff" opacity="0.10"/></pattern>
+      <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f6fd1" stop-opacity="0.55"/><stop offset="1" stop-color="#0b1f3a" stop-opacity="0"/></linearGradient>
+    </defs>
+    <rect width="210" height="297" fill="url(#dots)"/>
+    <circle cx="200" cy="250" r="120" fill="url(#glow)"/>
+    <g transform="translate(118 242)" opacity="0.95">
+      <line x1="-22" y1="28" x2="18" y2="20" stroke="#ffffff" stroke-width="0.8" opacity="0.7"/>
+      <polygon points="30,-12 6,30 54,30" fill="none" stroke="#8ec5ff" stroke-width="0.9"/>
+      <line x1="42" y1="18" x2="92" y2="2" stroke="#8ec5ff" stroke-width="0.7"/>
+      <line x1="42" y1="19" x2="92" y2="12" stroke="#5aa8f5" stroke-width="0.7"/>
+      <line x1="42" y1="20" x2="92" y2="22" stroke="#2e86e6" stroke-width="0.7"/>
+      <line x1="42" y1="21" x2="92" y2="32" stroke="#1f6fd1" stroke-width="0.7"/>
+    </g>
+  </svg>
+  <div class="inner">
+    <div class="tag">Round 3: The Final Build</div>
+    <h1>Verytas</h1>
+    <div class="sub">Brand review that shows its work: every post, image, document and video checked against the brand's own rules and facts before it is published, with a person making the final call.</div>
+    <div class="line"></div>
+    <div class="meta">
+      <div>Team<b>kotekarprajyot953</b></div>
+      <div>Members<b>Prajyot Malesh Kotekar (team leader)<br>Varadaraj J Borkar</b></div>
+      <div>Live demo<b>verytas.pages.dev</b></div>
+      <div>Source code<b>github.com/varadarajjborkar/verytas</b></div>
+    </div>
+  </div>
+  <div class="ctoc"><div class="ch">Contents</div><div class="cl"><div><span>01</span>At a glance</div><div><span>02</span>The three improvements</div><div><span>03</span>Everything else since Round 2</div><div><span>04</span>Full feature list</div><div><span>05</span>Architecture</div><div><span>06</span>How well it works</div><div><span>07</span>Testing and reliability</div><div><span>08</span>Security and responsible AI</div><div><span>09</span>Known limits</div><div><span>10</span>Roadmap</div><div><span>11</span>Team and links</div></div></div>
+  <div class="foot"><span>Round 3 final report  ·  October 2026</span><span>v3.0</span></div>
+</div>
+
+<!-- ============================== 1. AT A GLANCE ============================== -->
+<section>
+  <div class="kicker">Section 1</div>
+  <h2><span class="n">01</span>At a glance</h2>
+  <p class="lead">Verytas is a review gate between a finished draft and publishing. A creator submits a post; Verytas finds and explains each problem with the rule or fact behind it and suggests the smallest fix; the brand team approves or sends it back, and every step is recorded. In Round 3 we delivered the three improvements we committed to, with one part left out on purpose and explained, and spent the rest of the time on reliability.</p>
+
+  <div class="cols3" style="margin-bottom:5mm">
+    <div class="stat"><div class="v">3 of 3</div><div class="l">committed improvements delivered. Masked-number calls and the GPU are left out, and Section 2 says why.</div><div class="s">Section 2</div></div>
+    <div class="stat"><div class="v">96%</div><div class="l">of official-artwork misuse caught, with 4.7% false alarms on 1,200 scenes; recoloured app icons 24 of 24 (33% at Round 2).</div><div class="s">backend/evals/results/assets.md</div></div>
+    <div class="stat"><div class="v">785</div><div class="l">backend tests run offline on every push (630+ at Round 2), plus type checks, lint, a production build, a secret scan and dependency audits.</div><div class="s">GitHub Actions</div></div>
+  </div>
+
+  <div class="callout">
+    <p class="big">Open verytas.pages.dev, pick a person at Kitepath (a made-up online learning brand with eight weeks of history) and follow the short tour. Creator and brand team are one click apart through Switch account.</p>
+  </div>
+
+  <h3>Try it in five steps</h3>
+  <ol class="steps">
+    <li><strong>As Dev Sharma (creator),</strong> open <em>My reviews</em>, paste <em>"Kitepath has 2 million learners. Guaranteed results!"</em> and run the review. The figure is checked against the approved fact (1.2 million) and the promise is flagged, each with its rule, a fix and a confidence.</li>
+    <li><strong>Apply the fixes and send it for approval.</strong> A reading you disagree with can be disputed with a reason, or escalated to a person.</li>
+    <li><strong>Switch account to Arjun Mehta (brand team).</strong> The dashboard opens on what changed since you were last here; the piece is in the review queue, ranked by what needs attention first.</li>
+    <li><strong>Talk it through.</strong> Open <em>Conversations</em> beside the piece: messages, files, and a Meet, Teams or Zoom link that becomes a Join card. Ask @Inki about the record once both sides agree.</li>
+    <li><strong>Decide.</strong> Approve, or send it back with the fixes asked for. Back as Dev, the news is already on the dashboard and the badge, without a reload.</li>
+  </ol>
+
+  <div class="shot"><img src="../assets/review.png" alt="The review screen"></div>
+  <p class="note">The review screen: each issue marked in place, ranked must fix to consider, with the rule behind it, the suggested fix and the steps from written to published.</p>
+</section>
+
+<!-- ============================== 2. THE THREE ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 2</div>
+  <h2><span class="n">02</span>The three improvements</h2>
+  <p class="lead">What we committed to at the end of Round 2, what was built, and the one part of each we chose not to build, with the reason.</p>
+
+  <div class="imp">
+    <div class="num">1</div>
+    <div>
+      <h3>Creators and managers talk it through</h3>
+      <p><strong>Committed:</strong> one-on-one meetings between a creator and their manager by chat, voice or video, with only the time, the way and an outcome recorded against the reviews.</p>
+      <p><strong>Built:</strong> <em>Conversations</em> beside each piece, laid out as an inbox: chat bubbles for both sides, replies, edits and deletes, files, unread counts and live delivery. A Google Meet, Teams, Zoom, Skype, Jitsi or Whereby link becomes a Join card, so a call starts in one click on a free app people already use. Messages are encrypted at rest. <strong>@Inki</strong> answers questions about the record once the asker agrees to it reading the thread, and recalls the earlier turns a question depends on. The thread itself, with its times, sits beside the piece it is about, so it is the meeting's record and needs no separate log.</p>
+      <p><strong>Not built, on purpose:</strong> voice through masked temporary numbers. Telephony is separate, paid infrastructure (number rental, per-minute charges, carrier rules); for a prototype it is costly and adds little over the meeting apps both sides already have.</p>
+    </div>
+  </div>
+
+  <div class="imp">
+    <div class="num">2</div>
+    <div>
+      <h3>Sharper vision and speech</h3>
+      <p><strong>Committed:</strong> recoloured icons caught by separating shape from colour, a Hindi and Hinglish speech model, a GPU that wakes on demand, and before and after on the same benchmarks.</p>
+      <p><strong>Built:</strong></p>
+      <ul>
+        <li><strong>Recoloured app icons</strong> are now found by their outline when the colours are swapped: <strong>33% to 100%</strong> (24 of 24), and artwork misuse overall from 92.9% to <strong>96.0%</strong> with false alarms unchanged at 4.7%.</li>
+        <li><strong>Mascots:</strong> the segmentation cut-out is checked and repaired before the comparison, and a stretched body is named. False alarms on acceptable characters <strong>64 to 50</strong> of 180; stretched bodies caught <strong>0 to 18</strong> of 30.</li>
+        <li><strong>A vision worker that wakes on demand:</strong> the mascot models run on a second instance that starts when a review needs it and stops after 20 idle minutes. In judging hours (9 AM to 9 PM IST, 31 Oct to 13 Nov) a timer keeps it awake under a hard 10 USD cap, so a judge does not wait for a boot.</li>
+        <li>Before and after are published in <code>backend/evals/results/assets.md</code> and <code>mascots.md</code>, on the same scenes as Round 2.</li>
+      </ul>
+      <p><strong>Not built, and why:</strong> the GPU. AWS refused our GPU quota request twice, so every model runs on CPU or on the remote service as before. The stronger Hindi speech model needed that GPU to run in reasonable time and was dropped with it; codenames said aloud in Hindi are still caught by matching their sound.</p>
+    </div>
+  </div>
+
+  <div class="imp">
+    <div class="num">3</div>
+    <div>
+      <h3>The Brand Console runs it</h3>
+      <p><strong>Committed:</strong> an approved-people tab with agreement dates, a video timeline with findings as marks, and managers marking a video moment or an image area with comments the creator sees in place.</p>
+      <p><strong>Built, all of it:</strong></p>
+      <ul>
+        <li><strong>Approved people</strong> in the Library: who may appear in content, the kind of agreement, its channels and dates, private notes and the reference photos faces are matched against. Each card says where the agreement stands today; dates extend and agreements turn off in place.</li>
+        <li><strong>Video in the review:</strong> each finding is a mark on the timeline at its moment; picking it there or in the list seeks to it. Drag along the timeline to comment on a stretch; speed runs from 0.5x to 2x. No download, picture in picture or casting.</li>
+        <li><strong>Image markup:</strong> a marker in four thicknesses, an eraser and text labels, saved with a written comment. Pinned comments and their drawings show in place for both sides.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="shot"><img src="../assets/conversations.png" alt="Conversations"></div>
+  <p class="note">Conversations: the brand team's inbox, and a thread with a creator about a piece, with a Google Meet link shown as a Join card.</p>
+</section>
+
+<!-- ============================== 3. EVERYTHING ELSE ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 3</div>
+  <h2><span class="n">03</span>Everything else since Round 2</h2>
+  <p class="lead">Beyond the three improvements, the work went into closing loose ends from Round 2's declared gaps, what first-time users hit, and what our own reviews found. Every item below is live.</p>
+
+  <table class="wrap">
+    <thead><tr><th style="width:27%">Addition</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Each side hears what it waits on</td><td>The dashboard opens on "Since you were last here": approved, sent back, escalated, disputed, commented. A short notice fades in on sign-in, and badges on <em>My reviews</em> and the <em>Review queue</em> move within a second of a decision, with no reload (measured 30 to 105 ms locally).</td></tr>
+      <tr><td class="k">Ask Inki looks things up</td><td>Instead of answering from a fixed summary, Inki looks up creators, escalations, rules, facts, events, people and pieces as the person asking, so "which creators drift furthest from the brand" is answered from the data. It never sees more than that person's own screens.</td></tr>
+      <tr><td class="k">Ask Inki remembers how you work</td><td>What you tell Ask Inki about your role and style is kept for you alone; Settings shows it and forgets it. An early decision in a long thread now reaches Inki in about 3 in 4 conversations it was never tuned on (0% before).</td></tr>
+      <tr><td class="k">Performance after publishing</td><td>Once a piece is live, its link and the platform's numbers (typed or imported from a sheet) are recorded; Guideline health compares how posts that broke each rule did.</td></tr>
+      <tr><td class="k">Personal tokens and MCP</td><td>A personal token lets Claude or any MCP client search, read and submit as you, never approve. Closes a Round 2 gap.</td></tr>
+      <tr><td class="k">Web evidence for unbacked claims</td><td>On a public post, a claim no fact backs gets web results, English pages from known news, business and government sites that name the brand. Evidence for the reviewer, never a verdict.</td></tr>
+      <tr><td class="k">Decks and Word files read fully</td><td>Speaker notes and table rows from slides and Word files. Measured against LlamaIndex's file readers before deciding to keep ours (Section 6).</td></tr>
+      <tr><td class="k">A cleared finding stays cleared</td><td>When the creator checks a piece again, a finding the brand team already cleared is carried onto the new review instead of being asked again.</td></tr>
+      <tr><td class="k">Guideline health ring</td><td>Rule clarity as a 3D ring; each rule keeps its numbers, advice and a clearer-wording draft from its own decided cases.</td></tr>
+      <tr><td class="k">First visit</td><td>A landing page, a guided tour that covers Conversations and marking the spot, a cookie bar (accept all or necessary only), and a pass over every page at phone width (390 px).</td></tr>
+      <tr><td class="k">Errors in plain words</td><td>A failure never shows raw HTML, a traceback or a parser's message; every error reads as a sentence with a next step.</td></tr>
+    </tbody>
+  </table>
+  <div class="shot"><img src="../assets/dashboard.png" alt="The brand team's dashboard"></div>
+  <p class="note">The brand team's dashboard: "Since you were last here" beside what needs a decision, with live badges in the sidebar.</p>
+  <div class="shot"><img src="../assets/creator-home.png" alt="The creator's dashboard"></div>
+  <p class="note">The creator's dashboard: news from the brand team beside what needs them.</p>
+</section>
+
+<!-- ============================== 4. FEATURES ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 4</div>
+  <h2><span class="n">04</span>Full feature list</h2>
+  <p class="lead">Everything a judge can use on the live demo, by area. <span class="pill r3">R3</span> marks what was added in Round 3.</p>
+
+  <table class="wrap">
+    <thead><tr><th style="width:21%">Area</th><th>Features</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Reading a post</td><td>Caption; text inside images (local OCR); every page of a PDF or Word file; every slide with speaker notes and tables <span class="pill r3">R3</span>; every sheet with cell addresses; HTML pages and emails; video: on-screen text, burned-in captions, subtitle tracks and speech (local Whisper). A creator's brief, typed or as a voice note.</td></tr>
+      <tr><td class="k">Checks</td><td>Approved facts with validity dates (figures and dates compared in code); banned and preferred words; confidential terms, also when misspelt or said aloud; legal patterns; tone and messaging; hidden meaning that needs context (digs, sarcasm, double meanings, Hindi phrases); accessibility (alt text, contrast, hashtags, link text, captions, emoji runs); AI-disclosure rules; parts that disagree (caption against poster, voice-over against screen).</td></tr>
+      <tr><td class="k">Pictures</td><td>Official artwork found and its misuse named: stretched, skewed, mirrored, recoloured <span class="pill r3">R3</span>, redrawn, cropped; mascots found even when an AI redrew them, with what changed <span class="pill r3">R3</span>; faces identified and checked against agreements.</td></tr>
+      <tr><td class="k">Each finding</td><td>The passage quoted and marked in place (caption, image box, page, slide, sheet cell, video moment); the rule or fact cited; a level (must fix, should fix, consider) and a confidence; the smallest fix, checked so the offer and call to action survive; past decisions on the same rule; web evidence for unbacked public claims <span class="pill r3">R3</span>; signed.</td></tr>
+      <tr><td class="k">Creator (Studio)</td><td>Submit and re-check; apply fixes in one click or ask Inki for an edit; dispute a reading; escalate to a person; versions and a timeline; news from the brand team and live badges <span class="pill r3">R3</span>; Conversations <span class="pill r3">R3</span>; live post link and numbers <span class="pill r3">R3</span>.</td></tr>
+      <tr><td class="k">Brand team (Console)</td><td>Customisable dashboard with news <span class="pill r3">R3</span>; review queue ranked by risk; walk-through bar with keyboard shortcuts; approve, send back, override with a written reason; escalation inbox; video timeline and image markup <span class="pill r3">R3</span>; creators and their drift from the brand; Guideline health with clarity ring <span class="pill r3">R3</span> and performance per rule <span class="pill r3">R3</span>.</td></tr>
+      <tr><td class="k">Brand library</td><td>Intake: hand over PDFs, Word, decks, sheets, images, video or a read-only link, and approve drafted rules, facts, codenames and artwork; rules with versions; dated facts; confidential terms; artwork; approved people <span class="pill r3">R3</span>; brand events that update rules; public contacts.</td></tr>
+      <tr><td class="k">Ask Inki</td><td>Answers from the record with lookups <span class="pill r3">R3</span>, charts and tables in answers, memory per person <span class="pill r3">R3</span>, saved chats, summaries of a review; in conversations on consent <span class="pill r3">R3</span>.</td></tr>
+      <tr><td class="k">Getting started</td><td>Landing page <span class="pill r3">R3</span>; demo person picker; sign-up for your own empty workspace; guided tour per side; first-steps checklist; search across pages, pieces, rules and settings; light and dark themes; phone layout.</td></tr>
+      <tr><td class="k">Integrations</td><td>REST API; MCP endpoint with personal tokens <span class="pill r3">R3</span>; CSV import of post numbers <span class="pill r3">R3</span>.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================== 5. ARCHITECTURE ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 5</div>
+  <h2><span class="n">05</span>Architecture</h2>
+  <p class="lead">Two web apps share one codebase and one API. Prism, the review engine, looks at what a submission contains and spawns an agent for each part. Rules run in code first; models only judge meaning, and only after confidential terms are removed.</p>
+
+  <figure>
+    <svg viewBox="0 0 680 330" role="img" aria-label="Architecture as built">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
+      </defs>
+      <!-- people -->
+      <rect x="10" y="20" width="120" height="44" rx="8" fill="#e0f2fe" stroke="#0284c7"/>
+      <text x="70" y="39" font-size="11" font-weight="600" text-anchor="middle" fill="#0c4a6e">Studio</text>
+      <text x="70" y="54" font-size="9" text-anchor="middle" fill="#0c4a6e">creators</text>
+      <rect x="10" y="76" width="120" height="44" rx="8" fill="#e0f2fe" stroke="#0284c7"/>
+      <text x="70" y="95" font-size="11" font-weight="600" text-anchor="middle" fill="#0c4a6e">Brand Console</text>
+      <text x="70" y="110" font-size="9" text-anchor="middle" fill="#0c4a6e">brand team</text>
+      <!-- web -->
+      <rect x="160" y="20" width="140" height="100" rx="8" fill="#dbeafe" stroke="#2563eb"/>
+      <text x="230" y="44" font-size="11" font-weight="600" text-anchor="middle" fill="#1e3a8a">Next.js server</text>
+      <text x="230" y="62" font-size="9" text-anchor="middle" fill="#1e3a8a">holds the session token</text>
+      <text x="230" y="76" font-size="9" text-anchor="middle" fill="#1e3a8a">forwards an allowlist</text>
+      <text x="230" y="90" font-size="9" text-anchor="middle" fill="#1e3a8a">of routes; no keys</text>
+      <text x="230" y="104" font-size="9" text-anchor="middle" fill="#1e3a8a">in the browser</text>
+      <line x1="130" y1="42" x2="158" y2="55" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
+      <line x1="130" y1="98" x2="158" y2="85" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
+      <!-- api -->
+      <rect x="330" y="20" width="150" height="100" rx="8" fill="#e0e7ff" stroke="#3b5bdb"/>
+      <text x="405" y="44" font-size="11" font-weight="600" text-anchor="middle" fill="#1e2a78">FastAPI</text>
+      <text x="405" y="62" font-size="9" text-anchor="middle" fill="#1e2a78">role and clearance on</text>
+      <text x="405" y="76" font-size="9" text-anchor="middle" fill="#1e2a78">every call; workflow,</text>
+      <text x="405" y="90" font-size="9" text-anchor="middle" fill="#1e2a78">library, insights,</text>
+      <text x="405" y="104" font-size="9" text-anchor="middle" fill="#1e2a78">conversations, Ask Inki, MCP</text>
+      <line x1="300" y1="70" x2="328" y2="70" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
+      <!-- db -->
+      <rect x="510" y="20" width="160" height="100" rx="8" fill="#fef3c7" stroke="#d97706"/>
+      <text x="590" y="44" font-size="11" font-weight="600" text-anchor="middle" fill="#78350f">Data</text>
+      <text x="590" y="62" font-size="9" text-anchor="middle" fill="#78350f">rules, dated facts, artwork,</text>
+      <text x="590" y="76" font-size="9" text-anchor="middle" fill="#78350f">reviews, decisions, messages</text>
+      <text x="590" y="90" font-size="9" text-anchor="middle" fill="#78350f">signed findings, audit chain;</text>
+      <text x="590" y="104" font-size="9" text-anchor="middle" fill="#78350f">Redis, Inki memory on disk</text>
+      <line x1="480" y1="70" x2="508" y2="70" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
+      <!-- prism -->
+      <rect x="160" y="150" width="510" height="110" rx="10" fill="#f8fafc" stroke="#94a3b8"/>
+      <text x="175" y="170" font-size="10" font-weight="700" fill="#14532d" letter-spacing="1">PRISM  ·  ONE AGENT PER PART OF THE POST</text>
+      <line x1="405" y1="120" x2="405" y2="148" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
+      <rect x="175" y="180" width="110" height="66" rx="7" fill="#f1f5f9" stroke="#64748b"/>
+      <text x="230" y="198" font-size="10" font-weight="600" text-anchor="middle" fill="#1e293b">Split and read</text>
+      <text x="230" y="213" font-size="8.5" text-anchor="middle" fill="#334155">pages, slides, frames</text>
+      <text x="230" y="226" font-size="8.5" text-anchor="middle" fill="#334155">OCR, speech to text</text>
+      <text x="230" y="239" font-size="8.5" text-anchor="middle" fill="#334155">(local, on CPU)</text>
+      <rect x="297" y="180" width="110" height="66" rx="7" fill="#dcfce7" stroke="#16a34a"/>
+      <text x="352" y="198" font-size="10" font-weight="600" text-anchor="middle" fill="#14532d">Rule checks</text>
+      <text x="352" y="213" font-size="8.5" text-anchor="middle" fill="#14532d">facts, words, secrets,</text>
+      <text x="352" y="226" font-size="8.5" text-anchor="middle" fill="#14532d">artwork, contrast,</text>
+      <text x="352" y="239" font-size="8.5" text-anchor="middle" fill="#14532d">cross-checks (code)</text>
+      <rect x="419" y="180" width="110" height="66" rx="7" fill="#fee2e2" stroke="#dc2626"/>
+      <text x="474" y="198" font-size="10" font-weight="600" text-anchor="middle" fill="#7f1d1d">Redaction</text>
+      <text x="474" y="213" font-size="8.5" text-anchor="middle" fill="#7f1d1d">secret terms out of</text>
+      <text x="474" y="226" font-size="8.5" text-anchor="middle" fill="#7f1d1d">text and pixels;</text>
+      <text x="474" y="239" font-size="8.5" text-anchor="middle" fill="#7f1d1d">content is data only</text>
+      <rect x="541" y="180" width="118" height="66" rx="7" fill="#dcfce7" stroke="#16a34a"/>
+      <text x="600" y="198" font-size="10" font-weight="600" text-anchor="middle" fill="#14532d">Judge and fixes</text>
+      <text x="600" y="213" font-size="8.5" text-anchor="middle" fill="#14532d">confirm each issue,</text>
+      <text x="600" y="226" font-size="8.5" text-anchor="middle" fill="#14532d">fix checked per rule,</text>
+      <text x="600" y="239" font-size="8.5" text-anchor="middle" fill="#14532d">finding signed</text>
+      <line x1="285" y1="213" x2="295" y2="213" stroke="#64748b" stroke-width="1.2" marker-end="url(#ar)"/>
+      <line x1="407" y1="213" x2="417" y2="213" stroke="#64748b" stroke-width="1.2" marker-end="url(#ar)"/>
+      <line x1="529" y1="213" x2="539" y2="213" stroke="#64748b" stroke-width="1.2" marker-end="url(#ar)"/>
+      <!-- outside -->
+      <rect x="10" y="150" width="120" height="110" rx="8" fill="#fff" stroke="#94a3b8" stroke-dasharray="4 3"/>
+      <text x="70" y="172" font-size="10.5" font-weight="600" text-anchor="middle" fill="#1e293b">Vision worker</text>
+      <text x="70" y="190" font-size="8.5" text-anchor="middle" fill="#334155">Grounding DINO,</text>
+      <text x="70" y="203" font-size="8.5" text-anchor="middle" fill="#334155">SAM 2.1, DINOv2</text>
+      <text x="70" y="221" font-size="8.5" text-anchor="middle" fill="#334155">wakes on demand,</text>
+      <text x="70" y="234" font-size="8.5" text-anchor="middle" fill="#334155">sleeps after 20 min</text>
+      <line x1="158" y1="205" x2="132" y2="205" stroke="#64748b" stroke-width="1.2" marker-end="url(#ar)"/>
+      <rect x="419" y="282" width="251" height="40" rx="8" fill="#f3f4f6" stroke="#6b7280" stroke-dasharray="4 3"/>
+      <text x="544" y="299" font-size="10.5" font-weight="600" text-anchor="middle" fill="#111827">Ollama Cloud</text>
+      <text x="544" y="314" font-size="8.5" text-anchor="middle" fill="#374151">gpt-oss 120b and 20b, gemma4 31b vision, web search</text>
+      <line x1="474" y1="246" x2="474" y2="280" stroke="#dc2626" stroke-width="1.3" marker-end="url(#ar)"/>
+      <text x="482" y="268" font-size="8.5" fill="#7f1d1d">redacted only</text>
+      <text x="10" y="300" font-size="8.5" fill="#64748b">Solid boxes run on our AWS server in Mumbai.</text>
+      <text x="10" y="314" font-size="8.5" fill="#64748b">Dashed boxes are on demand or external.</text>
+    </svg>
+    <figcaption><b>Figure 1.</b> Architecture as built. Text found inside an image, on a slide or in a video's speech goes back through the same checks as a caption, and each finding points to where it was found: image region, page, slide, sheet or video time.</figcaption>
+  </figure>
+
+  <h3>How Prism checks a post</h3>
+  <p>Prism is orchestration written in code, not a model choosing its own tools, so the same input always gets the same checks and a post cannot talk it into skipping one. A screenshot pasted on page 3 of a brochure gets a document agent, a page agent, an image agent, an OCR agent and then a text agent, which runs the same three workers as a typed caption: rule checks (code), a claim verifier (claims against dated facts, numbers compared in code) and a semantic judge (yes or no per rule, with a probability). Agents post the figures, artwork and people they find to a shared evidence board, and a cross-check agent compares the parts. Context layers then read the whole post, and the creator's note is weighed last. Depth and agent counts are capped; anything cut off, timed out or failed is shown as <em>not checked</em>, never as passed.</p>
+
+  <h3>Models and where they run</h3>
+  <table>
+    <thead><tr><th style="width:30%">Job</th><th style="width:36%">Model or method</th><th>Runs on</th></tr></thead>
+    <tbody>
+      <tr><td>Judge questions, claim extraction</td><td>gpt-oss 20b</td><td>Ollama Cloud, redacted text only</td></tr>
+      <tr><td>Fixes, explanations, second look on must rules</td><td>gpt-oss 120b</td><td>Ollama Cloud, redacted text only</td></tr>
+      <tr><td>Describing images and comparing artwork</td><td>gemma4 31b</td><td>Ollama Cloud, never confidential content</td></tr>
+      <tr><td>Text in images and video</td><td>RapidOCR (PP-OCR on ONNX Runtime)</td><td>Our server, CPU</td></tr>
+      <tr><td>Speech</td><td>faster-whisper small and base</td><td>Our server, CPU</td></tr>
+      <tr><td>Artwork misuse</td><td>SIFT, RANSAC, SSIM, Lab colour, outlines</td><td>Our server, no model</td></tr>
+      <tr><td>Mascots</td><td>Grounding DINO, SAM 2.1, DINOv2</td><td>Vision worker, wakes on demand</td></tr>
+      <tr><td>Faces</td><td>YuNet and SFace</td><td>Our server, CPU</td></tr>
+      <tr><td>Inki's memory</td><td>bge-small-en-v1.5 and BM25 through mem0</td><td>Our server, CPU</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Key decisions</h3>
+  <table>
+    <thead><tr><th style="width:30%">Decision</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Rules before models</td><td>Facts, words, codenames and artwork are checked in code. Only a model-free check can block a post; a model's reading caps at a warning, because content can be written to sway a model.</td></tr>
+      <tr><td class="k">Media stays local</td><td>OCR, speech, PDF rendering and artwork matching run on our CPU; only redacted text and pixels reach a model.</td></tr>
+      <tr><td class="k">Pull-based deploys</td><td>The server pulls a branch only green CI can move, builds beside the live release, health-checks it and rolls back on failure.</td></tr>
+      <tr><td class="k">One cheap server</td><td>One small ARM instance in Mumbai behind a free edge, a vision worker that sleeps, and a hard AWS budget cap.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================== 6. ACCURACY ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 6</div>
+  <h2><span class="n">06</span>How well it works</h2>
+  <p class="lead">Each engine is measured on its own benchmark through the production code. Where a number moved, the change that moved it is named; every row links to its method and full results in <code>backend/evals/results</code>.</p>
+
+  <table class="wrap">
+    <thead><tr><th style="width:22%">Engine</th><th style="width:15%">Tested on</th><th style="width:16%">First run</th><th style="width:16%">Now</th><th>What moved it</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Artwork misuse</td><td>1,200 scenes</td><td>75.8% caught, 27.2% false alarms</td><td><strong>96.0%, 4.7%</strong></td><td>Stretch and skew measured from the match's geometry; artwork compared as it would look in the image; outline matching for recoloured icons <span class="pill r3">R3</span></td></tr>
+      <tr><td class="k">Recoloured icons</td><td>24 scenes</td><td>29%</td><td><strong>100%</strong></td><td>Shape separated from colour <span class="pill r3">R3</span></td></tr>
+      <tr><td class="k">Mascot false alarms</td><td>180 acceptable</td><td>105</td><td><strong>50</strong></td><td>Fidelity tuning (to 64), then cut-out repair <span class="pill r3">R3</span></td></tr>
+      <tr><td class="k">Mascot stretched body</td><td>30 scenes</td><td>0</td><td><strong>18</strong></td><td>Stretch from the fitted map <span class="pill r3">R3</span></td></tr>
+      <tr><td class="k">Video artwork, right moment</td><td>45 planted</td><td>15</td><td><strong>32</strong></td><td>Artwork judged frame by frame; subtitle tracks read</td></tr>
+      <tr><td class="k">Suggested fixes useful</td><td>73 findings</td><td>45%</td><td><strong>82%</strong></td><td>Fixes built from operations that fit the rule, passed by a gate that knows the rule, one repair round</td></tr>
+      <tr><td class="k">Must-rule judgement</td><td>32 sentences</td><td>27/32</td><td><strong>30/32</strong></td><td>Both judges asked, the larger decides</td></tr>
+      <tr><td class="k">Black-box recall</td><td>216 cases</td><td>78%, 7% false alarms</td><td><strong>96%, 0%</strong></td><td>Fixes from what the simulator missed</td></tr>
+      <tr><td class="k">Inki's memory</td><td>28 long threads</td><td>0%</td><td><strong>about 75%</strong></td><td>Recall over earlier turns <span class="pill r3">R3</span></td></tr>
+      <tr><td class="k">Slides: text and notes</td><td>24 sentences</td><td>18</td><td><strong>24</strong></td><td>Speaker notes read <span class="pill r3">R3</span></td></tr>
+      <tr><td class="k">Word and slide tables</td><td>9 rows</td><td>0</td><td><strong>9</strong></td><td>Tables kept as rows <span class="pill r3">R3</span></td></tr>
+      <tr><td class="k">Claim web evidence</td><td>17 demo claims</td><td>84% unknown sites</td><td><strong>known sites only</strong></td><td>English, known sources, names the brand <span class="pill r3">R3</span></td></tr>
+      <tr><td class="k">Text in images</td><td>240 images</td><td colspan="2"><strong>88%</strong> of prices, codes and names read exactly</td><td>Measured once</td></tr>
+      <tr><td class="k">Speech</td><td>104 clips</td><td colspan="2">about <strong>10%</strong> word error in English</td><td>Hindi much weaker; codenames matched by sound</td></tr>
+      <tr><td class="k">Parts that disagree</td><td>28 posts</td><td colspan="2"><strong>14/14</strong> caught, 0 false alarms</td><td>Measured once</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Our document readers against LlamaIndex <span class="pill r3">R3</span></h3>
+  <p>Before keeping our own readers we measured them against LlamaIndex's default file readers (free and local) on the same generated brand kit with known content. LlamaParse, its paid cloud parser, was ruled out because it would send confidential guidelines to a third party.</p>
+  <table>
+    <thead><tr><th style="width:46%">Test</th><th>Ours</th><th>LlamaIndex</th></tr></thead>
+    <tbody>
+      <tr><td>PDF and Word table rows kept together</td><td>13/13</td><td>0/13</td></tr>
+      <tr><td>Excel values with their cell address</td><td>111/111</td><td>0/111</td></tr>
+      <tr><td>PowerPoint text and speaker notes; table rows</td><td>24/24; 3/3</td><td>24/24; 3/3</td></tr>
+      <tr><td>Scanned PDF</td><td>Says it is a scan</td><td>Empty, no warning</td></tr>
+      <tr><td>300 MB spreadsheet bomb</td><td>Capped: 0.1 s, 39 MB</td><td>Read in full: 36 s, 2.9 GB</td></tr>
+    </tbody>
+  </table>
+  <p class="note">The sets are generated or hand-labelled rather than live traffic, and some thresholds were set on them, so real-world figures will run somewhat lower.</p>
+</section>
+
+<!-- ============================== 7. TESTING ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 7</div>
+  <h2><span class="n">07</span>Testing and reliability</h2>
+  <p class="lead">Round 3 asks that it survive bad input, empty states, a refresh and a double click, and that a stranger can finish the main journey and run it from the README. This is how we checked each.</p>
+
+  <table class="wrap">
+    <thead><tr><th style="width:26%">Check</th><th>What it covers, and the result</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Automated tests</td><td>785 backend tests, offline with no keys, on every push, with type checks, lint and a production build of the web app, a secret scan and dependency audits. Main only moves when all of it is green.</td></tr>
+      <tr><td class="k">Bad input on every route</td><td>A test sends every API route malformed input as every role and fails on any server error; ids past 64 bits, oversized files and wrong types answer with a 4xx and a sentence.</td></tr>
+      <tr><td class="k">Black-box simulator</td><td>Knows Verytas only through its public API and steers each round toward what it misses: 96% recall, 0% false alarms on clean posts, 0 server errors at 12 parallel submissions (17 before), and 320 cases at 32 in parallel run clean.</td></tr>
+      <tr><td class="k">Reviewed before commit</td><td>Every batch of changes was reviewed for bugs and security issues before it was committed. In Round 3 that raised 217 findings: 212 fixed, 3 kept on purpose with a reason, 2 declined.</td></tr>
+      <tr><td class="k">The live site as every person</td><td>Every page loaded and refreshed as each demo person: no console errors, no server errors, no error screens. A double click makes one piece, a refresh mid-review resumes, and empty pages say why and what to do next.</td></tr>
+      <tr><td class="k">Phone width</td><td>A pass over every page at 390 px, fixed where anything overflowed or was cut off.</td></tr>
+      <tr><td class="k">Speed on the live site</td><td>API reads 63 to 114 ms (the network alone is about 60 ms), pages settle in 0.2 to 0.7 s, reviews take 6 to 23 s, a message reaches the other side in about 0.1 s and a decision in about 0.2 s.</td></tr>
+      <tr><td class="k">Clone and run</td><td>A fresh clone of the public repository, with no keys, followed the README to a running API, web app and seeded demo.</td></tr>
+      <tr><td class="k">Tried by people</td><td>Three first-time users used the live demo on their own. Every point they raised has a shipped change: the tour, plain-word help on every status, "how it was checked" on every result, progress while a review runs, next steps on empty pages (<code>docs/research/user-testing.md</code>).</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Failures we found and fixed in Round 3</h3>
+  <ul>
+    <li><strong>Unreadable messages after a demo reset:</strong> a cache outlived the reset and served pages sealed with the old key. Cached pages are now keyed by the message key's fingerprint and served only when they match the latest message.</li>
+    <li><strong>A cleared finding came back</strong> when the creator ran the check again; the brand team's decision is now carried onto the same issue.</li>
+    <li><strong>Slow reads under load:</strong> readers took SQLite's write lock; p99 fell from 850 ms to 53 ms once they stopped.</li>
+    <li><strong>A fresh clone showed sample data:</strong> the clean-clone check found that the seed wrote the demo tokens but not the API address, so the web app fell back to its labelled sample data. The seed now writes the address too, and a test covers it.</li>
+  </ul>
+</section>
+
+<!-- ============================== 8. SECURITY ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 8</div>
+  <h2><span class="n">08</span>Security and responsible AI</h2>
+  <p class="lead">A security review ran on the code and the live site; each finding is fixed with a regression test or listed as open in <code>docs/security/README.md</code>.</p>
+  <table class="wrap">
+    <thead><tr><th style="width:26%">Area</th><th>How it is held</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Signed and logged</td><td>Every finding is signed (Ed25519) and every action goes into a SHA-256 hash-chained audit log, so an edit shows.</td></tr>
+      <tr><td class="k">Confidential terms</td><td>Redacted from text and blacked out in images before any model sees them; matched in part and by sound.</td></tr>
+      <tr><td class="k">Hostile input</td><td>File types read from the bytes, Office files parsed with entity expansion off and every part capped, documents converted in a sealed service with no network, web pages rendered with no scripts, and instructions aimed at the AI refused.</td></tr>
+      <tr><td class="k">Conversations <span class="pill r3">R3</span></td><td>Messages sealed at rest with AES-GCM; a creator sees only their own threads; Inki answers only on consent, sees only that thread and pieces both may open, and has an hourly limit.</td></tr>
+      <tr><td class="k">Ask Inki <span class="pill r3">R3</span></td><td>Lookups run as the asker, confidential tier left out, arguments never un-redacted, at most 4 rounds and 600 lookups an hour; a request for its instructions gets a fixed answer.</td></tr>
+      <tr><td class="k">Memory <span class="pill r3">R3</span></td><td>Only from a person's own Ask Inki chats, only they can list or forget it, and forgetting removes it from disk (checked by a test).</td></tr>
+      <tr><td class="k">MCP tokens <span class="pill r3">R3</span></td><td>Stored hashed, refused by the REST API, read and submit only, capped at internal clearance and rate limited.</td></tr>
+      <tr><td class="k">People in charge</td><td>A model-only finding never blocks; every override needs a written reason; every page says when a check was degraded or not run.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================== 9. LIMITS ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 9</div>
+  <h2><span class="n">09</span>Known limits</h2>
+  <p class="lead">What a judge may run into, stated plainly.</p>
+  <table>
+    <thead><tr><th style="width:28%">Area</th><th>What to expect</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Generated benchmarks</td><td>Every figure in Section 6 comes from generated or hand-labelled sets, some of which thresholds were set on. Real traffic will score lower.</td></tr>
+      <tr><td class="k">Mascots on busy backgrounds</td><td>The cut-out still takes in background, so 50 of 180 acceptable scenes raise a false alarm (21 with a perfect cut-out). A vision opinion alone never blocks a post.</td></tr>
+      <tr><td class="k">Hindi speech</td><td>Transcribed with much error on CPU. Codenames are caught by sound; other Hindi claims less reliably.</td></tr>
+      <tr><td class="k">Long threads</td><td>A decision changed late in a long conversation reaches Inki in about half to two thirds of hard cases.</td></tr>
+      <tr><td class="k">No voice calls inside Verytas</td><td>Calls run on Meet, Teams or Zoom through Join cards (Section 2).</td></tr>
+      <tr><td class="k">Post numbers</td><td>Typed or imported from a sheet, not read from the platforms.</td></tr>
+      <tr><td class="k">Speed</td><td>Models run on a remote service without our own GPU. Text takes seconds; images, documents and video take longer. If the service is down, those checks show as degraded, not passed.</td></tr>
+      <tr><td class="k">Shared demo people</td><td>Every judge signs in as the same sample people, so you may see what other visitors submitted. Ask Inki's memory for them is per browser and lapses after a day.</td></tr>
+      <tr><td class="k">Your own workspace starts empty</td><td>A new company has no rules, facts or artwork until some are added or a brand book is handed to Intake. The sample company shows everything working.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================== 10. ROADMAP ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 10</div>
+  <h2><span class="n">10</span>Roadmap</h2>
+  <p class="lead">In the order we would build it, each with the measurement that says whether it worked.</p>
+  <table class="wrap">
+    <thead><tr><th style="width:6%">#</th><th style="width:30%">Next</th><th>Why, and how we would know</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="k">A GPU once AWS grants the quota</td><td>Runs the language, vision and Hindi speech models ourselves: faster reviews, content that never leaves our servers, and a Hindi speech model. Measured on the same speech and video benchmarks.</td></tr>
+      <tr><td>2</td><td class="k">A better segmenter for mascots</td><td>Most remaining mascot false alarms come from the cut-out; a perfect one would take them from 50 to 21 of 180.</td></tr>
+      <tr><td>3</td><td class="k">Performance from the platforms</td><td>Instagram's insights first, so live numbers no longer need typing, and Guideline health compares rules on real reach.</td></tr>
+      <tr><td>4</td><td class="k">Measured on real traffic</td><td>A pilot brand's decided reviews become the benchmark, replacing generated sets, and calibration learns from real reviewers.</td></tr>
+      <tr><td>5</td><td class="k">Where people already work</td><td>Slack and email notifications, a CMS hook that holds a post until it is approved, and single sign-on.</td></tr>
+      <tr><td>6</td><td class="k">Scale out</td><td>Postgres (the code is ready for it) and more than one API worker behind the same Redis, once one server is no longer enough.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================== 11. TEAM ============================== -->
+<section class="chapter newpage">
+  <div class="kicker">Section 11</div>
+  <h2><span class="n">11</span>Team and links</h2>
+  <p class="lead">Both members committed from their own accounts, so contributions are visible in the repository history.</p>
+
+  <table>
+    <thead><tr><th style="width:26%">Member</th><th>Round 3 contribution</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Prajyot Malesh Kotekar<br><span class="note">Team leader</span></td><td>Led the team and the submission. Built Guideline health's rule clarity ring and its link to each rule, the brand-team note creators see on the creators page, and the fix that brings an escalation answer given after a re-check to the finding the creator sees. Tested the live demo and reported the bugs fixed in the last days.</td></tr>
+      <tr><td class="k">Varadaraj J Borkar</td><td>Built Conversations and @Inki, Ask Inki's lookups and memory, the video player and image markup, approved people, the recoloured-icon and mascot work and their benchmarks, news and live badges, performance feedback, the MCP endpoint, the landing page, the document readers and their comparison, and the server, deploys and vision worker.</td></tr>
+      <tr><td class="k">Together</td><td>The review workflow, the API, tests and documentation.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Links</h3>
+  <table>
+    <tbody>
+      <tr><td class="k" style="width:26%">Live demo</td><td>https://verytas.pages.dev</td></tr>
+      <tr><td class="k">Source code</td><td>https://github.com/varadarajjborkar/verytas</td></tr>
+      <tr><td class="k">Run it locally</td><td>README.md, "Run it locally"</td></tr>
+      <tr><td class="k">Architecture</td><td>docs/architecture.md</td></tr>
+      <tr><td class="k">Benchmarks</td><td>backend/evals/results</td></tr>
+      <tr><td class="k">Security review</td><td>docs/security/README.md</td></tr>
+      <tr><td class="k">User testing</td><td>docs/research/user-testing.md</td></tr>
+      <tr><td class="k">MCP</td><td>docs/mcp.md</td></tr>
+      <tr><td class="k">Earlier rounds</td><td>docs/round1/Verytas-Round1-Plan.pdf, docs/round2/Verytas-Round2-Build.pdf</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</body>
+</html>
