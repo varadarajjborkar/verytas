@@ -1,6 +1,7 @@
 // The demo's public address (verytas.pages.dev) on Cloudflare's free tier. It holds no app code: every
-// request is passed to the AWS server as is, so there is one deployment to keep current, not two.
-const UPSTREAM = "https://15-252-228-168.sslip.io";
+// request is passed to the web app on Vercel's free plan as is, so there is one deployment to keep current,
+// not two. (It was the AWS server until the free move; the address people have did not change.)
+const UPSTREAM = "https://verytas-alpha.vercel.app";
 
 export default {
   async fetch(request) {
