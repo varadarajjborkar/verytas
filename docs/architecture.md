@@ -338,7 +338,7 @@ flowchart LR
     PRISM["Prism<br/>agents per part, judge"]:::core
     RED["Redaction<br/>text and pixels"]:::sec
     GRD["Guardrails<br/>offers, contact swaps,<br/>instructions to the AI"]:::sec
-    LLM["Ollama Cloud<br/>gpt-oss, gemma4"]:::ext
+    LLM["Hosted models<br/>NVIDIA Nemotron live,<br/>Ollama, Jev or Claude by setting"]:::ext
     DB[("SQLite / Postgres<br/>+ hash-chained audit log")]:::data
     RDS[("Redis<br/>live events")]:::data
 
@@ -456,17 +456,17 @@ SigLIP and promptfoo. What shipped is below; section 21 keeps the tools vetted f
 |---|---|---|
 | Backend API | **Python 3.12, FastAPI, Pydantic, SQLAlchemy 2 (async)** | the media and model tooling is Python-first; async for parallel agents; free OpenAPI docs |
 | Orchestration | asyncio task graph with the governor in-process; Redis only for live conversation events | one process is enough for the demo's load and keeps a review's state in one place; the governor bounds model slots and running reviews |
-| DB | **SQLite** in WAL mode (Postgres-ready through asyncpg) | one file on one small server, readers never wait on the writer; the hash-chained audit log lives beside the data |
+| DB | **SQLite** in WAL mode locally; **Postgres** (Neon) for the live demo, through asyncpg | SQLite is one file and readers never wait on the writer; the free host's disk is wiped on restart, so the live data is in Postgres. The whole suite runs on both (`VERYTAS_TEST_DATABASE_URL`) |
 | Frontend | **Next.js 16** (App Router, React 19), **Tailwind CSS 4**, OpenUI for Ask Inki's generated answers | server rendering keeps the session token off the browser; accessible components are written in-house |
-| Judge | **`gpt-oss:20b` on Ollama Cloud** behind a `JudgeProvider` interface, with **TypeSafe Jev** as the alternative | free on Ollama's plan; resamples only borderline answers; Jev gives typed probabilistic answers per rule where a key is set |
-| LLMs | **Ollama Cloud** (`gpt-oss:120b` for explanations and rewrites, `gpt-oss:20b` for extraction, `gemma4:31b` for vision), with Claude as a drop-in behind the same `LLMProvider` interface | free tier fits the team's budget; schema-in-prompt plus pydantic validation and one repair round makes open models reliable for structured output |
+| Judge | **Nemotron 3.5 Super VL on NVIDIA** for the live demo (measured with `gpt-oss:20b` on Ollama Cloud) behind a `JudgeProvider` interface, with **TypeSafe Jev** as the alternative | free developer tier; resamples only borderline answers; Jev gives typed probabilistic answers per rule where a key is set |
+| LLMs | **NVIDIA's hosted models** for the live demo (Nemotron 3 Ultra for explanations, rewrites and the second look; Nemotron 3.5 Super VL for extraction and vision), measured on **Ollama Cloud** (`gpt-oss:120b`, `gpt-oss:20b`, `gemma4:31b`); Claude is a drop-in behind the same `LLMProvider` interface | free tier fits the team's budget; schema-in-prompt plus pydantic validation and one repair round makes open models reliable for structured output |
 | Local media | **RapidOCR** (ONNX Runtime), **faster-whisper**, OpenCV (SIFT and homography for artwork, YuNet and SFace for faces), pdfium, PyAV; LibreOffice in a sealed service | raw images and audio never leave the server |
-| Vision worker | Grounding DINO (tiny), SAM 2.1 (tiny), DINOv2 (small) on PyTorch CPU, on an instance that wakes on demand | too heavy for the always-on server; costs nothing while asleep |
+| Vision worker | Grounding DINO (tiny), SAM 2.1 (tiny), DINOv2 (small) on PyTorch CPU, on an instance that wakes on demand | too heavy for the always-on server; off on the free demo, which has no second machine |
 | Inki's memory | **fastembed** (`bge-small-en-v1.5`, ONNX, CPU) and **mem0** over an on-disk Qdrant store (section 24) | small enough for a 4 GB server (400 MB peak against 953 MB for the multilingual model, same accuracy on unseen cases); no service to run |
 | Safety | in-house text and pixel redaction, input guardrails (`security/guard.py`), Ed25519-signed findings | confidential terms are the brand's own list, so a fixed matcher with sound-alike matching beats a general PII model |
 | Evals | in-house harnesses under `backend/evals`, through the production code, results in `backend/evals/results` | each engine needs its own generated set and its own measure |
 | MCP | official Python MCP SDK 1.x (section 15) | 2.x is a rewrite with a different HTTP stack |
-| Deploy | AWS EC2 with Caddy and systemd, Cloudflare Pages in front, GitHub Actions, pull-based releases | one cheap server inside a hard budget cap; CI moves the branch the server pulls |
+| Deploy | Free tiers since November 2026: Cloudflare Pages in front (and a cron that keeps the API awake), Vercel for the web app, Render for the API, Neon for Postgres; `main` is fast-forwarded to `dev` by hand once CI on `dev` is green. Until then: AWS EC2 with Caddy, systemd and pull-based releases | no cost and no card on any account once the AWS credits and Ollama's free plan ended; the address stayed the same (section 27) |
 
 ---
 
@@ -668,3 +668,48 @@ Social content is short, so a 300-page PDF behind a caption, a 40 MP image or in
 - RFC 6962 (2013). *Certificate Transparency* (hash-chained, tamper-evident logs).
 - W3C (2023). *Web Content Accessibility Guidelines (WCAG) 2.2.*
 - Anthropic (2024). *Building effective agents* (orchestrator-workers pattern).
+
+---
+
+## 27. The free deployment (November 2026)
+
+**Why it moved.** The demo first ran on one AWS server, paid from a capped pool of credits, with a second
+instance that woke for the vision models, and used Ollama Cloud's free plan for every model call. After
+judging, the credits were capped and Ollama Cloud stopped offering free cloud models. The project should
+stay reachable at no cost and with no card on any account, so each piece moved to a service with a real
+free tier. Cloudflare alone was measured first: its free plan allows 10 ms of CPU per request, a
+dashboard page takes 1 to 2 seconds of server rendering, and every page failed, so Cloudflare keeps only
+the address. Hosts that need a card (Oracle, Koyeb, Fly.io, Google Cloud Run) or a paid plan for
+containers (Hugging Face Spaces) were ruled out.
+
+**Layout.** `verytas.pages.dev` is a Cloudflare pass-through worker: `/mcp` goes to the API, everything
+else to the Next.js app on Vercel (Singapore). The API runs on Render's free plan (Singapore, 512 MB, a
+tenth of a CPU, one process) against Postgres on Neon (Singapore, sleeps when idle). A Cloudflare cron
+asks the API for `/health` every 10 minutes, because Render stops a free service after 15 idle minutes;
+`/health` does not touch the database, so Neon still sleeps. Operating notes: `deploy/render/README.md`.
+
+**What changed in the code to fit it.**
+- *Models* (`providers/ollama.py`, `providers/__init__.py`): the hosted-model client speaks the
+  OpenAI-compatible dialect as well as Ollama's, so `VERYTAS_LLM_BACKEND=nvidia` moves the judge, the
+  second look, vision and rewrites together. NVIDIA's free tier allows about 40 requests a minute for the
+  whole account, so request starts to one endpoint are spaced (35 a minute), a 429 waits as long as
+  `Retry-After` says, and a reply cut off at its length limit is reported as unavailable rather than
+  spending the repair round. Nemotron 3.5 Super VL (judge, vision) and Nemotron 3 Ultra (fixes, second
+  look) were picked by timing a judge task and an image read; `gpt-oss-120b` was retired on NVIDIA.
+- *Postgres* (`db.py`, `dbcopy.py`): the suite runs on Postgres too, which found one difference (an
+  oversized id answered 500 because asyncpg wraps the overflow). The demo is seeded into SQLite on a
+  laptop and copied in, with SQLite's zone-less UTC timestamps marked UTC first.
+- *Memory* (`prism/orchestrator.py`, `media/ocr.py`): a text post no longer loads the brand's artwork
+  library (190 MB to 445 MB before, 196 MB after). `asset_matching=false` and a smaller OCR engine keep
+  image reviews near 470 MB.
+- *Keys* (`deploy/render/start.sh`): the host's disk is wiped on restart, so the message and signing
+  keys arrive as one secret, and the API refuses to start without every one rather than minting new keys
+  and orphaning what is stored.
+
+**What is off or reduced, and what a review says about it.** Matching official artwork (each image
+review notes it and marks *visual* degraded); the vision worker's redrawn-mascot search; faces; web
+evidence for unbacked claims (no search API on NVIDIA; the review says so); Whisper *tiny* instead of
+*small*; Word and PowerPoint page pictures (no LibreOffice; their text, tables, notes and images are
+still read); Inki's memory on keyword-style embeddings in `/tmp`; and the 14-day automatic reset, now done
+by hand. The measured figures (`backend/evals/results`) come from the earlier models on the full server and have
+not been re-measured on this one.

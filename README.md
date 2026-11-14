@@ -118,10 +118,10 @@ flowchart LR
     MEM["Inki's memory<br/>local embeddings: earlier turns,<br/>what each person told Ask Inki"]:::local
 
     LOCAL["Local media tools<br/>OCR, speech to text,<br/>image matching, faces, PDF"]:::local
-    VISION["Vision worker<br/>finds and compares mascots<br/>(wakes on demand)"]:::local
-    MODELS["Ollama Cloud<br/>gpt-oss, gemma4 vision"]:::ext
+    VISION["Vision worker<br/>finds and compares mascots<br/>(off on the free demo)"]:::local
+    MODELS["Hosted models<br/>NVIDIA Nemotron on the live demo,<br/>Ollama, Jev or Claude by setting"]:::ext
     DB[("Database<br/>rules, facts, reviews, results,<br/>hash-chained audit log")]:::data
-    REDIS[("Redis<br/>live conversation events")]:::data
+    REDIS[("Redis, optional<br/>live events across processes")]:::data
 
     CR & BT --> UI --> BFF --> API --> PRISM
     AI --> MCP --> API
@@ -154,48 +154,45 @@ flowchart LR
 
 ## System design
 
+The live demo runs on free tiers only, with no card on any account. Until November 2026 it ran on one AWS
+server with a second one for the vision models; [why it moved](#why-the-demo-moved) is below.
+
 ```mermaid
 flowchart LR
     U["Visitor's browser"]:::client
     AIC["Their own AI client<br/>MCP over HTTPS"]:::client
     CF["Cloudflare Pages<br/>verytas.pages.dev<br/>pass-through worker"]:::edge
+    CRON["Cloudflare cron<br/>/health every 10 min"]:::edge
 
-    subgraph AWS["AWS EC2, Mumbai"]
-        direction TB
-        CAD["Caddy<br/>HTTPS, security headers,<br/>/mcp straight to the API"]:::web
-        NX["Next.js<br/>:3000"]:::web
-        FA["FastAPI + Prism<br/>:8000"]:::api
-        SQ[("SQLite, media blobs,<br/>Inki's memory on disk")]:::data
-        TM["Deploy timer<br/>every 3 min"]:::ops
-        RD[("Redis<br/>loopback only")]:::data
-        KW["Keep-warm timer<br/>judging hours, 10 USD cap"]:::ops
-        VW["Vision worker<br/>stops itself when idle"]:::api
-        CV["Document converter<br/>LibreOffice, no network,<br/>throwaway user"]:::sec
-        CAD --> NX --> FA --> SQ
-        CAD -- "/mcp" --> FA
-        FA --> RD
-        FA -- "starts it when needed" --> VW
-        KW -- "keeps it awake" --> VW
-        FA -- "local socket" --> CV
+    subgraph VC["Vercel, Singapore"]
+        NX["Next.js<br/>Studio and Brand Console"]:::web
     end
-
-    OL["Ollama Cloud<br/>models over HTTPS"]:::ext
+    subgraph RD["Render, Singapore"]
+        FA["FastAPI + Prism<br/>512 MB, one worker"]:::api
+    end
+    subgraph NE["Neon, Singapore"]
+        PG[("Postgres<br/>sleeps when idle")]:::data
+    end
+    NV["NVIDIA hosted models<br/>Nemotron, over HTTPS"]:::ext
 
     subgraph GH["GitHub"]
         direction TB
         DEV["dev branch"]:::ops
-        MAIN["main = production"]:::ops
         CI["CI: tests, lint, build,<br/>secret scan, dependency audit"]:::ops
-        LIVE["live branch"]:::ops
-        DEV --> MAIN --> CI -- "all green" --> LIVE
+        MAIN["main = production"]:::ops
+        DEV --> CI -- "green: fast-forwarded by hand" --> MAIN
     end
 
-    U --> CF --> CAD
-    AIC --> CAD
-    FA -- "redacted requests" --> OL
-    TM -- "pulls with a read-only key,<br/>builds, health-checks,<br/>rolls back on failure" --> LIVE
+    U --> CF --> NX --> FA --> PG
+    AIC --> CF -- "/mcp" --> FA
+    CRON --> FA
+    FA -- "redacted requests" --> NV
+    NX -- "Ask Inki, summaries" --> NV
+    MAIN -- "builds on push" --> NX & FA
 
-    style AWS fill:#f8fafc,stroke:#94a3b8,color:#334155
+    style VC fill:#f8fafc,stroke:#94a3b8,color:#334155
+    style RD fill:#f8fafc,stroke:#94a3b8,color:#334155
+    style NE fill:#f8fafc,stroke:#94a3b8,color:#334155
     style GH fill:#f8fafc,stroke:#94a3b8,color:#334155
     classDef client fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
     classDef edge fill:#fff7ed,stroke:#ea580c,color:#7c2d12
@@ -204,30 +201,61 @@ flowchart LR
     classDef data fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef ext fill:#f3f4f6,stroke:#6b7280,color:#111827
     classDef ops fill:#dcfce7,stroke:#16a34a,color:#14532d
-    classDef sec fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
 ```
 
 | Decision | Why |
 | --- | --- |
-| **Pull-based deploys** | The server pulls a branch only green CI can move, builds beside the live release and rolls back if health checks fail. |
-| **Media stays local** | OCR, speech, PDF rendering and artwork matching run on the server's CPU; only redacted text and pixels reach a model. |
-| **Bounded and degradable** | Shared model slots, a cap on reviews at once and per-step deadlines; a provider that is down marks its checks *degraded* rather than failing or passing them. |
-| **Vision on a worker that sleeps** | The mascot models run on a second instance that starts on demand and stops after 20 idle minutes. |
-| **Untrusted files sealed off** | Word and PowerPoint are converted by LibreOffice in a throwaway service with no network and hard limits. |
-| **One cheap server** | One small ARM instance behind a free edge, under a hard AWS budget cap. |
+| **One address, any host** | `verytas.pages.dev` is a pass-through worker, so the hosting behind it changed without the link changing. |
+| **Production is a branch we move by hand** | We fast-forward `main` to `dev` only once CI on `dev` is green; Vercel and Render build `main` on every push. |
+| **Media stays on our server** | OCR, speech, PDF rendering and artwork matching run on the API's CPU; only redacted text and pixels reach a model. |
+| **Bounded and degradable** | Shared model slots, a request pacer under the model provider's per-minute cap, per-step deadlines; a provider that is down marks its checks *degraded* rather than failing or passing them. |
+| **Nothing on a disk that can vanish** | Data lives in Postgres; the keys it was sealed and signed with arrive as one secret, and the API refuses to start without every one. |
+| **Untrusted files sealed off** | Where LibreOffice runs (locally, or the full server) Word and PowerPoint convert in a throwaway service with no network and hard limits. |
+
+### Why the demo moved
+
+The first deployment was one AWS server paid from a fixed pool of credits, with Ollama Cloud's free plan
+for the models. After judging, both ended: the credits were capped, and Ollama Cloud stopped offering
+free cloud models. The project is now meant to stay up at no cost and with no card on file, so it moved
+to services with real free tiers: Cloudflare (the address and a keep-awake ping), Vercel (the web app),
+Render (the API), Neon (Postgres) and NVIDIA's developer tier for the models. Cloudflare alone was tried
+first; its free plan allows 10 ms of CPU per request, and a dashboard page takes 1 to 2 seconds to
+render, so it stays the front door only. The full notes are in [deploy/render/README.md](deploy/render/README.md).
+
+### What the free demo leaves out
+
+Everything below is still in the code and runs on a laptop or a bigger server; the free host has 512 MB
+of memory and a tenth of a CPU, and no GPU anywhere.
+
+| Off or reduced on the live demo | Why | What a review says |
+| --- | --- | --- |
+| **Matching official artwork** (logos, packaging, mascot copies and redraws) | Fingerprinting a brand's artwork library needs several hundred MB | Each image review notes that artwork was not compared, and *visual* shows as degraded |
+| **The vision worker** (Grounding DINO, SAM 2.1, DINOv2) | It ran on its own AWS instance; there is no free equivalent | Redrawn mascots are not looked for |
+| **Faces** of approved people | Off to stay inside 512 MB | Not checked |
+| **Web evidence for unbacked claims** | It used Ollama's web search; NVIDIA has none | Unbacked claims go to the reviewer, and the review says they were not searched |
+| **Speech** uses Whisper *tiny* | Memory and a tenth of a CPU | Transcripts are rougher, Hindi most of all |
+| **Word and PowerPoint page previews** | No LibreOffice on the host | Text, tables, notes and images are still read; only the page pictures are missing |
+| **Inki's memory** uses keyword-style embeddings, kept in `/tmp` | No room for the embedding model, and the disk is wiped on restart | Inki still reads the recent turns; older facts may be missed after a restart |
+| **Model speed and volume** | NVIDIA's free tier allows about 40 requests a minute for the account | Reviews take longer when several run at once |
+| **The 14-day demo reset** | There is no server to run a timer | The demo is reseeded by hand ([how](deploy/render/README.md#reseeding-the-demo)) |
+
+The models changed too: Nemotron 3.5 Super VL judges and reads images, and Nemotron 3 Ultra writes fixes
+and takes the second look. They were picked by timing them on the free tier; the accuracy figures under
+[Quality](#quality) were measured with the earlier models and the full server, and have not been
+re-measured on these.
 
 ## Tech stack
 
 | Layer | Tools |
 | --- | --- |
 | **Frontend** | Next.js 16 (App Router, React 19), Tailwind CSS 4, OpenUI for generated answers in *Ask Inki* |
-| **Backend** | Python 3.12, FastAPI, SQLAlchemy 2 (async), SQLite (Postgres-ready), Pydantic |
-| **AI models** | Ollama Cloud: `gpt-oss:120b` and `gpt-oss:20b` for language, `gemma4:31b` for vision. Swappable for TypeSafe Jev or Anthropic Claude |
+| **Backend** | Python 3.12, FastAPI, SQLAlchemy 2 (async), SQLite locally and Postgres live (the suite runs on both), Pydantic |
+| **AI models** | Live demo: NVIDIA's hosted Nemotron 3.5 Super VL (judge and vision) and Nemotron 3 Ultra (fixes, second look). Measured with Ollama Cloud's `gpt-oss:120b`, `gpt-oss:20b` and `gemma4:31b`. Swappable for TypeSafe Jev or Anthropic Claude |
 | **Media, all local** | RapidOCR (ONNX Runtime), faster-whisper, OpenCV (with YuNet and SFace for faces), pdfium, PyAV, LibreOffice (sandboxed, for Word and PowerPoint previews) |
 | **Inki's memory** | fastembed with `bge-small-en-v1.5` on ONNX Runtime (CPU, 65 MB), mem0 over an on-disk Qdrant store; no service and no telemetry |
-| **Vision worker** | Grounding DINO (tiny), SAM 2.1 (tiny), DINOv2 (small) on PyTorch CPU, on an EC2 Graviton instance that wakes on demand |
+| **Vision worker** | Grounding DINO (tiny), SAM 2.1 (tiny), DINOv2 (small) on PyTorch CPU; ran on an instance that woke on demand, off on the free demo |
 | **Security** | Ed25519-signed findings, SHA-256 hash-chained audit log, text and pixel redaction, input guardrails, CSP |
-| **Infra and delivery** | AWS EC2, Caddy, systemd, Cloudflare Pages, GitHub Actions (pinned to commit SHAs), gitleaks, pip-audit, pnpm audit |
+| **Infra and delivery** | Cloudflare Pages and Workers, Vercel, Render, Neon (all free tiers), GitHub Actions (pinned to commit SHAs), gitleaks, pip-audit, pnpm audit, Vercel Web Analytics (no cookies) |
 | **Testing** | pytest (offline, no keys needed), a black-box simulator that tests only through the public API |
 
 ## Accessibility
@@ -243,7 +271,7 @@ outside tester.
 - **Confidential terms never reach a model:** they are redacted from text and blacked out in images first.
 - **Hostile input is expected.** File types are read from the bytes and parsed within budgets, web pages render with no scripts, Office files convert in a sealed service, and instructions aimed at the AI are refused.
 - **Role and clearance are checked on the server** on every request; sign-out revokes the session.
-- **Your data stays yours.** Inki keeps facts only from your own Ask Inki chats, and forgetting removes them from disk. The first visit asks about cookies; nothing tracks you.
+- **Your data stays yours.** Inki keeps facts only from your own Ask Inki chats, and forgetting removes them from disk. The first visit asks about cookies; page views are counted without cookies, and nothing follows you to other sites.
 - **Audited.** A security review ran on the code and the live site; each finding is fixed with a regression test or listed as open in the [security report](docs/security/README.md). Dependencies install from hashed lock files.
 
 ## Round 3: what changed
@@ -285,7 +313,7 @@ method and the full results.
 | [Inki's memory](backend/evals/results/memory.md) | 28 long conversations, 5 seeds each | an early decision reaches Inki in about **3 in 4** conversations it was never tuned on (**0%** before, with only the last 12 turns); **5/5** answered right on the live demo |
 | [Black-box simulator](blackbox/README.md) | 216 cases | **96%** recall, **0%** false alarms on clean posts |
 
-- **785 backend tests** run offline on every push, with type checks, lint and a production build for the web app.
+- **794 backend tests** run offline on every push, and the same suite passes on Postgres, with type checks, lint and a production build for the web app.
 - **Tried by people:** three first-time users used the live demo; every point they raised has a shipped change ([report](docs/research/user-testing.md)).
 - **Tested from the outside:** [`blackbox/`](blackbox/README.md) knows Verytas only through its API and steers each round toward what it misses.
 
@@ -296,11 +324,13 @@ method and the full results.
 - **Hindi speech** is transcribed with much error on CPU; codenames are caught by sound, other Hindi claims less reliably.
 - **A decision changed later in a long thread** reaches Inki in about half to two thirds of hard cases.
 - **Post numbers are typed or imported**, not read from the platforms, and there are **no voice calls** inside Verytas.
+- **The live demo is a lighter build** than the one measured: see [what the free demo leaves out](#what-the-free-demo-leaves-out).
 - **Open security items** are listed in the [security report](docs/security/README.md#hardening-notes).
 
 ## Roadmap
 
-- **A GPU** for the language, vision and Hindi speech models once AWS grants the quota.
+- **Re-measure on the free models** (Nemotron on NVIDIA), and bring artwork matching back within 512 MB by preparing a brand's artwork once and storing the fingerprints.
+- **A GPU** for the language, vision and Hindi speech models, if the project ever has a budget for one.
 - **A better segmenter** for mascots on busy backgrounds, which would close most of the false-alarm gap (50 against 21 in 180).
 - **Performance from the platforms:** Instagram's insights first, so live numbers no longer need typing.
 
@@ -310,7 +340,7 @@ method and the full results.
 # Backend on :8000 (tests need no keys)
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-cp .env.example .env                 # add OLLAMA_API_KEY for live models; VERYTAS_REDIS_URL is optional
+cp .env.example .env                 # add NVIDIA_API_KEY (or OLLAMA_API_KEY) for live models; Redis is optional
 .venv/bin/pytest -q
 .venv/bin/python -m verytas.cli seed-showcase --db showcase.db --write-env ../web/.env.local
 VERYTAS_DATABASE_URL=sqlite+aiosqlite:///./showcase.db .venv/bin/uvicorn verytas.main:app
@@ -331,7 +361,7 @@ The seed creates the *Kitepath* brand with seven creators and eight weeks of his
 | [`backend/`](backend) | FastAPI service: checkers, Prism, workflow, insights, security |
 | [`web/`](web) | Next.js: the Studio and Brand Console apps |
 | [`blackbox/`](blackbox) | The black-box simulator |
-| [`deploy/`](deploy) | Server setup, pull-based deploys, the edge worker ([how it works](deploy/README.md)) |
+| [`deploy/`](deploy) | The free deployment ([how it works](deploy/render/README.md)), the edge and keep-awake workers, and the earlier AWS server setup ([kept for reference](deploy/README.md)) |
 | [`docs/`](docs) | Problem statement and the full architecture |
 
 ## Working agreement

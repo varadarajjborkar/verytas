@@ -4,8 +4,8 @@ Since 14 Nov 2026 the demo runs on free tiers only, with no card on any account:
 
 | Piece | Where | Notes |
 |---|---|---|
-| Public address | Cloudflare Pages, `verytas.pages.dev` | `deploy/edge/_worker.js` passes every request to Vercel |
-| Web app | Vercel Hobby, project `verytas` (root `web`, region `sin1`) | Deploys `main` on push |
+| Public address | Cloudflare Pages, `verytas.pages.dev` | `deploy/edge/_worker.js` passes `/mcp` to the API and everything else to Vercel |
+| Web app | Vercel Hobby, project `verytas` (root `web`, region `sin1`) | Deploys `main` on push. Ask Inki and Summarize call the models from here: `OLLAMA_BASE_URL`, `OLLAMA_API_KEY` and `OLLAMA_COPILOT_MODEL` point at NVIDIA (`https://integrate.api.nvidia.com`, Nemotron 3 Ultra), since both speak the same OpenAI-style API. These calls count against the same per-minute cap but are not paced by the API |
 | API | Render free web service `verytas-api` (Singapore, 512 MB, 0.1 CPU) | Deploys `main`; starts with `deploy/render/start.sh` |
 | Database | Neon free, project `verytas` (Singapore, Postgres 16) | Sleeps when idle; 0.5 GB |
 | Models | NVIDIA's hosted models (`VERYTAS_LLM_BACKEND=nvidia`) | About 40 requests a minute for the account |

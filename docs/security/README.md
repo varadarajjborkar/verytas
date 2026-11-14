@@ -74,6 +74,25 @@ Two things were fixed in [`6e09a5c`](https://github.com/varadarajjborkar/verytas
 | `Permissions-Policy` denied the microphone to every origin, ours included, so the creator's spoken brief could not record | Allowed for this site only: `microphone=(self)` |
 | Responses announced `X-Powered-By: Next.js` | Turned off |
 
+## The free deployment (November 2026)
+
+The live demo moved from one AWS server to free tiers (layout and reasons in
+[deploy/render/README.md](../../deploy/render/README.md)). What that changes for security:
+
+| Risk | Control |
+|---|---|
+| Model calls now go to NVIDIA instead of Ollama Cloud | The same redaction runs first: confidential terms are removed from text and blacked out in images before any request leaves, and confidential-tier content is never sent as pixels. The request pacer and breakers are per provider |
+| The host's disk is wiped on restart, so keys could be regenerated silently, orphaning sealed messages and signatures | The keys arrive as one secret; `deploy/render/start.sh` refuses to start unless every expected key file is present |
+| Secrets now live in four dashboards (Vercel, Render, Neon, Cloudflare) | Each holds only what its piece needs: the web app has the model key and the demo sign-in list, the API has the database URL, model key and keys bundle. None is in the repository; locally they stay in gitignored `backend/.env` |
+| A forwarded client address could be spoofed | The API runs without proxy headers: only the web app's server calls it, apart from `/mcp`, which authenticates with a personal token |
+| `/mcp` now crosses the Cloudflare worker to the API | The worker forwards only `/mcp` there, sets the path on a fixed upstream (never resolves it), and the endpoint still requires a personal token |
+| Page views are counted | Vercel Web Analytics: no cookies and no cross-site identifier; the cookie notices and the privacy page say so |
+| Dependencies | `pip-audit` flagged advisories published after the event in pypdf, dnspython and opentelemetry-api; all three were upgraded (pypdf kept on 6.x) |
+
+What the free host leaves off (artwork matching, faces, the vision worker, LibreOffice previews) removes
+code paths rather than adding exposure; Word and PowerPoint files are still read by the parsers with their
+size and time budgets.
+
 ## The vision worker
 
 The worker that finds redrawn mascots runs on its own instance and was reviewed before it went live

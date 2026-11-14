@@ -1,5 +1,10 @@
 # Deploying the Verytas demo
 
+> **Historical.** This describes the AWS server the demo ran on until 14 November 2026. The demo now runs on
+> free tiers (Cloudflare, Vercel, Render, Neon, NVIDIA); see [render/README.md](render/README.md) for the
+> layout and why it moved. The files here are kept because they still work for anyone running Verytas on
+> their own Linux server.
+
 One small ARM server (AWS t4g.medium, Mumbai) runs everything judges touch:
 
 | Piece | Where | Notes |

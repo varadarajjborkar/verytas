@@ -1,12 +1,16 @@
 // The demo's public address (verytas.pages.dev) on Cloudflare's free tier. It holds no app code: every
 // request is passed to the web app on Vercel's free plan as is, so there is one deployment to keep current,
 // not two. (It was the AWS server until the free move; the address people have did not change.)
-const UPSTREAM = "https://verytas-alpha.vercel.app";
+const WEB = "https://verytas-alpha.vercel.app";
+// People's own AI clients talk to the API's /mcp endpoint directly, as Caddy routed it on the old server:
+// the web app has no such route. They authenticate with a personal token, never a cookie.
+const API = "https://verytas-api.onrender.com";
 
 export default {
   async fetch(request) {
     const url = new URL(request.url);
     const self = url.origin;
+    const UPSTREAM = url.pathname === "/mcp" || url.pathname.startsWith("/mcp/") ? API : WEB;
     // The path is set on a copy of UPSTREAM, never resolved against it: resolved, "//elsewhere.example/x"
     // is a scheme-relative reference and would send the visitor's cookies to that host and serve its
     // answer as ours.
@@ -22,6 +26,8 @@ export default {
     const referer = headers.get("referer");
     if (referer?.startsWith(self + "/")) headers.set("referer", UPSTREAM + referer.slice(self.length));
     headers.set("x-forwarded-host", url.host);
+    // The API never reads the web app's cookies; they stop here rather than travel to a second host.
+    if (UPSTREAM === API) headers.delete("cookie");
 
     const upstream = await fetch(target, {
       method: request.method,
