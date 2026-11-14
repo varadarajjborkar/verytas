@@ -226,7 +226,7 @@ def _from_openai(data: dict[str, Any]) -> dict[str, Any]:
     message = choice.get("message") or {}
     content = message.get("content")
     if isinstance(content, list):  # some endpoints send content parts even for plain text
-        content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
+        content = "".join(str(p.get("text") or "") for p in content if isinstance(p, dict))
     content = content or ""
     if choice.get("finish_reason") == "length" and not content.rstrip().endswith("}"):
         raise ProviderUnavailable("the model's reply was cut off at its length limit")
