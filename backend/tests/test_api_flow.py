@@ -342,6 +342,7 @@ def test_built_in_checks_apply_to_public_content(client, world):
     assert "confidentiality" not in review["coverage"]["not_configured"]
 
 
+@pytest.mark.sqlite_file
 def test_a_review_cut_off_by_a_restart_runs_again(settings, tmp_path):
     import sqlite3
     import time

@@ -74,6 +74,7 @@ def test_pages_go_back_in_time_and_a_screen_catches_up_after_its_last_id(client,
     assert [m["text"] for m in after] == ["note 3", "note 4"]
 
 
+@pytest.mark.sqlite_file
 def test_text_is_sealed_in_the_database(client, world, settings):  # noqa: F811
     cid, _ = _start(client, world)
     _send(client, world["creator"], cid, text="The Diwali offer price is still open")
@@ -238,6 +239,7 @@ def test_reply_edit_and_delete(client, world):  # noqa: F811
     assert _send(client, world["creator"], cid, text="x", reply_to=999999).status_code == 404
 
 
+@pytest.mark.sqlite_file
 def test_files_travel_sealed_show_inline_and_go_when_deleted(client, world, settings):  # noqa: F811
     from tests.media_fixtures import png, text_image
 

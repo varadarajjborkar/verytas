@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime
 
+import pytest
+
 from tests.test_api_flow import _auth
 from tests.test_api_flow import world as world  # noqa: F401, the fixture is used by name
 from verytas.api.deps import hash_token
@@ -49,6 +51,7 @@ def test_only_the_deciding_roles_may_open_a_dossier(client, world):  # noqa: F81
                        json={"kind": "other", "id": 1}).status_code == 422
 
 
+@pytest.mark.sqlite_file
 def test_other_workspaces_and_higher_clearance_are_a_plain_404(client, world):  # noqa: F811
     made = _post(client, world["creator"], LEAK)
     cid = made["content"]["id"]
@@ -131,6 +134,7 @@ def test_confidential_terms_are_redacted_everywhere_before_text_is_cut(client, w
     assert d["piece"]["title"] == "[[TERM_1]] teaser"
 
 
+@pytest.mark.sqlite_file
 def test_a_finding_citing_a_confidential_rule_is_withheld(client, world):  # noqa: F811
     made = _post(client, world["creator"], LEAK)
     cid = made["content"]["id"]
@@ -179,6 +183,7 @@ def test_an_escalation_dossier_leads_with_the_escalation_then_its_piece(client, 
     assert esc["resolution"]["by"]["role"] == "approver"
 
 
+@pytest.mark.sqlite_file
 def test_what_was_said_about_a_withheld_finding_is_withheld_with_it(client, world):  # noqa: F811
     creator = world["creator"]
     made = _post(client, creator, LEAK, title="Teaser")

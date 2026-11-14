@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from sqlalchemy import event, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 
 class Base(DeclarativeBase):
@@ -17,11 +18,12 @@ READ = "verytas_read"
 READ_GUARD = "verytas_read_guard"
 
 
-def make_engine(url: str) -> AsyncEngine:
+def make_engine(url: str, *, null_pool: bool = False) -> AsyncEngine:
     sqlite = url.startswith("sqlite")
     # Background reviews write while requests write. SQLite's default is to
     # fail at once on a held lock ("database is locked" -> 500); wait instead.
-    engine = create_async_engine(url, future=True, connect_args={"timeout": 30} if sqlite else {})
+    extra = {"poolclass": NullPool} if null_pool else {}
+    engine = create_async_engine(url, future=True, connect_args={"timeout": 30} if sqlite else {}, **extra)
     if sqlite:
         # SQLite ignores FK and CHECK-adjacent integrity unless asked; we lean on
         # those constraints (citations, version chain), so turn them on. WAL keeps
@@ -66,8 +68,8 @@ def make_engine(url: str) -> AsyncEngine:
 
 
 class Database:
-    def __init__(self, url: str, *, guard_reads: bool = False) -> None:
-        self.engine = make_engine(url)
+    def __init__(self, url: str, *, guard_reads: bool = False, null_pool: bool = False) -> None:
+        self.engine = make_engine(url, null_pool=null_pool)
         self.sessionmaker = async_sessionmaker(self.engine, expire_on_commit=False)
         # Same pool, read-only use: requests that only read (GET) take their session from here.
         reads = self.engine.execution_options(**{READ: True, READ_GUARD: guard_reads})

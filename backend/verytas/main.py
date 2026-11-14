@@ -85,7 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     _init_sentry(settings)
-    db = Database(settings.database_url, guard_reads=settings.db_guard_reads)
+    db = Database(settings.database_url, guard_reads=settings.db_guard_reads, null_pool=settings.db_null_pool)
     prism = Prism(settings, db.sessionmaker)
     hub = MessageHub(settings.redis_url, settings.message_cache_size, settings.redis_namespace)
     seal = MessageSeal(settings.keys_dir)
@@ -164,8 +164,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(StatementError)
     async def _unbindable(request: Request, exc: StatementError) -> JSONResponse:
-        if isinstance(exc.orig, OverflowError):
-            return JSONResponse({"detail": "not found"}, status_code=404)
+        # SQLite hands the OverflowError straight up; asyncpg wraps it in its DataError ("value out of int32
+        # range") under SQLAlchemy's own, so walk the chain rather than look one level down.
+        cause: BaseException | None = exc.orig
+        for _ in range(4):
+            if cause is None:
+                break
+            if isinstance(cause, OverflowError):
+                return JSONResponse({"detail": "not found"}, status_code=404)
+            cause = cause.__cause__
         raise exc
 
     @app.get("/health", tags=["meta"])

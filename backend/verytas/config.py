@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./verytas.db"
     # Tests only: a GET's read-only session refuses writes (db.py READ_GUARD), so a GET that writes is found.
     db_guard_reads: bool = False
+    # Tests on Postgres only: the test client runs the app on its own event loop while a test may query from
+    # another, and an asyncpg connection belongs to the loop that opened it, so nothing is kept in a pool.
+    db_null_pool: bool = False
 
     # "live" talks to the hosted models. "offline" swaps in deterministic local
     # providers so the whole pipeline runs in tests and demos without keys.
