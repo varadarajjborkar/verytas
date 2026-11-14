@@ -1,8 +1,8 @@
 name: ci
 
-# Every push and pull request runs the backend and web checks plus a secret and dependency scan. On main,
-# a green run moves the `live` branch to that commit; the demo server deploys `live`, never `main`
-# directly, so a commit that breaks a check never reaches production.
+# Every push and pull request runs the backend and web checks plus a secret and dependency scan. Vercel
+# and Render deploy `main`, and `main` is fast-forwarded to `dev` by hand only once this run is green on
+# `dev`. (A `live` branch moved by this workflow was what the old AWS server pulled; nothing reads it now.)
 on:
   push:
     branches: [main, dev]
@@ -91,18 +91,3 @@ jobs:
           # Audits the lock the server installs, not whatever resolves today.
           pip install -q pip-audit
           pip-audit --require-hashes --disable-pip -r backend/requirements.lock
-
-  release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [backend, web, scan]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    concurrency:
-      group: release
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # A plain pointer move; the server picks it up within three minutes.
-      - run: git push --force origin "${GITHUB_SHA}:refs/heads/live"

@@ -204,7 +204,7 @@ The audit's hardening suggestions, and where each one stands.
 | `Redactor.restore` also restores placeholders a user typed | Open |
 | The audit chain's head is not anchored or signed; signing keys share an owner with the database | Open |
 | All server jobs share one user; the deploy and reset units are unconfined | Partly: document conversion runs in its own sandboxed service as a per-run user (above). The API, web, deploy and reset jobs still share one user, and the deploy and reset units are still unconfined. |
-| The `live` branch can be pushed directly; pnpm, `pip-audit` and the Whisper model revision are not pinned by hash | Open |
+| `main` deploys and can be pushed directly (no branch protection rule is set; it is moved only by fast-forward from a green `dev`, by practice); pnpm, `pip-audit` and the Whisper model revision are not pinned by hash | Open |
 | Chat storage and some colour fields have no size ceiling | Open |
 | Uploads are scoped to the workspace, not to their owner or piece | Partly: quotas are per person, access is still per workspace |
 
