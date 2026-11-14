@@ -5,7 +5,9 @@ import { readFileSync, statSync } from "node:fs";
 // The shared demo's sign-in: instead of pasting a token, a visitor picks one of the seeded people and is
 // signed in as that real account (roles and clearances apply as for anyone). The tokens live in a
 // server-side file written by `verytas.cli seed-showcase --write-demo-accounts`; only names, titles
-// and sides ever reach the browser. Off unless VERYTAS_DEMO_ACCOUNTS points at that file.
+// and sides ever reach the browser. Off unless VERYTAS_DEMO_ACCOUNTS points at that file, or, on a host
+// with no disk of its own (the free deployment runs on Vercel), VERYTAS_DEMO_ACCOUNTS_JSON holds the file's
+// contents base64-encoded. That copy changes only with a redeploy, which is when a reseed replaces it.
 
 export type DemoPerson = { key: string; name: string; side: "manager" | "creator"; title: string; blurb: string };
 export type DemoCompany = { slug: string; brand: string; industry: string; people: DemoPerson[] };
@@ -21,7 +23,24 @@ type DemoFile = {
 /** How long the shared data lives before it is reseeded; the sign-in page says so. */
 export const RESET_DAYS = 14;
 
+const INLINE = process.env.VERYTAS_DEMO_ACCOUNTS_JSON;
+let inline: DemoFile | null | undefined;
+
+function loadInline(): DemoFile | null {
+  if (inline === undefined) {
+    try {
+      inline = JSON.parse(Buffer.from(INLINE!, "base64").toString("utf8")) as DemoFile;
+    } catch {
+      // Logged once: without it the picker just disappears until the next deploy, with no hint why.
+      console.error("VERYTAS_DEMO_ACCOUNTS_JSON is not base64 JSON; the demo sign-in picker is off");
+      inline = null;
+    }
+  }
+  return inline;
+}
+
 function load(): DemoFile | null {
+  if (INLINE) return loadInline();
   const path = process.env.VERYTAS_DEMO_ACCOUNTS;
   if (!path) return null;
   try {
@@ -59,6 +78,10 @@ let tokens: { mtime: number; set: Set<string> } | null = null;
 
 /** Whether a session token is one of the picker's people, shared by every visitor who picks them. */
 export function isDemoToken(token: string): boolean {
+  if (INLINE) {
+    const f = loadInline();
+    return f ? companies(f).some((c) => c.people.some((p) => p.token === token)) : true;
+  }
   const path = process.env.VERYTAS_DEMO_ACCOUNTS;
   if (!path) return false;
   try {
