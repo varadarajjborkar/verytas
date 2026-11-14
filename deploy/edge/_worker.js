@@ -36,6 +36,11 @@ export default {
       redirect: "manual",
     });
     const response = new Response(upstream.body, upstream);
+    // For a compressed reply, fetch() hands the body back decoded and the runtime compresses it again on the
+    // way out, so the upstream's Content-Length (of its own compressed bytes) need not match what is sent,
+    // and a browser told the wrong length stops reading early. Uncompressed replies (media, downloads) keep
+    // theirs, so they still show progress and size.
+    if (upstream.headers.has("content-encoding")) response.headers.delete("content-length");
     const location = response.headers.get("location");
     if (location) {
       const to = new URL(location, UPSTREAM);
