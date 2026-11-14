@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Literal
+
 from verytas.config import Settings
 from verytas.providers.base import JudgeProvider, LLMProvider, UsageMeter
 from verytas.providers.offline import OfflineJudge, OfflineLLM
@@ -21,17 +24,11 @@ def build_providers(settings: Settings, meter: UsageMeter) -> tuple[JudgeProvide
             settings.typesafe_api_key.get_secret_value(), model=settings.jev_model,
             base_url=settings.jev_base_url, meter=meter,
         )
-    elif settings.ollama_api_key is not None:
-        from verytas.providers.ollama_judge import OllamaJudge
-
-        judge = OllamaJudge(
-            settings.ollama_api_key.get_secret_value(), model=settings.ollama_judge_model,
-            base_url=settings.ollama_base_url, meter=meter, resamples=settings.judge_resamples,
-            fallback_key=_fallback(settings),
-        )
+    elif (hosted := _hosted(settings)) is not None:
+        judge = _judge(hosted, hosted.judge_model, settings, meter)
     else:
         judge = OfflineJudge()
-        notes.append("no TYPESAFE_API_KEY or OLLAMA_API_KEY: semantic rules use the offline heuristic judge")
+        notes.append(f"no TYPESAFE_API_KEY or {_key_name(settings)}: semantic rules use the offline heuristic judge")
 
     llm: LLMProvider
     if settings.llm_backend == "claude":
@@ -41,30 +38,21 @@ def build_providers(settings: Settings, meter: UsageMeter) -> tuple[JudgeProvide
             model=settings.claude_model, fast_model=settings.claude_fast_model,
             fallbacks=settings.claude_fallbacks, meter=meter,
         )
-    elif settings.ollama_api_key is not None:
-        from verytas.providers.ollama import OllamaLLM
-
-        llm = OllamaLLM(
-            settings.ollama_api_key.get_secret_value(), model=settings.ollama_model,
-            fast_model=settings.ollama_fast_model, base_url=settings.ollama_base_url, meter=meter,
-            fallback_key=_fallback(settings),
-        )
+    elif (hosted := _hosted(settings)) is not None:
+        llm = _client(hosted, hosted.model, hosted.fast_model, meter)
     else:
         llm = OfflineLLM()
-        notes.append("OLLAMA_API_KEY not set: claim extraction and rewrites use offline heuristics")
+        notes.append(f"{_key_name(settings)} not set: claim extraction and rewrites use offline heuristics")
     return judge, llm, notes
 
 
 def build_second_judge(settings: Settings, meter: UsageMeter) -> JudgeProvider | None:
     """The larger judge that also answers must-rule questions, or None when there is nothing larger to ask
     (offline, no key, or switched off)."""
-    if settings.llm_mode == "offline" or settings.second_look_max == 0 or settings.ollama_api_key is None:
+    hosted = _hosted(settings)
+    if settings.llm_mode == "offline" or settings.second_look_max == 0 or hosted is None:
         return None
-    from verytas.providers.ollama_judge import OllamaJudge
-
-    return OllamaJudge(settings.ollama_api_key.get_secret_value(), model=settings.second_look_model,
-                       base_url=settings.ollama_base_url, meter=meter, resamples=settings.judge_resamples,
-                       fallback_key=_fallback(settings))
+    return _judge(hosted, hosted.second_look_model, settings, meter)
 
 
 def build_vision(settings: Settings, meter: UsageMeter) -> tuple[LLMProvider, list[str]]:
@@ -77,20 +65,16 @@ def build_vision(settings: Settings, meter: UsageMeter) -> tuple[LLMProvider, li
 
         return ClaudeLLM(model=settings.claude_model, fast_model=settings.claude_model,
                          fallbacks=settings.claude_fallbacks, meter=meter), []
-    if settings.ollama_api_key is not None:
-        from verytas.providers.ollama import OllamaLLM
-
-        vision = OllamaLLM(settings.ollama_api_key.get_secret_value(), model=settings.ollama_vision_model,
-                           fast_model=settings.ollama_vision_model, base_url=settings.ollama_base_url, meter=meter,
-                           fallback_key=_fallback(settings))
-        vision.name = f"ollama/{settings.ollama_vision_model}"
-        return vision, []
-    return OfflineLLM(), ["no OLLAMA_API_KEY: images are read by local OCR only, without scene or asset review"]
+    if (hosted := _hosted(settings)) is not None:
+        return _client(hosted, hosted.vision_model, hosted.vision_model, meter), []
+    return OfflineLLM(), [f"no {_key_name(settings)}: images are read by local OCR only, without scene or asset review"]
 
 
 def build_web_search(settings: Settings) -> OllamaWebSearch | None:
-    """Ollama's web search for claim research, or None when offline, keyless or switched off."""
-    if settings.llm_mode == "offline" or settings.research_per_review == 0 or settings.ollama_api_key is None:
+    """Ollama's web search for claim research, or None when offline, keyless, switched off, or on a backend
+    without a search API (NVIDIA has none, so claims no fact backs are left for the reviewer, as they say)."""
+    if (settings.llm_mode == "offline" or settings.research_per_review == 0 or settings.ollama_api_key is None
+            or settings.llm_backend != "ollama"):
         return None
     return OllamaWebSearch(settings.ollama_api_key.get_secret_value(), base_url=settings.ollama_base_url,
                            fallback_key=_fallback(settings))
@@ -99,3 +83,51 @@ def build_web_search(settings: Settings) -> OllamaWebSearch | None:
 def _fallback(settings: Settings) -> str | None:
     key = settings.ollama_api_key_fallback
     return key.get_secret_value() if key is not None else None
+
+
+@dataclass(frozen=True)
+class _Hosted:
+    """One hosted endpoint and the models each role uses on it."""
+    key: str
+    base_url: str
+    api: Literal["ollama", "openai"]
+    label: str
+    per_minute: int
+    fallback: str | None
+    model: str
+    fast_model: str
+    judge_model: str
+    second_look_model: str
+    vision_model: str
+
+
+def _hosted(settings: Settings) -> _Hosted | None:
+    if settings.llm_backend == "nvidia":
+        if settings.nvidia_api_key is None:
+            return None
+        return _Hosted(settings.nvidia_api_key.get_secret_value(), settings.nvidia_base_url, "openai", "nvidia",
+                       settings.nvidia_per_minute, None, settings.nvidia_model, settings.nvidia_fast_model,
+                       settings.nvidia_judge_model, settings.nvidia_second_look_model, settings.nvidia_vision_model)
+    if settings.ollama_api_key is None:
+        return None
+    return _Hosted(settings.ollama_api_key.get_secret_value(), settings.ollama_base_url, "ollama", "ollama", 0,
+                   _fallback(settings), settings.ollama_model, settings.ollama_fast_model,
+                   settings.ollama_judge_model, settings.second_look_model, settings.ollama_vision_model)
+
+
+def _client(h: _Hosted, model: str, fast_model: str, meter: UsageMeter):
+    from verytas.providers.ollama import OllamaLLM
+
+    return OllamaLLM(h.key, model=model, fast_model=fast_model, base_url=h.base_url, meter=meter,
+                     fallback_key=h.fallback, api=h.api, label=h.label, per_minute=h.per_minute)
+
+
+def _judge(h: _Hosted, model: str, settings: Settings, meter: UsageMeter) -> JudgeProvider:
+    from verytas.providers.ollama_judge import OllamaJudge
+
+    return OllamaJudge(h.key, model=model, meter=meter, resamples=settings.judge_resamples, label=h.label,
+                       llm=_client(h, model, model, meter))
+
+
+def _key_name(settings: Settings) -> str:
+    return "NVIDIA_API_KEY" if settings.llm_backend == "nvidia" else "OLLAMA_API_KEY"

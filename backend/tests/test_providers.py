@@ -300,3 +300,99 @@ async def test_ollama_backup_key_also_covers_a_key_stuck_on_rate_limits(monkeypa
     with pytest.raises(ProviderUnavailable):
         respx.post(f"{OLLAMA}/api/chat").mock(return_value=httpx.Response(401))
         await _ollama().run(_Task())
+
+
+# --- OpenAI-compatible endpoints (NVIDIA) ---------------------------------------
+
+NVIDIA = "https://nvidia.test/v1"
+
+
+def _nvidia(**kw):
+    return OllamaLLM("nv", model="big/model", fast_model="small/model", base_url=NVIDIA, api="openai",
+                     label="nvidia", **kw)
+
+
+def _completion(content, finish="stop"):
+    return {"choices": [{"message": {"role": "assistant", "content": content}, "finish_reason": finish}],
+            "usage": {"prompt_tokens": 40, "completion_tokens": 10}}
+
+
+@respx.mock
+async def test_openai_api_posts_chat_completions_under_the_base_path_and_meters():
+    route = respx.post(f"{NVIDIA}/chat/completions").mock(
+        return_value=httpx.Response(200, json=_completion('{"items": [], "count": 4}')))
+    meter = UsageMeter(budget=1000)
+    out = await _nvidia(meter=meter).run(_Task())
+    assert out.count == 4 and meter.total == 50
+    sent = httpx.Response(200, content=route.calls.last.request.content).json()
+    assert sent["model"] == "big/model" and sent["temperature"] == 0.0 and "options" not in sent
+    assert route.calls.last.request.headers["authorization"] == "Bearer nv"
+
+
+@respx.mock
+async def test_openai_api_sends_images_as_data_urls():
+    route = respx.post(f"{NVIDIA}/chat/completions").mock(
+        return_value=httpx.Response(200, json=_completion('{"items": [], "count": 0}')))
+
+    class _Seeing(_Task):
+        def user_content(self):
+            return [{"type": "text", "text": "look"},
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": "QUJD"}}]
+
+    await _nvidia().run(_Seeing())
+    parts = httpx.Response(200, content=route.calls.last.request.content).json()["messages"][1]["content"]
+    assert parts[0] == {"type": "text", "text": "look"}
+    assert parts[1]["image_url"]["url"] == "data:image/jpeg;base64,QUJD"
+
+
+@respx.mock
+async def test_openai_reply_cut_off_at_the_length_limit_is_unavailable_not_a_repair():
+    route = respx.post(f"{NVIDIA}/chat/completions").mock(
+        return_value=httpx.Response(200, json=_completion('{"items": [', finish="length")))
+    with pytest.raises(ProviderUnavailable, match="cut off"):
+        await _nvidia().run(_Task())
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_openai_content_parts_are_joined():
+    parts = [{"type": "text", "text": '{"items": [], '}, {"type": "text", "text": '"count": 5}'}]
+    respx.post(f"{NVIDIA}/chat/completions").mock(return_value=httpx.Response(200, json=_completion(parts)))
+    assert (await _nvidia().run(_Task())).count == 5
+
+
+@respx.mock
+async def test_rate_limited_call_waits_as_long_as_the_endpoint_asks(monkeypatch):
+    import verytas.providers.ollama as ollama_mod
+
+    slept = []
+
+    async def fake_sleep(s):
+        slept.append(s)
+
+    monkeypatch.setattr(ollama_mod.asyncio, "sleep", fake_sleep)
+    respx.post(f"{NVIDIA}/chat/completions").mock(side_effect=[
+        httpx.Response(429, headers={"retry-after": "7"}),
+        httpx.Response(200, json=_completion('{"items": [], "count": 1}')),
+    ])
+    assert (await _nvidia().run(_Task())).count == 1
+    assert slept == [7.0]
+
+
+async def test_pacer_spaces_request_starts_per_endpoint(monkeypatch):
+    import verytas.providers.ollama as ollama_mod
+
+    clock = [100.0]
+    slept = []
+
+    async def fake_sleep(s):
+        slept.append(round(s, 3))
+
+    monkeypatch.setattr(ollama_mod.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(ollama_mod.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(ollama_mod, "_pacers", {})
+    pacer = ollama_mod._pacer("https://x.test", 30)
+    assert ollama_mod._pacer("https://x.test", 30) is pacer and ollama_mod._pacer("https://x.test", 0) is None
+    for _ in range(3):
+        await pacer.wait()
+    assert slept == [2.0, 4.0]  # 30 a minute: one start every 2 s

@@ -19,14 +19,34 @@ class Settings(BaseSettings):
     # Tests on Postgres only: the test client runs the app on its own event loop while a test may query from
     # another, and an asyncpg connection belongs to the loop that opened it, so nothing is kept in a pool.
     db_null_pool: bool = False
+    # Tests on Postgres only: the test client runs the app on its own event loop while a test may query from
+    # another, and an asyncpg connection belongs to the loop that opened it, so nothing is kept in a pool.
+    db_null_pool: bool = False
 
     # "live" talks to the hosted models. "offline" swaps in deterministic local
     # providers so the whole pipeline runs in tests and demos without keys.
     llm_mode: Literal["live", "offline"] = "live"
 
-    # Which hosted LLM does the text work. Ollama Cloud is the default (free tier);
+    # Which hosted LLM does the text work. Ollama Cloud was the default until its free plan ended; NVIDIA's
+    # hosted models (OpenAI-compatible API, free developer tier) replace it on the free deployment, and
     # Claude is kept as a drop-in alternative behind the same interface.
-    llm_backend: Literal["ollama", "claude"] = "ollama"
+    llm_backend: Literal["ollama", "nvidia", "claude"] = "ollama"
+
+    nvidia_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("NVIDIA_API_KEY", "VERYTAS_NVIDIA_API_KEY")
+    )
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    # Picked by timing a judge-style JSON task and an image read on the free tier (14 Nov 2026, two rounds).
+    # Nemotron 3.5 Super VL answered in 2 to 3 s, kept the question names it was given and read the test
+    # image exactly, so it judges and looks; Nemotron 3 Ultra (about 5 s) writes fixes and takes the
+    # second look. Several others timed out or were gone, and gpt-oss-120b was retired there in September.
+    nvidia_model: str = "nvidia/nemotron-3-ultra-550b-a55b"
+    nvidia_fast_model: str = "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    nvidia_judge_model: str = "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    nvidia_second_look_model: str = "nvidia/nemotron-3-ultra-550b-a55b"
+    nvidia_vision_model: str = "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    # The free tier allows about 40 requests a minute for the whole account; stay under it.
+    nvidia_per_minute: int = Field(default=35, ge=0)
 
     ollama_api_key: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("OLLAMA_API_KEY", "VERYTAS_OLLAMA_API_KEY")
