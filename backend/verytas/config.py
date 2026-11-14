@@ -19,9 +19,6 @@ class Settings(BaseSettings):
     # Tests on Postgres only: the test client runs the app on its own event loop while a test may query from
     # another, and an asyncpg connection belongs to the loop that opened it, so nothing is kept in a pool.
     db_null_pool: bool = False
-    # Tests on Postgres only: the test client runs the app on its own event loop while a test may query from
-    # another, and an asyncpg connection belongs to the loop that opened it, so nothing is kept in a pool.
-    db_null_pool: bool = False
 
     # "live" talks to the hosted models. "offline" swaps in deterministic local
     # providers so the whole pipeline runs in tests and demos without keys.
@@ -98,6 +95,9 @@ class Settings(BaseSettings):
     # Below this local OCR confidence, the image is also transcribed by the
     # vision model (after pixel redaction).
     ocr_min_confidence: float = Field(default=0.8, ge=0, le=1)
+    # OCR engine sizing (media/ocr.configure): 0 keeps the engine's defaults (all cores, full-size detection).
+    ocr_threads: int = Field(default=0, ge=0, le=16)
+    ocr_max_side: int = Field(default=0, ge=0, le=4000)
     # Agent tree limits per review: how deep delegation may go, and how many
     # agents one submission may spawn in total.
     agent_max_depth: int = Field(default=8, ge=2, le=12)
@@ -174,6 +174,10 @@ class Settings(BaseSettings):
     # (media/model_store.py).
     vision_models_dir: Path = Path(".models")
     # Faces in images and video, identified against approved people (prism/people_agent.py).
+    # Matching pictures against the brand's official artwork (SIFT fingerprints, mirrored copies, redrawn
+    # mascots) needs several hundred MB once a brand has a full library. Off on a 512 MB host; the review
+    # says so instead of leaving it out silently.
+    asset_matching: bool = True
     faces_enabled: bool = True
     # The vision worker (verytas/vision) that finds redrawn mascots and compares them with the artwork.
     # Unset, characters are checked by pixel match and the vision model only, and the review says so.

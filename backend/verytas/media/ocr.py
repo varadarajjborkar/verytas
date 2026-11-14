@@ -55,6 +55,25 @@ class OcrResult:
 
 _engine = None
 _lock = threading.Lock()
+_params: dict = {}
+
+
+def configure(*, threads: int = 0, max_side: int = 0) -> None:
+    """Engine settings for a small host, applied when the engine is first built. By default the detector
+    works at the image's full size on every core, which on a 1080 px square costs close to 500 MB; one
+    thread and a 736 px cap read the same lines in about half that, at a few hundred ms more per image."""
+    global _engine
+    params: dict = {}
+    if threads > 0:
+        params |= {"EngineConfig.onnxruntime.intra_op_num_threads": threads,
+                   "EngineConfig.onnxruntime.inter_op_num_threads": threads}
+    if max_side > 0:
+        params |= {"Det.limit_type": "max", "Det.limit_side_len": max_side}
+    with _lock:
+        if params != _params:
+            _params.clear()
+            _params.update(params)
+            _engine = None
 
 
 def _get_engine():
@@ -63,7 +82,7 @@ def _get_engine():
         if _engine is None:
             from rapidocr import RapidOCR
 
-            _engine = RapidOCR(params={"Global.log_level": "critical"})
+            _engine = RapidOCR(params={"Global.log_level": "critical", **_params})
         return _engine
 
 

@@ -35,7 +35,7 @@ from verytas.config import Settings, get_settings
 from verytas.db import Database
 from verytas.intake import pipeline as intake_pipeline
 from verytas.mcpserver import mount_mcp
-from verytas.media import storage
+from verytas.media import ocr, storage
 from verytas.memory.embed import embedder_for
 from verytas.memory.personal import PersonalMemory
 from verytas.prism.orchestrator import Prism
@@ -85,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     _init_sentry(settings)
+    ocr.configure(threads=settings.ocr_threads, max_side=settings.ocr_max_side)
     db = Database(settings.database_url, guard_reads=settings.db_guard_reads, null_pool=settings.db_null_pool)
     prism = Prism(settings, db.sessionmaker)
     hub = MessageHub(settings.redis_url, settings.message_cache_size, settings.redis_namespace)

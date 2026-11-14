@@ -254,7 +254,7 @@ class Prism:
             phases[name] = round((now - clock[0]) * 1000)
             clock[0] = now
 
-        ctx, redactor, assets = await self._context(session, version)
+        ctx, redactor, assets, artwork_skipped = await self._context(session, version)
         book = await precedent.load(session, content.workspace_id, content.tier, redactor.mask)
         workspace = await session.get(Workspace, content.workspace_id)
         brand = workspace.name if workspace else None
@@ -312,6 +312,9 @@ class Prism:
             if said:
                 notes_realm["brief"] = " ".join(filter(None, [notes_realm.get("brief"), f"(voice note) {said}"]))
         run.brief = notes_realm.get("brief") or ""
+        if artwork_skipped:
+            run.notes.append("Official artwork is not compared on this server (it runs with too little memory for "
+                             "it), so logos and mascots were not matched; text in images was still read and checked.")
         run.people = people
         if self.settings.vision_worker_url and visuals_any:
             from verytas.vision.client import VisionClient
@@ -367,6 +370,9 @@ class Prism:
         # Searched while the fixes are written: it needs only the claims, and adds no wait of its own.
         researching = (asyncio.create_task(self._research(raw, judge, redactor, brand, content.workspace_id))
                        if self._web is not None and content.tier is Tier.public else None)
+        if self._web is None and content.tier is Tier.public and self.settings.llm_backend == "nvidia":
+            run.notes.append("Claims that no approved fact backs were not searched on the web: this server has no "
+                             "search engine, so they are left for the reviewer.")
         try:
             _apply_cleared(raw, cleared, {r.code: r.id for r in ctx.rules})
             rule_problems = run.rule_problems
@@ -415,6 +421,8 @@ class Prism:
         checked = configured - failed
         degraded = {"tone", "messaging"} & checked if judge.name.startswith("offline") else set()
         degraded |= (gap_degraded | run.partial) & checked
+        if artwork_skipped:
+            degraded |= {"visual"} & checked
         statuses = {c: ("not_configured" if c not in configured else "not_checked" if c in failed
                         else "degraded" if c in degraded else "checked") for c in CATEGORIES}
         notes = notes + run.notes + _gap_notes(tree.gaps()) + _language_notes(language)
@@ -565,11 +573,21 @@ class Prism:
             attachments=attachments, channel=content.channel,
             profile=await _brand_profile(session, content, rules, visible_facts, list(events.values())),
         )
-        rows = (await session.scalars(
-            select(BrandAsset).where(BrandAsset.workspace_id == ws, BrandAsset.active))).all()
-        assets = await asyncio.to_thread(_prepare_assets, rows, content.tier.rank)
+        # Artwork is decoded and fingerprinted only for a piece with something to look at: every use of it is
+        # on the image, video and document paths, and the prepared set for a brand with a full asset library
+        # holds a few hundred MB, which a text post on a 512 MB host has no business paying for.
+        # A voice-note brief counts too: the artwork's lettering is part of the vocabulary Whisper is primed with.
+        assets: list[OfficialAsset] = []
+        skipped = False
+        if _has_visuals(attachments) or (version.creator_notes or {}).get("brief_audio_blob_id"):
+            rows = (await session.scalars(
+                select(BrandAsset).where(BrandAsset.workspace_id == ws, BrandAsset.active))).all()
+            if self.settings.asset_matching:
+                assets = await asyncio.to_thread(_prepare_assets, rows, content.tier.rank)
+            else:
+                skipped = bool(rows) and _has_visuals(attachments)
         # Every confidential term is redacted on egress, embargoed or not.
-        return ctx, Redactor([t.term for t in terms]), assets
+        return ctx, Redactor([t.term for t in terms]), assets, skipped
 
     def guarded_providers(self, redactor: Redactor) -> tuple[JudgeProvider, LLMProvider, LLMProvider, list[str]]:
         """Providers for work outside a review (disputes, AI edits): same guards and redaction."""
