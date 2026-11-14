@@ -1,3 +1,4 @@
+import { Analytics } from "@vercel/analytics/next";
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
 import "@openuidev/react-ui/styles/index.css";
@@ -58,6 +59,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Tour />
           <CookieNotice />
         </Providers>
+        {/* Page views counted by Vercel Web Analytics: no cookies, no identifiers kept across sites. */}
+        <Analytics />
       </body>
     </html>
   );

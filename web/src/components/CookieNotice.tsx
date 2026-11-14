@@ -43,7 +43,7 @@ export function CookieNotice() {
           <b className="font-semibold text-ink">Cookies.</b> We keep what the site needs: your sign-in, a random id for
           this browser so what you tell Ask Inki stays yours on a shared demo account, and this choice.{" "}
           <b className="font-medium text-ink">Accept all</b> also remembers your theme, layout and recent searches.
-          Nothing tracks you.{" "}
+          Page views are counted without cookies, and nothing follows you to other sites.{" "}
           <Link href="/privacy" className="text-accent underline-offset-2 hover:underline">Privacy</Link>
         </p>
         <div className="flex shrink-0 justify-end gap-2">

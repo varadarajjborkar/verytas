@@ -96,12 +96,12 @@
 <h2 id="cookies" class="pt-4 text-xl font-semibold text-neutral-900 dark:text-neutral-100">Cookies and storage</h2>
 <p>Always kept, because the site needs them: your sign-in (a cookie only the server can read), a random id for this browser (so what you tell Ask Inki on a shared demo account is yours and not the next visitor's; it names a browser, nothing else), your cookie choice, and whether you have seen the guided tour.</p>
 <p>Kept only with <b>Accept all</b>: your theme, collapsed panels and column widths, dashboard layout and recent searches. With <b>Necessary only</b> they still work, for this visit.</p>
-<p>Nothing is used for tracking or advertising, and nothing is shared with anyone. <button type="button" data-ask-cookies class="text-accent underline underline-offset-2 dark:text-accent-dark">Choose again</button></p>
+<p>Page views are counted with Vercel Web Analytics, which sets no cookies and keeps no identifier that follows you to other sites: it tells us how many people opened which page, not who they were. Nothing is used for advertising or sold. The site is hosted by Vercel, which counts those page views, and by Render, Neon and Cloudflare, which run it; none of them is given anything for its own use. <button type="button" data-ask-cookies class="text-accent underline underline-offset-2 dark:text-accent-dark">Choose again</button></p>
 <p class="text-sm">This page is a placeholder for the prototype and will be replaced by the full policy.</p></div>
 </main>
 <section id="cookie-notice" hidden role="region" aria-label="Cookies" class="fixed inset-x-0 bottom-0 z-50 border-t border-neutral-200 bg-raised/95 shadow-[0_-8px_24px_rgba(0,0,0,0.08)] backdrop-blur dark:border-ink-3 dark:bg-ink-1/95">
   <div class="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:gap-6 md:px-8">
-    <p class="min-w-0 flex-1 text-sm leading-6 text-neutral-600 dark:text-neutral-400"><b class="font-semibold text-neutral-900 dark:text-neutral-100">Cookies.</b> We keep what the site needs: your sign-in, a random id for this browser so what you tell Ask Inki stays yours on a shared demo account, and this choice. <b class="font-medium text-neutral-900 dark:text-neutral-100">Accept all</b> also remembers your theme, layout and recent searches. Nothing tracks you. <a href="/privacy#cookies" class="text-accent underline-offset-2 hover:underline dark:text-accent-dark">Privacy</a></p>
+    <p class="min-w-0 flex-1 text-sm leading-6 text-neutral-600 dark:text-neutral-400"><b class="font-semibold text-neutral-900 dark:text-neutral-100">Cookies.</b> We keep what the site needs: your sign-in, a random id for this browser so what you tell Ask Inki stays yours on a shared demo account, and this choice. <b class="font-medium text-neutral-900 dark:text-neutral-100">Accept all</b> also remembers your theme, layout and recent searches. Page views are counted without cookies, and nothing follows you to other sites. <a href="/privacy#cookies" class="text-accent underline-offset-2 hover:underline dark:text-accent-dark">Privacy</a></p>
     <div class="flex shrink-0 justify-end gap-2">
       <button type="button" data-consent="necessary" class="rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium transition hover:bg-surface dark:border-ink-4 dark:hover:bg-ink-2">Necessary only</button>
       <button type="button" data-consent="all" class="rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-[#1752b8] dark:bg-accent-dark dark:text-[#06101e] dark:hover:bg-[#6aacff]">Accept all</button>
@@ -130,4 +130,6 @@
     });
   })();
 </script>
+<script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
+<script defer src="/_vercel/insights/script.js"></script>
 </body></html>
