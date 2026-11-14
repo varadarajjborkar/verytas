@@ -188,6 +188,10 @@ async function handle(request: Request, ctx: { params: Promise<{ path: string[] 
       const v = res.headers.get(h);
       if (v) headers[h] = v;
     }
+    // fetch() decodes a compressed reply but keeps its headers, so an encoded reply's Content-Length counts
+    // the compressed bytes and is shorter than the body passed on: the browser stops there and sees cut-off
+    // JSON. The API compresses once it is behind a proxy that does (Render); on one machine it never did.
+    if (res.headers.get("content-encoding")) delete headers["content-length"];
     return new Response(res.status === 204 ? null : res.body, { status: res.status, headers });
   } catch (err) {
     if (tripped()) return tooLarge;
